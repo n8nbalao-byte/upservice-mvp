@@ -32,4 +32,16 @@ r.get('/files/selfie/:eventId', requireLogin, async (req, res) => {
   await send(res, ev.selfie_key, 'image/jpeg');
 });
 
+r.get('/files/exception/:id', requireLogin, async (req, res) => {
+  const [exc] = await q(
+    `SELECT x.id, x.selfie_key, a.user_id, j.unit_id FROM presence_exceptions x
+     JOIN work_sessions ws ON ws.id = x.work_session_id JOIN applications a ON a.id = ws.application_id JOIN jobs j ON j.id = a.job_id
+     WHERE x.id = ?`,
+    [req.params.id],
+  );
+  if (!exc || (exc.user_id !== req.user.id && !(await unitAllowed(req.user, exc.unit_id)))) fail(404, 'Não encontrado.');
+  await audit(q, req, 'SELFIE_VIEW', 'presence_exception', exc.id);
+  await send(res, exc.selfie_key, 'image/jpeg');
+});
+
 export default r;

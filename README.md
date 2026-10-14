@@ -1,6 +1,6 @@
 # UpService
 
-PWA para a UpService: cadastro aberto de profissionais (Google), documentos, unidades, vagas, candidaturas e registro de presença (check-in, pausas, retorno e checkout com GPS a até 300 m + selfie), com cálculo de horas e confirmação da diária.
+PWA para a UpService: cadastro aberto de profissionais (Google), documentos, unidades, vagas, candidaturas e registro de presença (check-in, pausas, retorno e checkout com GPS a até 300 m + selfie), com exceções aprovadas pelo gestor, fechamento de checkout esquecido, cálculo de horas e confirmação da diária.
 
 - **Produção:** https://app.upserviceintermed.com
 - **Andamento:** [docs/STATUS.md](docs/STATUS.md) (marcos, os 52 itens da linha de base e critérios de aceite)
@@ -24,6 +24,8 @@ PWA para a UpService: cadastro aberto de profissionais (Google), documentos, uni
 | Cancelar candidatura já aprovada (antes do check-in) | | suas lojas | ❌ |
 | Reabrir vaga encerrada | | ❌ | ✅ |
 | Atividades do dia, selfies, horas, confirmar diária ou falta | | suas lojas | todas |
+| Aprovar ou recusar exceções de presença | | suas lojas | todas |
+| Encerrar checkout esquecido (fechamento administrativo) | | suas lojas | todas |
 | Ver e aprovar documentos (aba Documentos) | | quem se candidatou nas suas lojas | todos |
 | Unidades: cadastrar, editar, bloquear ou inativar | | ❌ | ✅ |
 | Usuários: papel, status e vínculo gestor↔unidade | | ❌ | ✅ |
@@ -80,5 +82,5 @@ Logs da aplicação: `$H/current/nodejs/console.log`. Logs de deploy: `$H/logs/<
 
 - A PWA não lê GPS com a página fechada; o painel mostra o status do último registro, não presença contínua.
 - O GPS do navegador pode ser falsificado; selfie, token único e auditoria reduzem, mas não eliminam.
-- O aviso de fim de pausa por e-mail roda num `setInterval` do processo; se a Hostinger hibernar o app, mover para cron.
+- Os avisos por e-mail (fim de pausa, checkout pendente) e a passagem para `PENDENTE_DE_FECHAMENTO` rodam num `setInterval` do processo; se a Hostinger hibernar o app, mover para cron.
 - As coordenadas automáticas pelo OpenStreetMap erram centenas de metros a km em avenidas longas; conferir o pino no mapa ou usar `GOOGLE_MAPS_API_KEY`.

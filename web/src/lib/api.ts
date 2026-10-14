@@ -31,6 +31,12 @@ export const fmtTime = (s: string) => new Date(s).toLocaleTimeString('pt-BR', { 
 export const fmtMoney = (n: number) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 export const fmtMinutes = (m: number) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
 export const todayBR = () => new Date().toLocaleDateString('sv-SE', { timeZone: TZ });
+/** ISO → valor de <input type="datetime-local"> no fuso do aparelho. */
+export const toLocalInput = (iso: string) => {
+  const d = new Date(iso);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+};
 
 export const LABEL: Record<string, string> = {
   PENDENTE: 'Pendente', APROVADA: 'Aprovada', RECUSADA: 'Recusada', CANCELADA: 'Cancelada',
@@ -43,5 +49,10 @@ export const LABEL: Record<string, string> = {
   ATIVO: 'Ativo', EM_ANALISE: 'Em análise', BLOQUEADO_TEMPORARIAMENTE: 'Bloqueado temporariamente',
   BLOQUEADO_PERMANENTEMENTE: 'Bloqueado permanentemente', INATIVO: 'Inativo',
   PROFISSIONAL: 'Profissional', GESTOR: 'Gestor', ADMINISTRADOR: 'Administrador',
+  PENDENTE_DE_EXCECAO: 'Aguardando exceção', PENDENTE_DE_FECHAMENTO: 'Checkout pendente',
+  GPS_VALIDADO: 'GPS validado', EXCECAO_APROVADA: 'Exceção aprovada', FECHAMENTO_ADMINISTRATIVO: 'Fechamento administrativo',
+  GPS_INDISPONIVEL: 'GPS indisponível', PRECISAO_INSUFICIENTE: 'Precisão insuficiente', PERMISSAO_NEGADA: 'Permissão negada',
+  FORA_DO_RAIO: 'Fora do raio', FORA_DO_HORARIO: 'Fora do horário', OUTRO: 'Outro',
+  INFORMADO_PROFISSIONAL: 'Horário informado pelo profissional', PREVISTO: 'Horário previsto da vaga', CONFIRMADO_GESTOR: 'Horário confirmado pelo gestor',
 };
 export const label = (s: string | null | undefined) => (s ? LABEL[s] ?? s : '—');
