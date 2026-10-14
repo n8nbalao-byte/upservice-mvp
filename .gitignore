@@ -3,3 +3,5 @@ web/dist/
 storage/
 .env
 *.log
+.env.*
+!.env.example

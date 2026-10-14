@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "main": "server.js",
   "engines": {
     "node": ">=22.9"
   },
@@ -10,7 +11,7 @@
     "api": "node --env-file-if-exists=.env --watch server/index.js",
     "web": "vite web",
     "build": "vite build web",
-    "start": "node --env-file-if-exists=.env server/index.js",
+    "start": "node --env-file-if-exists=.env server.js",
     "migrate": "node --env-file-if-exists=.env server/migrate.js",
     "make-admin": "node --env-file-if-exists=.env server/make-admin.js",
     "typecheck": "tsc -p web",
