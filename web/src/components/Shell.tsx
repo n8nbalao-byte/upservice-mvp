@@ -98,10 +98,7 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
   return (
     <div className={`app${collapsed ? ' collapsed' : ''}${drawer ? ' drawer-open' : ''}${worker ? ' worker' : ''}`}>
       <aside className="sidebar" aria-label="Navegação principal">
-        <div className="brand">
-          <img className="full" src="/logo-dark.png" alt="UP Service Intermediações" />
-          <img className="mark" src="/logo-mark-dark.png" alt="UP Service" />
-        </div>
+        <div className="brand"><span className="full">UP Service</span><span className="mark">UP</span></div>
         {groups.map((g, i) => (
           <nav key={i} className="nav-group" aria-label={i ? 'Cadastros' : 'Operação'}>
             {g.items.map((it) => (
@@ -126,7 +123,7 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
       <div className="main">
         <header className="topbar">
           <button className="icon-btn menu-btn" onClick={menu} aria-label="Menu" aria-expanded={drawer || !collapsed}><Icon name="menu" size={22} /></button>
-          <img className="topbar-logo" src="/logo-mark.png" alt="UP Service" />
+          <span className="topbar-brand">UP Service</span>
           {!worker && <Search />}
           <div className="spacer" />
           {!worker && (

@@ -28,7 +28,7 @@ r.get('/manage/dashboard', MANAGERS, async (req, res) => {
     q(`SELECT j.id, j.title, j.starts_at, j.ends_at, j.daily_value, j.positions, j.status, un.name AS unit_name,
               (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status <> 'CANCELADA') AS applications,
               (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status = 'APROVADA') AS approved
-       FROM jobs j JOIN units un ON un.id = j.unit_id WHERE ${uWhere} ORDER BY j.created_at DESC LIMIT 6`, uArgs),
+       FROM jobs j JOIN units un ON un.id = j.unit_id WHERE ${uWhere} ORDER BY j.created_at DESC LIMIT 12`, uArgs),
   ]);
   res.json({
     serverNow: now,
