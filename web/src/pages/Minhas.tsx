@@ -47,10 +47,10 @@ export default function Minhas() {
       {error && <Alert kind="danger">{error}</Alert>}
       {summary && (
         <div className="stats">
-          <Stat label="Aprovadas" value={summary.aprovadas} tone="gold" />
+          <Stat label="Aprovadas" value={summary.aprovadas} tone="accent" />
           <Stat label="Comparecidas" value={summary.comparecidas} tone="info" />
           <Stat label="Concluídas" value={summary.concluidas} tone="success" />
-          <Stat label="A receber" value={fmtMoney(summary.valor)} tone="gold" hint="Diárias concluídas e confirmadas" />
+          <Stat label="A receber" value={fmtMoney(summary.valor)} tone="accent" hint="Diárias concluídas e confirmadas" />
         </div>
       )}
       {!apps ? <Loading /> : apps.length === 0 ? (

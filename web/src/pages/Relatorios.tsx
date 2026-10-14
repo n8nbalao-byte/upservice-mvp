@@ -71,7 +71,7 @@ export default function Relatorios() {
               <Stat label="Vagas" value={ind.jobs} />
               <Stat label="Posições" value={ind.positions} />
               <Stat label="Candidaturas" value={ind.applications} />
-              <Stat label="Aprovadas" value={ind.approved} tone="gold" hint={ind.positions ? `${Math.round((ind.approved / ind.positions) * 100)}% das posições` : undefined} />
+              <Stat label="Aprovadas" value={ind.approved} tone="accent" hint={ind.positions ? `${Math.round((ind.approved / ind.positions) * 100)}% das posições` : undefined} />
             </div>
           </section>
 
@@ -81,7 +81,7 @@ export default function Relatorios() {
               <Stat label="Diárias concluídas" value={ind.concluded} tone="success" />
               <Stat label="Faltas" value={ind.absences} tone={ind.absences ? 'danger' : 'neutral'} />
               <Stat label="Horas trabalhadas" value={fmtMinutes(ind.workedMin)} tone="info" />
-              <Stat label="Valor das diárias concluídas" value={fmtMoney(ind.value)} tone="gold" />
+              <Stat label="Valor das diárias concluídas" value={fmtMoney(ind.value)} tone="accent" />
             </div>
           </section>
 
@@ -91,7 +91,7 @@ export default function Relatorios() {
               {SOURCES.map(([k, text]) => (
                 <div key={k} className="progress">
                   <div className="row between"><span>{text}</span><span className="tabular strong">{ind.sources[k] ?? 0} · {pct(ind.sources[k] ?? 0)}%</span></div>
-                  <div className="bar"><span style={{ width: `${pct(ind.sources[k] ?? 0)}%`, background: k === 'GPS_VALIDADO' ? 'var(--success)' : 'var(--gold)' }} /></div>
+                  <div className="bar"><span style={{ width: `${pct(ind.sources[k] ?? 0)}%`, background: k === 'GPS_VALIDADO' ? 'var(--success)' : 'var(--accent)' }} /></div>
                 </div>
               ))}
               <p className="muted">Exceções: {ind.exceptions.APROVADA ?? 0} aprovadas · {ind.exceptions.RECUSADA ?? 0} recusadas · {ind.exceptions.PENDENTE ?? 0} pendentes</p>

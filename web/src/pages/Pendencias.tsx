@@ -9,7 +9,7 @@ import { fmtDateTime, fmtTime, label } from '../lib/api';
 const PREVIEW = 5;
 
 /** Prioridade de leitura: o que exige ação imediata primeiro, a rotina por último. */
-const GROUPS: { title: string; description: string; tone: Tone; kinds: { kind: string; icon: IconName }[] }[] = [
+export const GROUPS: { title: string; description: string; tone: Tone; kinds: { kind: string; icon: IconName }[] }[] = [
   { title: 'Atenção agora', description: 'Afetam a jornada em andamento.', tone: 'danger', kinds: [
     { kind: 'SAIDA_DO_RAIO', icon: 'pin' }, { kind: 'EXCECAO', icon: 'alert' }, { kind: 'CHECKOUT_PENDENTE', icon: 'clock' },
   ] },
