@@ -1,11 +1,18 @@
 // Câmera, GPS e alertas do navegador.
 import { useEffect, useRef, useState } from 'react';
 
+/** Erro de GPS com o motivo usado no pedido de exceção. */
+export class GeoError extends Error {
+  constructor(public reason: 'GPS_INDISPONIVEL' | 'PERMISSAO_NEGADA', message: string) {
+    super(message);
+  }
+}
+
 export function getPosition(): Promise<GeolocationPosition> {
   return new Promise((ok, err) => {
-    if (!navigator.geolocation) return err(new Error('Este navegador não oferece localização.'));
+    if (!navigator.geolocation) return err(new GeoError('GPS_INDISPONIVEL', 'Este navegador não oferece localização.'));
     navigator.geolocation.getCurrentPosition(ok, (e) => {
-      err(new Error(
+      err(new GeoError(e.code === e.PERMISSION_DENIED ? 'PERMISSAO_NEGADA' : 'GPS_INDISPONIVEL',
         e.code === e.PERMISSION_DENIED ? 'Permita o acesso à localização nas configurações do navegador.'
           : e.code === e.TIMEOUT ? 'O GPS demorou para responder. Vá para uma área aberta e tente de novo.'
             : 'Localização indisponível. Ative a Localização/GPS do aparelho (no celular, na barra de atalhos; no Windows, em Configurações → Privacidade → Localização) e tente de novo.',

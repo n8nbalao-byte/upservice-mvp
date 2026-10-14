@@ -1,15 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, fmtDateTime, fmtMinutes, fmtTime, label } from '../lib/api';
-import { Selfie, alertBreakOver, distanceMeters, getPosition } from '../lib/device';
+import { ApiError, api, fmtDateTime, fmtMinutes, fmtTime, label, toLocalInput } from '../lib/api';
+import { GeoError, Selfie, alertBreakOver, distanceMeters, getPosition } from '../lib/device';
 
 type EventType = 'CHECK_IN' | 'PAUSE_START' | 'PAUSE_END' | 'CHECK_OUT';
-type Data = { session: any; events: any[]; worked: { workedMin: number; breakMin: number } | null; serverNow: string };
+type Failure = { type: EventType; reason: string; error: string; pos?: GeolocationPosition };
+type Data = { session: any; events: any[]; exceptions: any[]; worked: { workedMin: number; breakMin: number; sources: string[] } | null; serverNow: string };
+
+const ACTIVE = ['EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA'];
+const coords = (pos?: GeolocationPosition) => (pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy } : {});
 
 export default function Atividade() {
   const { id } = useParams();
   const [data, setData] = useState<Data>();
   const [pending, setPending] = useState<{ type: EventType; pos: GeolocationPosition } | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null); // última falha: permite pedir exceção
+  const [excepting, setExcepting] = useState<Failure | null>(null); // pedido de exceção em preenchimento
+  const [message, setMessage] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
@@ -40,19 +47,39 @@ export default function Atividade() {
     }
   }, [onBreak, breakLeft]);
 
+  async function run(what: string, fn: () => Promise<unknown>) {
+    setError('');
+    setBusy(what);
+    try {
+      await fn();
+      return true;
+    } catch (e: any) {
+      setError(e.message);
+      return false;
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function start(type: EventType) {
     setError('');
+    setFailure(null);
     setBusy('Obtendo localização…');
     try {
       const pos = await getPosition();
       const here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       const dist = distanceMeters(here, { lat: s.unit_lat, lng: s.unit_lng });
-      if (pos.coords.accuracy > s.max_accuracy_m) throw new Error(`Precisão do GPS baixa (${Math.round(pos.coords.accuracy)} m). Vá para uma área aberta e tente de novo.`);
-      if (dist > s.radius_m) throw new Error(`Você está a ${Math.round(dist)} m da loja. É preciso estar a até ${s.radius_m} m.`);
+      if (pos.coords.accuracy > s.max_accuracy_m) {
+        throw Object.assign(new Error(`Precisão do GPS baixa (${Math.round(pos.coords.accuracy)} m). Vá para uma área aberta e tente de novo.`), { reason: 'PRECISAO_INSUFICIENTE', pos });
+      }
+      if (dist > s.radius_m) {
+        throw Object.assign(new Error(`Você está a ${Math.round(dist)} m da loja. É preciso estar a até ${s.radius_m} m.`), { reason: 'FORA_DO_RAIO', pos });
+      }
       if (type === 'PAUSE_START' && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
       setPending({ type, pos });
     } catch (e: any) {
       setError(e.message);
+      setFailure({ type, reason: e instanceof GeoError ? e.reason : e.reason ?? 'OUTRO', error: e.message, pos: e.pos });
     } finally {
       setBusy('');
     }
@@ -62,24 +89,54 @@ export default function Atividade() {
     if (!pending) return;
     const { type, pos } = pending;
     setPending(null);
-    setBusy('Enviando…');
-    try {
+    await run('Enviando…', async () => {
+      try {
+        const { token } = await api(`/sessions/${id}/token`, { body: {} });
+        await api(`/sessions/${id}/events`, { body: { type, token, selfie, ...coords(pos), clientTs: new Date(pos.timestamp).toISOString() } });
+        await load();
+      } catch (e: any) {
+        if (e instanceof ApiError && e.status === 422) setFailure({ type, reason: 'OUTRO', error: e.message, pos });
+        throw e;
+      }
+    });
+  }
+
+  function openException(f: Failure) {
+    setError('');
+    setFailure(null);
+    setMessage('');
+    setExcepting(f);
+    // Localização é opcional no pedido, mas ajuda o gestor: tenta pegar sem bloquear.
+    if (!f.pos) getPosition().then((pos) => setExcepting((x) => x && { ...x, pos }), () => {});
+  }
+
+  async function sendException(selfie: string) {
+    if (!excepting) return;
+    const f = excepting;
+    setExcepting(null);
+    await run('Enviando solicitação…', async () => {
       const { token } = await api(`/sessions/${id}/token`, { body: {} });
-      await api(`/sessions/${id}/events`, {
-        body: { type, token, selfie, lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, clientTs: new Date(pos.timestamp).toISOString() },
-      });
+      await api(`/sessions/${id}/exceptions`, { body: { type: f.type, token, reason: f.reason, errorMessage: f.error, message, selfie, ...coords(f.pos) } });
       await load();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setBusy('');
-    }
+    });
+  }
+
+  async function reportEnd(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    await run('Enviando…', async () => {
+      await api(`/me/sessions/${id}/reported-end`, { body: { time: new Date(String(f.get('time'))).toISOString(), note: f.get('note') } });
+      await load();
+    });
   }
 
   if (!data) return <p>{error || 'Carregando…'}</p>;
 
   const opensAt = new Date(s.starts_at).getTime() - 2 * 3600e3;
   const closesAt = new Date(s.starts_at).getTime() + 15 * 60e3;
+  const endsAt = new Date(s.ends_at).getTime();
+  const pendingExc = data.exceptions.find((x) => x.status === 'PENDENTE');
+  const lastExc = data.exceptions.at(-1);
 
   const action = (type: EventType, text: string, primary = true) => (
     <button className={`big ${primary ? 'primary' : ''}`} disabled={!!busy} onClick={() => start(type)}>{text}</button>
@@ -96,18 +153,41 @@ export default function Atividade() {
 
       {error && <p className="error">{error}</p>}
       {busy && <p className="notice">{busy}</p>}
+      {failure && !busy && (
+        <div className="card stack">
+          <p>Está na loja e mesmo assim não conseguiu registrar? Peça ao gestor para aprovar este registro como exceção.</p>
+          <button onClick={() => openException(failure)}>Solicitar exceção ao gestor</button>
+        </div>
+      )}
+      {lastExc?.status === 'RECUSADA' && s.status !== 'PENDENTE_DE_EXCECAO' && (
+        <p className="error">Sua última solicitação de exceção ({label(lastExc.type)}) foi recusada: {lastExc.decision_reason}</p>
+      )}
 
       {pending ? (
         <div className="card stack">
           <p>Tire uma selfie para registrar: <b>{label(pending.type)}</b></p>
           <Selfie onCapture={send} onCancel={() => setPending(null)} />
         </div>
+      ) : excepting ? (
+        <div className="card stack">
+          <p>Solicitação de exceção: <b>{label(excepting.type)}</b> · {label(excepting.reason)}</p>
+          <p className="muted">O registro fica com o horário de agora e só vale depois que o gestor aprovar. Ele aparece como exceção, não como GPS validado.</p>
+          <label>Mensagem para o gestor<textarea rows={2} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Ex.: estou no estoque, o GPS não pega aqui dentro" /></label>
+          <Selfie onCapture={sendException} onCancel={() => setExcepting(null)} />
+        </div>
       ) : (
         <div className="stack">
           {/* Mesma janela do servidor (2 h antes até 15 min depois), mostrada antes de pedir GPS e selfie à toa. */}
           {s.status === 'AGUARDANDO_CHECKIN' && (
             now < opensAt ? <button className="big" disabled>Check-in liberado às {fmtTime(new Date(opensAt).toISOString())}</button>
-              : now > closesAt ? <p className="error">Prazo de check-in encerrado às {fmtTime(new Date(closesAt).toISOString())}. Fale com o gestor da loja.</p>
+              : now > closesAt ? (
+                now <= endsAt ? (
+                  <div className="card stack">
+                    <p className="warn">Prazo de check-in encerrado às {fmtTime(new Date(closesAt).toISOString())}.</p>
+                    <button className="big primary" disabled={!!busy} onClick={() => openException({ type: 'CHECK_IN', reason: 'FORA_DO_HORARIO', error: 'Check-in depois da tolerância de 15 minutos' })}>Pedir check-in com atraso</button>
+                  </div>
+                ) : <p className="error">O horário desta vaga terminou.</p>
+              )
                 : action('CHECK_IN', 'Fazer check-in')
           )}
           {s.status === 'EM_ATIVIDADE' && s.breaks_used < s.break_count && action('PAUSE_START', 'Iniciar pausa', false)}
@@ -120,12 +200,30 @@ export default function Atividade() {
               {action('PAUSE_END', 'Retornar da pausa')}
             </>
           )}
+          {ACTIVE.includes(s.status) && now > endsAt && (
+            <p className="warn">Checkout pendente: o horário da vaga terminou. Após 30 minutos sem checkout, a atividade fica pendente para o gestor encerrar.</p>
+          )}
+          {s.status === 'PENDENTE_DE_EXCECAO' && pendingExc && (
+            <p className="notice">Solicitação de exceção ({label(pendingExc.type)}) enviada às {fmtTime(pendingExc.requested_at)}. Aguarde o gestor analisar.</p>
+          )}
+          {s.status === 'PENDENTE_DE_FECHAMENTO' && (
+            <form className="card stack" onSubmit={reportEnd}>
+              <p><b>Checkout pendente.</b> Informe o horário em que você saiu; o gestor vai encerrar a atividade.</p>
+              {s.reported_end_at && <p className="notice">Você informou saída às {fmtDateTime(s.reported_end_at)}.</p>}
+              <label>Horário de saída<input name="time" type="datetime-local" required defaultValue={toLocalInput(s.reported_end_at ?? s.ends_at)} /></label>
+              <label>Observação<input name="note" maxLength={500} /></label>
+              <button className="primary" disabled={!!busy}>{s.reported_end_at ? 'Atualizar horário' : 'Enviar horário'}</button>
+            </form>
+          )}
           {s.status === 'AGUARDANDO_CHECKIN' && <p className="muted">Check-in liberado de 2 horas antes até 15 minutos depois do início, a até {s.radius_m} m da loja.</p>}
         </div>
       )}
 
       {data.worked && (
-        <div className="card">Tempo trabalhado: <b>{fmtMinutes(data.worked.workedMin)}</b> · pausas: {fmtMinutes(data.worked.breakMin)}</div>
+        <div className="card">
+          Tempo trabalhado: <b>{fmtMinutes(data.worked.workedMin)}</b> · pausas: {fmtMinutes(data.worked.breakMin)}
+          <div className="muted">Origem: {data.worked.sources.map(label).join(', ')}</div>
+        </div>
       )}
 
       {data.events.length > 0 && (
@@ -134,7 +232,11 @@ export default function Atividade() {
           <table>
             <tbody>
               {data.events.map((e) => (
-                <tr key={e.id}><td>{label(e.type)}</td><td>{fmtTime(e.occurred_at)}</td><td className="muted">{Math.round(e.distance_m)} m da loja</td></tr>
+                <tr key={e.id}>
+                  <td>{label(e.type)}</td>
+                  <td>{fmtTime(e.occurred_at)}</td>
+                  <td className="muted">{label(e.validation)}{e.distance_m != null && ` · ${Math.round(e.distance_m)} m da loja`}</td>
+                </tr>
               ))}
             </tbody>
           </table>

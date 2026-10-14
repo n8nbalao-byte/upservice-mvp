@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkinWindowError, distanceMeters, isValidCpf, nextState, transitionError, workedTime } from '../server/rules.js';
+import { checkinWindowError, distanceMeters, exceptionWindowError, isValidCpf, nextState, transitionError, workedTime } from '../server/rules.js';
 
 test('distância: 0,0027° de latitude ≈ 300 m', () => {
   const d = distanceMeters({ lat: -23.55, lng: -46.63 }, { lat: -23.5527, lng: -46.63 });
@@ -34,8 +34,28 @@ test('máquina de estados da jornada', () => {
 test('horas = checkout - checkin - pausas; incompleta = null', () => {
   const ev = (type, hhmm) => ({ type, occurred_at: `2026-10-14T${hhmm}:00Z` });
   const events = [ev('CHECK_IN', '08:00'), ev('PAUSE_START', '10:00'), ev('PAUSE_END', '10:15'), ev('PAUSE_START', '12:00'), ev('PAUSE_END', '12:30'), ev('CHECK_OUT', '17:00')];
-  assert.deepEqual(workedTime(events), { workedMin: 8 * 60 + 15, breakMin: 45 });
+  assert.deepEqual(workedTime(events), { workedMin: 8 * 60 + 15, breakMin: 45, sources: ['GPS_VALIDADO'] });
   assert.equal(workedTime(events.slice(0, 3)), null);
+});
+
+test('horas: pausa aberta no fechamento administrativo conta como pausa; origens listadas', () => {
+  const events = [
+    { type: 'CHECK_IN', occurred_at: '2026-10-14T08:00:00Z', validation: 'EXCECAO_APROVADA' },
+    { type: 'PAUSE_START', occurred_at: '2026-10-14T12:00:00Z', validation: 'GPS_VALIDADO' },
+    { type: 'CHECK_OUT', occurred_at: '2026-10-14T13:00:00Z', validation: 'FECHAMENTO_ADMINISTRATIVO' },
+  ];
+  assert.deepEqual(workedTime(events), { workedMin: 4 * 60, breakMin: 60, sources: ['EXCECAO_APROVADA', 'GPS_VALIDADO', 'FECHAMENTO_ADMINISTRATIVO'] });
+});
+
+test('exceção de check-in: nunca para chegar cedo; atraso aceito até o término', () => {
+  const start = new Date('2026-10-14T11:00:00Z');
+  const end = new Date('2026-10-14T20:00:00Z');
+  const at = (min) => new Date(start.getTime() + min * 60000);
+  assert.match(exceptionWindowError('CHECK_IN', start, end, at(-121)), /2 horas/);
+  assert.equal(exceptionWindowError('CHECK_IN', start, end, at(60)), null, 'atrasado 1 h ainda pode pedir');
+  assert.match(exceptionWindowError('CHECK_IN', start, end, at(9 * 60 + 1)), /terminou/);
+  assert.equal(exceptionWindowError('CHECK_OUT', start, end, at(-500)), null, 'janela só vale para check-in');
+  assert.match(transitionError('PENDENTE_DE_EXCECAO', 'CHECK_OUT'), /exceção/);
 });
 
 test('CPF', () => {

@@ -12,7 +12,7 @@ const UNIT = { lat: -23.55, lng: -46.63 };
 const ADDR = { cep: '03653-000', street: 'Av. Amador Bueno da Veiga', number: '2521', district: 'Penha de França', city: 'São Paulo', uf: 'SP' };
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200)]).toString('base64');
 
-let server, base, q, closeDb, sweepBreaks;
+let server, base, q, closeDb, sweep;
 const s = {}; // estado compartilhado entre os testes, que rodam em sequência
 
 async function call(cookie, method, route, body) {
@@ -45,6 +45,25 @@ async function event(cookie, sessionId, type, where = UNIT, token) {
   return call(cookie, 'POST', `/api/sessions/${sessionId}/events`, { type, token, ...where, accuracy: 20, clientTs: new Date().toISOString(), selfie: JPEG });
 }
 
+async function approvedSession(worker, title) {
+  const starts = new Date(Date.now() + 3600e3);
+  const job = (await call(s.gestor, 'POST', '/api/manage/jobs', {
+    unitId: s.unitA, title, startsAt: starts, endsAt: new Date(starts.getTime() + 8 * 3600e3), positions: 1, dailyValue: 100, breakCount: 1, breakMinutes: 15, publish: true,
+  })).body.id;
+  assert.equal((await call(worker, 'POST', `/api/jobs/${job}/apply`, {})).status, 201);
+  const [app] = (await call(s.gestor, 'GET', `/api/manage/jobs/${job}/applications`)).body.applications;
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${app.id}/decide`, { decision: 'APROVADA' })).status, 200);
+  const [ws] = await q('SELECT id FROM work_sessions WHERE application_id = ?', [app.id]);
+  return { job, application: app.id, session: ws.id };
+}
+
+async function askException(cookie, sessionId, type, reason, extra = {}) {
+  const token = (await call(cookie, 'POST', `/api/sessions/${sessionId}/token`, {})).body.token;
+  return call(cookie, 'POST', `/api/sessions/${sessionId}/exceptions`, { type, token, reason, selfie: JPEG, errorMessage: 'GPS indisponível', message: 'Estou na loja', ...extra });
+}
+
+const sessionStatus = async (id) => (await q('SELECT status FROM work_sessions WHERE id = ?', [id]))[0].status;
+
 before(async () => {
   if (skip) return;
   const server0 = new URL(url);
@@ -59,7 +78,7 @@ before(async () => {
   delete process.env.SMTP_USER;
   await (await import('../server/migrate.js')).migrate(url);
   ({ q, closeDb } = await import('../server/db.js'));
-  ({ sweepBreaks } = await import('../server/routes/presence.js'));
+  ({ sweep } = await import('../server/routes/presence.js'));
   const { app } = await import('../server/app.js');
   server = app.listen(0);
   base = `http://localhost:${server.address().port}`;
@@ -161,7 +180,7 @@ test('presença: raio, token único, pausas e checkout', { skip }, async () => {
   assert.equal((await event(s.winner, s.session, 'CHECK_OUT')).status, 409, 'checkout em pausa');
 
   await q('UPDATE work_sessions SET break_ends_at = ? WHERE id = ?', [new Date(Date.now() - 1000), s.session]);
-  await sweepBreaks();
+  await sweep();
   const [ws] = await q('SELECT status, break_email_sent_at FROM work_sessions WHERE id = ?', [s.session]);
   assert.equal(ws.status, 'PAUSA_EXCEDIDA');
   assert.ok(ws.break_email_sent_at);
@@ -207,6 +226,82 @@ test('fila de documentos pendentes respeita o escopo do gestor', { skip }, async
   assert.ok(!gestor.includes('w4@test.dev'), 'gestor não vê quem não se candidatou nas suas lojas');
   assert.ok(gestor.includes('w1@test.dev'));
   assert.equal((await call(s.w1, 'GET', '/api/manage/documents/pending')).status, 403);
+});
+
+test('exceção de GPS: bloqueia novos registros, recusa volta, aprovação grava EXCECAO_APROVADA', { skip }, async () => {
+  const { session } = await approvedSession(s.w1, 'Exceção GPS');
+  const asked = await askException(s.w1, session, 'CHECK_IN', 'FORA_DO_RAIO', { lat: -23.56, lng: -46.63, accuracy: 20 });
+  assert.equal(asked.status, 201);
+  assert.equal(await sessionStatus(session), 'PENDENTE_DE_EXCECAO');
+  assert.equal((await event(s.w1, session, 'CHECK_IN')).status, 409, 'registro normal bloqueado enquanto pendente');
+  assert.equal((await askException(s.w1, session, 'CHECK_IN', 'OUTRO')).status, 409, 'uma exceção por vez');
+  assert.equal((await call(s.w1, 'POST', `/api/manage/exceptions/${asked.body.id}/decide`, { decision: 'APROVADA', reason: 'Tentando aprovar a própria' })).status, 403);
+  assert.equal((await call(s.w2, 'GET', `/api/files/exception/${asked.body.id}`)).status, 404);
+  assert.equal((await call(s.gestor, 'GET', `/api/files/exception/${asked.body.id}`)).status, 200);
+
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/exceptions/${asked.body.id}/decide`, { decision: 'RECUSADA', reason: 'Selfie sem rosto visível' })).status, 200);
+  assert.equal(await sessionStatus(session), 'AGUARDANDO_CHECKIN', 'recusa devolve ao estado anterior');
+
+  const again = await askException(s.w1, session, 'CHECK_IN', 'GPS_INDISPONIVEL');
+  const [exc] = await q('SELECT requested_at FROM presence_exceptions WHERE id = ?', [again.body.id]);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/exceptions/${again.body.id}/decide`, { decision: 'APROVADA', reason: 'Confirmei com o encarregado da loja' })).status, 200);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/exceptions/${again.body.id}/decide`, { decision: 'APROVADA', reason: 'Confirmei com o encarregado da loja' })).status, 409);
+  assert.equal(await sessionStatus(session), 'EM_ATIVIDADE');
+  const [ev] = await q('SELECT validation, occurred_at FROM presence_events WHERE work_session_id = ?', [session]);
+  assert.equal(ev.validation, 'EXCECAO_APROVADA', 'exceção nunca vira GPS validado');
+  assert.equal(+ev.occurred_at, +exc.requested_at, 'horário oficial é o do pedido');
+});
+
+test('check-in atrasado só por exceção; chegar cedo não tem exceção', { skip }, async () => {
+  const late = await approvedSession(s.w2, 'Atrasado');
+  await q('UPDATE jobs SET starts_at = ?, ends_at = ? WHERE id = ?', [new Date(Date.now() - 30 * 60e3), new Date(Date.now() + 7 * 3600e3), late.job]);
+  const normal = await event(s.w2, late.session, 'CHECK_IN');
+  assert.equal(normal.status, 422);
+  assert.match(normal.body.error, /15 minutos/);
+  const asked = await askException(s.w2, late.session, 'CHECK_IN', 'FORA_DO_HORARIO', { ...UNIT, accuracy: 15 });
+  assert.equal(asked.status, 201);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/exceptions/${asked.body.id}/decide`, { decision: 'APROVADA', reason: 'Atraso do ônibus, avisou o gestor' })).status, 200);
+  assert.equal(await sessionStatus(late.session), 'EM_ATIVIDADE');
+  s.lateSession = late;
+
+  const early = await approvedSession(s.w1, 'Cedo');
+  await q('UPDATE jobs SET starts_at = ? WHERE id = ?', [new Date(Date.now() + 3 * 3600e3), early.job]);
+  assert.equal((await askException(s.w1, early.session, 'CHECK_IN', 'GPS_INDISPONIVEL')).status, 422);
+});
+
+test('checkout esquecido: lembrete, pendência após 30 min e fechamento administrativo', { skip }, async () => {
+  const { session, job, application } = s.lateSession;
+  assert.equal((await event(s.w2, session, 'PAUSE_START')).status, 200);
+  // Leva os registros 2 h para trás, como numa jornada real.
+  await q('UPDATE presence_events SET occurred_at = occurred_at - INTERVAL 2 HOUR WHERE work_session_id = ?', [session]);
+
+  await q('UPDATE jobs SET starts_at = ?, ends_at = ? WHERE id = ?', [new Date(Date.now() - 9 * 3600e3), new Date(Date.now() - 10 * 60e3), job]);
+  await sweep();
+  const [ws] = await q('SELECT status, checkout_reminder_at FROM work_sessions WHERE id = ?', [session]);
+  assert.ok(ws.checkout_reminder_at, 'lembrete enviado após o término');
+  assert.notEqual(ws.status, 'PENDENTE_DE_FECHAMENTO', 'ainda dentro da tolerância de 30 min');
+
+  await q('UPDATE jobs SET ends_at = ? WHERE id = ?', [new Date(Date.now() - 31 * 60e3), job]);
+  await sweep();
+  assert.equal(await sessionStatus(session), 'PENDENTE_DE_FECHAMENTO');
+  const [audited] = await q("SELECT 1 FROM audit_events WHERE action = 'CHECKOUT_AUSENTE' AND entity_id = ?", [session]);
+  assert.ok(audited);
+  assert.equal((await event(s.w2, session, 'CHECK_OUT')).status, 409, 'sem checkout falso depois da tolerância');
+
+  const close = (body) => call(s.gestor, 'POST', `/api/manage/sessions/${session}/close`, { reason: 'Profissional esqueceu o checkout', ...body });
+  assert.equal((await close({ source: 'INFORMADO_PROFISSIONAL' })).status, 409, 'profissional ainda não informou');
+  const reported = new Date(Date.now() - 30 * 60e3);
+  assert.equal((await call(s.w2, 'POST', `/api/me/sessions/${session}/reported-end`, { time: reported, note: 'Saí às pressas' })).status, 200);
+  assert.equal((await close({ source: 'INFORMADO_PROFISSIONAL' })).status, 200);
+
+  const detail = (await call(s.w2, 'GET', `/api/me/sessions/${session}`)).body;
+  assert.equal(detail.session.status, 'FINALIZADA');
+  const out = detail.events.at(-1);
+  assert.equal(out.validation, 'FECHAMENTO_ADMINISTRATIVO');
+  assert.equal(out.closure_source, 'INFORMADO_PROFISSIONAL');
+  assert.equal(+new Date(out.occurred_at), +reported);
+  assert.deepEqual(detail.worked.sources.sort(), ['EXCECAO_APROVADA', 'FECHAMENTO_ADMINISTRATIVO', 'GPS_VALIDADO']);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${application}/confirm`, { result: 'CONCLUIDA' })).status, 200);
 });
 
 test('unidade bloqueada não recebe vagas; usuário bloqueado perde a sessão', { skip }, async () => {
