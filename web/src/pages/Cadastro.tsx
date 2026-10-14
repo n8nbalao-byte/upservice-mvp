@@ -95,7 +95,7 @@ export default function Cadastro() {
           <ul className="muted">
             <li>Ao fazer check-in, pausa, retorno e checkout, o app registra sua <b>localização GPS</b> e uma <b>selfie</b>, junto com o horário do servidor.</li>
             <li>Esses registros servem para comprovar sua presença na loja e calcular as horas da diária.</li>
-            <li>A localização só é lida no momento dessas ações; o app não rastreia você com a página fechada.</li>
+            <li>Durante a atividade, com a tela do app aberta, a localização também é conferida a cada 10 minutos. Na pausa e com a tela fechada, nada é lido. Guardamos só a última leitura e eventuais saídas do raio da loja, nunca o trajeto.</li>
             <li>Selfies e documentos são vistos apenas por gestores da loja e administradores da UpService, e todo acesso fica registrado.</li>
             <li>Os dados são mantidos por 5 anos. Você pode consultar e atualizar seus próprios dados a qualquer momento.</li>
           </ul>

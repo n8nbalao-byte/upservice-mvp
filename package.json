@@ -15,7 +15,8 @@
     "migrate": "node --env-file-if-exists=.env server/migrate.js",
     "make-admin": "node --env-file-if-exists=.env server/make-admin.js",
     "typecheck": "tsc -p web",
-    "test": "node --env-file-if-exists=.env --test test/*.test.js"
+    "test": "node --env-file-if-exists=.env --test test/*.test.js",
+    "loadtest": "node --env-file-if-exists=.env scripts/loadtest.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.1.2",

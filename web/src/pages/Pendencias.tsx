@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useInbox } from '../App';
 import { fmtDateTime, fmtTime, label } from '../lib/api';
 
-const ORDER = ['EXCECAO', 'CHECKOUT_PENDENTE', 'CONTESTACAO', 'OCORRENCIA', 'CANDIDATURA', 'DOCUMENTO'];
+const ORDER = ['SAIDA_DO_RAIO', 'EXCECAO', 'CHECKOUT_PENDENTE', 'CONTESTACAO', 'OCORRENCIA', 'CANDIDATURA', 'DOCUMENTO'];
 
 /** Tudo o que espera decisão do gestor/admin. Atualiza sozinha (App consulta a cada 20 s) e avisa quando surge algo novo. */
 export default function Pendencias() {

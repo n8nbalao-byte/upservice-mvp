@@ -29,6 +29,8 @@ PWA para a UpService: cadastro aberto de profissionais (Google), documentos, uni
 | Confirmar ou cancelar ocorrências; registrar ocorrência manual | | suas lojas | todas |
 | Bloquear permanentemente, reativar, decidir contestações | | quem se candidatou nas suas lojas | todos |
 | Ver as próprias ocorrências e bloqueios e contestar | ✅ (inclusive bloqueado) | | |
+| Relatórios e exportação CSV | | suas lojas | todas |
+| Alertas de saída do raio ("Ciente") | | suas lojas | todas |
 | Encerrar checkout esquecido (fechamento administrativo) | | suas lojas | todas |
 | Ver e aprovar documentos (aba Documentos) | | quem se candidatou nas suas lojas | todos |
 | Unidades: cadastrar, editar, bloquear ou inativar | | ❌ | ✅ |
@@ -55,6 +57,7 @@ Com `DEV_LOGIN=1` a tela de login aceita só o e-mail (sem Google; o servidor re
 ```bash
 npm test          # regras puras + integração da API (precisa de TEST_DATABASE_URL; o banco de teste é apagado e recriado)
 npm run typecheck
+npm run loadtest  # carga local: cria o banco descartável upservice_load (nunca apontar para produção)
 ```
 
 ## Produção (Hostinger)
@@ -84,7 +87,7 @@ Logs da aplicação: `$H/current/nodejs/console.log`. Logs de deploy: `$H/logs/<
 
 ## Limites conhecidos
 
-- A PWA não lê GPS com a página fechada; o painel mostra o status do último registro, não presença contínua.
+- A PWA não lê GPS com a página fechada: com a tela da atividade aberta, confere a cada 10 min; fechada, o painel mostra "localização não atualizada". Nunca afirma presença contínua.
 - O GPS do navegador pode ser falsificado; selfie, token único e auditoria reduzem, mas não eliminam.
 - A varredura (avisos de pausa e checkout, `PENDENTE_DE_FECHAMENTO`, ocorrências automáticas e fim de bloqueios temporários) roda num `setInterval` do processo; se a Hostinger hibernar o app, mover para cron.
 - As notificações do painel funcionam com a página aberta (em qualquer aba). Com o navegador fechado, o aviso chega só por e-mail; push com o app fechado exigiria Web Push (service worker + chaves VAPID).

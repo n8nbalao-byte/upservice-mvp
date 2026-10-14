@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkinWindowError, distanceMeters, exceptionWindowError, isStrike, isValidCpf, nextState, transitionError, workedTime } from '../server/rules.js';
+import { checkinWindowError, csvCell, distanceMeters, exceptionWindowError, isStrike, isValidCpf, nextState, transitionError, workedTime } from '../server/rules.js';
 
 test('distância: 0,0027° de latitude ≈ 300 m', () => {
   const d = distanceMeters({ lat: -23.55, lng: -46.63 }, { lat: -23.5527, lng: -46.63 });
@@ -64,6 +64,17 @@ test('só falta confirmada e ainda não usada num bloqueio conta para as 3 falta
   assert.ok(!isStrike({ type: 'FALTA', status: 'CANCELADA', penalty_id: null }));
   assert.ok(!isStrike({ type: 'FALTA', status: 'CONFIRMADA', penalty_id: 'p1' }), 'contagem recomeça depois do bloqueio');
   assert.ok(!isStrike({ type: 'PAUSA_EXCEDIDA', status: 'CONFIRMADA', penalty_id: null }));
+});
+
+test('CSV: aspas, separador e fórmulas neutralizadas', () => {
+  assert.equal(csvCell('Loja A'), '"Loja A"');
+  assert.equal(csvCell('a;b'), '"a;b"');
+  assert.equal(csvCell('diz "oi"'), '"diz ""oi"""');
+  assert.equal(csvCell('=HYPERLINK("x")'), '"\'=HYPERLINK(""x"")"');
+  assert.equal(csvCell('+5'), '"\'+5"');
+  assert.equal(csvCell('@SUM(A1)'), '"\'@SUM(A1)"');
+  assert.equal(csvCell(null), '""');
+  assert.equal(csvCell(150.5), '"150.5"');
 });
 
 test('CPF', () => {

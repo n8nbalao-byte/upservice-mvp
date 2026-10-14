@@ -14,7 +14,7 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 | 2 | Presença, selfie, GPS e pausas | ✅ em produção |
 | 3 | Horas, notificações e exceções | ✅ em produção |
 | 4 | Punições, bloqueios e contestação | ✅ em produção |
-| 5 | Monitoramento, relatórios e escala | ⬜ próximo |
+| 5 | Monitoramento, relatórios e escala | ✅ em produção |
 
 ## Itens da linha de base (seção 11, 52 PRs)
 
@@ -26,7 +26,7 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 | 2 | Bootstrap da aplicação | ✅ | Express 5 + React/Vite/TS |
 | 3 | CI/CD e ambientes | 🟡 | Deploy automático na Hostinger a cada push no `main`. Sem GitHub Actions e sem ambiente de homologação separado |
 | 4 | Google Auth | ✅ | Projeto Google Cloud `upservice-511606`, app publicado |
-| 5 | Banco e migrations | ✅ | MariaDB 11.8 na Hostinger; migrations 001 a 004 aplicadas |
+| 5 | Banco e migrations | ✅ | MariaDB 11.8 na Hostinger; migrations 001 a 005 aplicadas |
 | 6 | Storage privado de documentos e selfies | ✅ | `~/upservice-storage` (fora do deploy, permissão 700); acesso só por `/api/files/*` |
 | 7 | Matriz de autorização | ✅ | Ver README → Perfis e permissões; testes de escopo em `test/api.test.js` |
 | 8 | Auditoria e logs | 🟡 | `audit_events` append-only (login, cadastro, vagas, decisões, presença recusada, exceções, checkout ausente, fechamentos, ocorrências, bloqueios, contestações, visualização de documentos e selfies). Sem tela de consulta |
@@ -73,25 +73,25 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 | 34 | Bloqueio temporário de profissional | ✅ | 3 faltas confirmadas desde o último bloqueio → 15 dias; vagas aprovadas futuras liberadas; aviso por e-mail |
 | 35 | Reativação | ✅ | Automática no fim do prazo (varredura) ou manual por gestor/admin com justificativa |
 | 36 | Bloqueio permanente manual e auditado | ✅ | Gestor (suas lojas) ou admin, justificativa + confirmação digitada (BLOQUEAR), aviso e auditoria |
-| 37 | Painel operacional por loja | 🟡 | "Atividades" com contadores por status, selfies e horas; central de **Pendências** com aviso sonoro e notificação do navegador |
-| 38 | Indicadores consolidados | ⬜ | Marco 5 |
+| 37 | Painel operacional por loja | ✅ | "Atividades": contadores por status, selfies, horas, última localização e alertas de saída; central de **Pendências** com som e notificação do navegador |
+| 38 | Indicadores consolidados | ✅ | Tela Relatórios: vagas, posições, candidaturas, diárias, faltas, horas, valor, origem dos registros, exceções, ocorrências e alertas; por unidade |
 | 39 | Atualização periódica do painel | ✅ | Atividades a cada 30 s; Pendências e Ocorrências a cada 20 s, com horário da última atualização |
-| 40 | Alertas de localização com a página ativa | ⬜ | Marco 5 |
-| 41 | Relatórios de presença, diárias, horas e exceções | ⬜ | Marco 5 |
-| 42 | Exportação CSV segura | ⬜ | Marco 5 |
+| 40 | Alertas de localização com a página ativa | ✅ | A cada 10 min com a tela da atividade aberta (não na pausa); guarda só a última leitura e as saídas do raio; e-mail e central para o gestor; "localização não atualizada" após 20 min sem leitura |
+| 41 | Relatórios de presença, diárias, horas e exceções | ✅ | Até 31 dias; gestor vê as lojas dele, admin vê todas; horas gravadas no fechamento da jornada |
+| 42 | Exportação CSV segura | ✅ | UTF-8 com BOM, `;`, fórmulas neutralizadas, sem documentos nem e-mail, auditada; admin (tudo) e gestor (suas lojas) |
 
 ### Validação e entrega
 
 | # | Item | Status | Observação |
 |---|---|---|---|
-| 43 | Testes E2E | 🟡 | Integração da API contra MariaDB (26 testes no total); sem E2E de navegador |
+| 43 | Testes E2E | 🟡 | Integração da API contra MariaDB (30 testes no total); sem E2E de navegador |
 | 44 | Testes de autorização | ✅ | Papel via payload, escopo de unidade, selfies e documentos alheios |
 | 45 | Testes de documentos e storage privado | ✅ | |
 | 46 | Testes de GPS, câmera e permissões | ⬜ | Precisa de celular real na loja |
 | 47 | Testes de pausas e notificações | 🟡 | Automatizados; e-mail real ainda não recebido em teste |
 | 48 | Testes de punições e bloqueios | ✅ | 3 faltas, modo restrito, contestação, reativação automática, bloqueio permanente e escopo do gestor |
 | 49 | Testes em Android e rede móvel | ⬜ | |
-| 50 | Teste de carga | ⬜ | Marco 5 |
+| 50 | Teste de carga | ✅ | `npm run loadtest` (local): 104 lojas, 3.000 profissionais, 2.800 vagas, 14 mil candidaturas; 0 erros; resultados abaixo |
 | 51 | Homologação | 🟡 | Em andamento com usuários reais |
 | 52 | Deploy controlado | ✅ | Produção ativa |
 
@@ -119,7 +119,7 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 | Punições diferenciam falta confirmada de falha técnica | ✅ |
 | Bloqueios preservam o histórico | ✅ |
 | Painel mostra a última atualização | ✅ |
-| Aviso de localização não atualizada com a página fechada | ⬜ Marco 5 |
+| Aviso de localização não atualizada com a página fechada | ✅ |
 | Selfies e documentos com acesso controlado e auditado | ✅ |
 | Backups e restauração testados | ⬜ |
 | Privacidade e retenção aprovadas antes do uso real | 🟡 textos publicados, falta revisão jurídica |
@@ -142,9 +142,32 @@ Decisões tomadas em 14/10/2026: as 3 faltas contam **desde o último bloqueio**
 - **Segurança (revisão automática pós-merge):** gestor só reverte bloqueio que ele mesmo aplicou ou bloqueio automático com falta de loja dele (o do admin, só o admin reverte); contestação de ocorrência só é decidida por gestor da loja da ocorrência. Teste de regressão incluído (26 testes).
 - **Correção:** a rota de pedido de exceção aceitava só 100 KB; selfies reais de celular falhavam. Agora aceita até 1 MB, como o registro normal, com teste usando uma selfie de 400 KB.
 
-## Próximo: Marco 5 — Monitoramento, relatórios e escala
+## Marco 5 — entregue
 
-Indicadores consolidados (item 38), alerta de localização com a página ativa (40), relatórios de presença, diárias, horas e exceções (41), exportação CSV segura (42), testes de carga (50) e de Android em rede móvel (49).
+Decisões tomadas em 14/10/2026: verificação de localização **a cada 10 minutos**; CSV exportado por **admin (tudo) e gestor (lojas dele)**.
+
+- **Monitoramento (v4.0 §9):** com a tela da atividade aberta e visível, em atividade (não na pausa), o app confere o GPS a cada 10 min e ao voltar para a aba. Guarda só a última leitura; fora do raio, com leitura confiável, cria um alerta (no máximo um a cada 30 min) que vai para a central e por e-mail ao gestor, que marca "Ciente". Sem leitura há 20 min, o painel mostra "localização não atualizada". A política de privacidade e o texto de aceite foram atualizados.
+- **Relatórios:** indicadores, consolidado por unidade e lista de diárias (até 31 dias), com origem dos registros (GPS, exceção, fechamento administrativo).
+- **CSV:** colunas de unidade, vaga, profissional, jornada, entrada e saída, horas, pausas, origem, resultado, valor, confirmação, ocorrências e observação.
+- **Horas gravadas** na jornada no momento do fechamento (as antigas são calculadas na primeira consulta).
+
+### Teste de carga (Docker local, MariaDB 11, Windows; 14/10/2026)
+
+| Rota | Requisições | Concorrência | p50 | p95 | Erros |
+|---|---:|---:|---:|---:|---:|
+| GET /jobs (profissional, por proximidade) | 1.000 | 50 | 283 ms | 376 ms | 0 |
+| POST /sessions/:id/ping | 1.000 | 50 | 97 ms | 166 ms | 0 |
+| GET /manage/inbox (gestor) | 500 | 20 | 293 ms | 378 ms | 0 |
+| GET /manage/inbox (admin, 104 lojas) | 300 | 10 | 478 ms | 634 ms | 0 |
+| GET /manage/sessions (gestor, dia) | 500 | 20 | 287 ms | 433 ms | 0 |
+| GET /manage/reports (admin, 7 dias, 104 lojas) | 30 | 3 | 896 ms | 1,6 s | 0 |
+| GET /manage/reports/export.csv (admin, 7 dias) | 10 | 2 | 561 ms | 1,2 s | 0 |
+
+O teste mostrou o CSV levando 6–10 s por causa da formatação de datas; com formatadores reutilizados, caiu para ~0,6 s. Os números são de uma máquina local: a hospedagem compartilhada da Hostinger pode ter outro desempenho, e o teste **não** é rodado contra produção.
+
+## Próximo
+
+Pendências de validação, sem marco de desenvolvimento aberto: teste em Android real numa loja (item 49), teste de restauração de backup (9), revisão jurídica da política de privacidade e dos termos (10), templates de governança do repositório (1) e CI no GitHub Actions (3).
 
 ## Pendências de operação
 

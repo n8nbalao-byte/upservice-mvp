@@ -16,6 +16,7 @@ import Login from './pages/Login';
 import Minhas from './pages/Minhas';
 import Ocorrencias from './pages/Ocorrencias';
 import Pendencias from './pages/Pendencias';
+import Relatorios from './pages/Relatorios';
 import Vagas from './pages/Vagas';
 
 const MeContext = createContext<{ me: Me; reload: () => Promise<void> }>(null!);
@@ -98,6 +99,7 @@ export default function App() {
                   <NavLink to="/gestao/atividades">Atividades</NavLink>
                   <NavLink to="/gestao/documentos">Documentos</NavLink>
                   <NavLink to="/gestao/ocorrencias">Ocorrências</NavLink>
+                  <NavLink to="/gestao/relatorios">Relatórios</NavLink>
                   {role === 'ADMINISTRADOR' && <NavLink to="/admin/unidades">Unidades</NavLink>}
                   {role === 'ADMINISTRADOR' && <NavLink to="/admin/usuarios">Usuários</NavLink>}
                 </>
@@ -131,6 +133,7 @@ export default function App() {
                 <Route path="/gestao/profissionais/:id" element={<GestaoProfissional />} />
                 <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
                 <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />
+                <Route path="/gestao/relatorios" element={<Relatorios />} />
                 {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
                 <Route path="*" element={<Navigate to="/gestao/pendencias" />} />
