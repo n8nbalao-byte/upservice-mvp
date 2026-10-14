@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { api, isBlocked, type Me } from './lib/api';
 import { beep } from './lib/device';
+import { Shell } from './components/Shell';
+import { DialogProvider, Loading } from './components/ui';
 import AdminUnidades from './pages/AdminUnidades';
 import AdminUsuarios from './pages/AdminUsuarios';
 import Atividade from './pages/Atividade';
@@ -71,43 +73,17 @@ export default function App() {
   const role = me?.user.role;
   const inbox = useInboxPolling(role === 'GESTOR' || role === 'ADMINISTRADOR');
 
-  if (me === undefined) return <p className="page">Carregando…</p>;
-  if (!me) return <Login onLogin={reload} />;
+  if (me === undefined) return <div className="login-wrap"><Loading /></div>;
+  if (!me) return <DialogProvider><Login onLogin={reload} /></DialogProvider>;
 
   const blocked = role === 'PROFISSIONAL' && isBlocked(me.user.status);
   const logout = () => api('/auth/logout', { body: {} }).then(() => setMe(null));
   return (
     <MeContext.Provider value={{ me, reload }}>
       <InboxContext.Provider value={inbox}>
+        <DialogProvider>
         <BrowserRouter>
-          <header className="top">
-            <strong>UpService</strong>
-            <nav>
-              {role === 'PROFISSIONAL' ? (
-                <>
-                  {!blocked && <NavLink to="/vagas">Vagas</NavLink>}
-                  {!blocked && <NavLink to="/minhas">Minhas diárias</NavLink>}
-                  {!blocked && <NavLink to="/cadastro">Cadastro</NavLink>}
-                  <NavLink to="/ocorrencias">Ocorrências</NavLink>
-                </>
-              ) : (
-                <>
-                  <NavLink to="/gestao/pendencias" className="bell" title="Pendências">
-                    🔔 Pendências{inbox.items.length > 0 && <span className="count">{inbox.items.length}</span>}
-                  </NavLink>
-                  <NavLink to="/gestao/vagas">Vagas</NavLink>
-                  <NavLink to="/gestao/atividades">Atividades</NavLink>
-                  <NavLink to="/gestao/documentos">Documentos</NavLink>
-                  <NavLink to="/gestao/ocorrencias">Ocorrências</NavLink>
-                  <NavLink to="/gestao/relatorios">Relatórios</NavLink>
-                  {role === 'ADMINISTRADOR' && <NavLink to="/admin/unidades">Unidades</NavLink>}
-                  {role === 'ADMINISTRADOR' && <NavLink to="/admin/usuarios">Usuários</NavLink>}
-                </>
-              )}
-              <button className="link" onClick={logout}>Sair</button>
-            </nav>
-          </header>
-          <main className="page">
+          <Shell me={me} inboxCount={inbox.items.length} onLogout={logout}>
             {role === 'PROFISSIONAL' ? (
               blocked ? (
                 <Routes>
@@ -139,8 +115,9 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/gestao/pendencias" />} />
               </Routes>
             )}
-          </main>
+          </Shell>
         </BrowserRouter>
+        </DialogProvider>
       </InboxContext.Provider>
     </MeContext.Provider>
   );

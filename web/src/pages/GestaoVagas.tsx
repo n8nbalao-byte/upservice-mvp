@@ -1,13 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useMe } from '../App';
-import { api, fmtDateTime, fmtMoney, fmtTime, label, todayBR, type Unit } from '../lib/api';
+import { Icon } from '../components/icons';
+import { Alert, EmptyState, Loading, PageHeader, Progress, StatusBadge, useAction, useDialog } from '../components/ui';
+import { api, fmtMoney, fmtTime, label, todayBR, type Unit } from '../lib/api';
+
+const store = {
+  get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento */ } },
+};
 
 /** Seletor de unidade compartilhado pelas telas de gestão; lembra a última escolha. */
 export function useUnitPicker(initialId?: string | null) {
-  const [units, setUnits] = useState<Unit[]>([]);
-  const [unitId, setUnitIdState] = useState(() => initialId || localStorage.getItem('unitId') || '');
-  const setUnitId = (id: string) => { localStorage.setItem('unitId', id); setUnitIdState(id); };
+  const [units, setUnits] = useState<Unit[]>();
+  const [unitId, setUnitIdState] = useState(() => initialId || store.get('unitId') || '');
+  const setUnitId = (id: string) => { store.set('unitId', id); setUnitIdState(id); };
   useEffect(() => {
     api<Unit[]>('/units').then((list) => {
       setUnits(list);
@@ -17,88 +24,149 @@ export function useUnitPicker(initialId?: string | null) {
   const picker = (
     <label>Unidade
       <select value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-        {units.map((u) => <option key={u.id} value={u.id}>{u.code} · {u.name}{u.status !== 'ATIVA' ? ` (${label(u.status)})` : ''}</option>)}
+        {(units ?? []).map((u) => <option key={u.id} value={u.id}>{u.code} · {u.name}{u.status !== 'ATIVA' ? ` (${label(u.status)})` : ''}</option>)}
       </select>
     </label>
   );
-  return { units, unitId, unit: units.find((u) => u.id === unitId), picker };
+  return { units: units ?? [], loaded: !!units, unitId, unit: units?.find((u) => u.id === unitId), picker };
+}
+
+const TABS = [
+  { key: 'ABERTA', text: 'Abertas' },
+  { key: 'RASCUNHO', text: 'Rascunhos' },
+  { key: 'ENCERRADA', text: 'Encerradas' },
+  { key: 'CANCELADA', text: 'Canceladas' },
+  { key: '', text: 'Todas' },
+];
+const dateBR = (s: string) => new Date(s).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit' });
+
+function NewJob({ unitId, onDone, onCancel }: { unitId: string; onDone: () => void; onCancel: () => void }) {
+  const { busy, run } = useAction();
+  function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
+    const startsAt = new Date(`${f.date}T${f.start}`);
+    const endsAt = new Date(`${f.date}T${f.end}`);
+    if (endsAt <= startsAt) endsAt.setDate(endsAt.getDate() + 1); // turno que vira a noite
+    run('create', () => api('/manage/jobs', {
+      body: { unitId, title: f.title, description: f.description, startsAt, endsAt, positions: f.positions, dailyValue: f.dailyValue, breakCount: f.breakCount, breakMinutes: f.breakMinutes, publish: f.publish === 'on' },
+    }), f.publish === 'on' ? 'Vaga publicada.' : 'Rascunho salvo.').then((ok) => ok && onDone());
+  }
+  return (
+    <form className="card form" onSubmit={submit}>
+      <div className="card-header"><h2>Nova vaga</h2><span className="sub">Todos os horários no fuso de Brasília</span></div>
+      <div className="cols">
+        <label>Título<input name="title" required defaultValue="Repositor" /></label>
+        <label>Data<input name="date" type="date" required defaultValue={todayBR()} /></label>
+        <label>Início<input name="start" type="time" required defaultValue="08:00" /></label>
+        <label>Término<input name="end" type="time" required defaultValue="17:00" /><span className="hint">Antes do início = termina no dia seguinte</span></label>
+      </div>
+      <div className="cols">
+        <label>Posições<input name="positions" type="number" min={1} max={500} required defaultValue={1} /></label>
+        <label>Valor da diária (R$)<input name="dailyValue" type="number" min={0} step="0.01" required placeholder="0,00" /></label>
+        <label>Quantidade de pausas<input name="breakCount" type="number" min={0} max={3} required defaultValue={1} /></label>
+        <label>Duração de cada pausa (min)<input name="breakMinutes" type="number" min={1} max={120} required defaultValue={15} /></label>
+      </div>
+      <label>Descrição <span className="hint">(opcional)</span><textarea name="description" rows={2} maxLength={1000} placeholder="Atividades, uniforme, ponto de encontro…" /></label>
+      <div className="row between">
+        <label className="check"><input name="publish" type="checkbox" defaultChecked /> Publicar agora (profissionais já podem se candidatar)</label>
+        <div className="row">
+          <button type="button" onClick={onCancel}>Cancelar</button>
+          <button className="primary" disabled={busy === 'create'}>{busy === 'create' ? 'Salvando…' : 'Criar vaga'}</button>
+        </div>
+      </div>
+    </form>
+  );
 }
 
 export default function GestaoVagas() {
   const { me } = useMe();
-  const { units, unitId, unit, picker } = useUnitPicker();
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [error, setError] = useState('');
+  const { confirm } = useDialog();
+  const { busy, run } = useAction();
+  const { units, loaded, unitId, unit, picker } = useUnitPicker();
+  const [jobs, setJobs] = useState<any[]>();
+  const [tab, setTab] = useState('ABERTA');
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
 
-  const load = async () => { if (unitId) await api(`/manage/jobs?unitId=${unitId}`).then(setJobs, (e) => setError(e.message)); };
-  useEffect(() => { load(); }, [unitId]);
+  const load = async () => { if (unitId) await api<any[]>(`/manage/jobs?unitId=${unitId}`).then(setJobs, (e) => setError(e.message)); };
+  useEffect(() => { setJobs(undefined); load(); }, [unitId]);
 
-  async function create(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
-    setError('');
-    try {
-      const startsAt = new Date(`${f.date}T${f.start}`);
-      const endsAt = new Date(`${f.date}T${f.end}`);
-      if (endsAt <= startsAt) endsAt.setDate(endsAt.getDate() + 1); // turno que vira a noite
-      await api('/manage/jobs', {
-        body: { unitId, title: f.title, description: f.description, startsAt, endsAt, positions: f.positions, dailyValue: f.dailyValue, breakCount: f.breakCount, breakMinutes: f.breakMinutes, publish: f.publish === 'on' },
+  async function setStatus(j: any, status: string) {
+    if (status === 'CANCELADA') {
+      const ok = await confirm({
+        title: 'Cancelar esta vaga?',
+        message: `${j.title} · ${dateBR(j.starts_at)} ${fmtTime(j.starts_at)}. A vaga sai da vitrine; candidaturas aprovadas não são canceladas automaticamente.`,
+        confirmText: 'Cancelar vaga', tone: 'danger',
       });
-      setCreating(false);
-      load();
-    } catch (err: any) {
-      setError(err.message);
+      if (!ok) return;
     }
+    const done = { ABERTA: 'Vaga publicada.', ENCERRADA: 'Vaga encerrada.', CANCELADA: 'Vaga cancelada.' }[status];
+    await run(`${j.id}:${status}`, () => api(`/manage/jobs/${j.id}/status`, { body: { status } }), done);
+    load();
   }
 
-  async function setStatus(id: string, status: string) {
-    if (status === 'CANCELADA' && !confirm('Cancelar esta vaga?')) return;
-    await api(`/manage/jobs/${id}/status`, { body: { status } }).then(load, (e) => setError(e.message));
+  if (loaded && !units.length) {
+    return <div className="page"><PageHeader title="Vagas" /><div className="card"><EmptyState icon="store" title="Nenhuma unidade vinculada" text="Peça a um administrador para vincular sua conta a uma ou mais lojas." /></div></div>;
   }
 
-  if (!units.length) return <p className="muted">Nenhuma unidade vinculada à sua conta. Peça a um administrador.</p>;
+  const count = (key: string) => (jobs ?? []).filter((j) => !key || j.status === key).length;
+  const shown = (jobs ?? []).filter((j) => !tab || j.status === tab);
 
   return (
-    <div className="stack">
-      <h1>Vagas</h1>
-      <div className="row between">{picker}<button className="primary" onClick={() => setCreating(!creating)}>Nova vaga</button></div>
-      {error && <p className="error">{error}</p>}
-      {unit && unit.status !== 'ATIVA' && <p className="notice">Unidade {label(unit.status)}: não recebe novas vagas. {unit.status_reason}</p>}
+    <div className="page">
+      <PageHeader
+        title="Vagas"
+        description="Publique vagas e acompanhe o preenchimento de cada uma."
+        actions={<button className="primary" onClick={() => setCreating(true)} disabled={unit?.status !== 'ATIVA'}><Icon name="plus" size={18} />Nova vaga</button>}
+      />
+      <div className="filters">{picker}</div>
+      {error && <Alert kind="danger">{error}</Alert>}
+      {unit && unit.status !== 'ATIVA' && <Alert kind="warning">Unidade {label(unit.status).toLowerCase()}: não recebe novas vagas.{unit.status_reason && ` Motivo: ${unit.status_reason}`}</Alert>}
 
-      {creating && (
-        <form className="card stack" onSubmit={create}>
-          <div className="cols">
-            <label>Título<input name="title" required defaultValue="Repositor" /></label>
-            <label>Data<input name="date" type="date" required defaultValue={todayBR()} /></label>
-            <label>Início<input name="start" type="time" required defaultValue="08:00" /></label>
-            <label>Término<input name="end" type="time" required defaultValue="17:00" /></label>
-            <label>Posições<input name="positions" type="number" min={1} max={500} required defaultValue={1} /></label>
-            <label>Valor da diária (R$)<input name="dailyValue" type="number" min={0} step="0.01" required /></label>
-            <label>Quantidade de pausas<input name="breakCount" type="number" min={0} max={3} required defaultValue={1} /></label>
-            <label>Duração de cada pausa (min)<input name="breakMinutes" type="number" min={1} max={120} required defaultValue={15} /></label>
-          </div>
-          <label>Descrição<textarea name="description" rows={2} maxLength={1000} /></label>
-          <label className="check"><input name="publish" type="checkbox" defaultChecked /> Publicar agora</label>
-          <button className="primary">Criar vaga</button>
-        </form>
-      )}
+      {creating && unitId && <NewJob unitId={unitId} onCancel={() => setCreating(false)} onDone={() => { setCreating(false); setTab('ABERTA'); load(); }} />}
 
-      {jobs.length === 0 && <p className="muted">Nenhuma vaga nesta unidade.</p>}
-      {jobs.map((j) => (
-        <div key={j.id} className="card stack">
-          <div className="row between"><b>{j.title}</b><span className="badge">{label(j.status)}</span></div>
-          <div>{fmtDateTime(j.starts_at)} até {fmtTime(j.ends_at)} · {fmtMoney(j.daily_value)}</div>
-          <div className="muted">{j.approved}/{j.positions} aprovados · {j.pending} pendente(s) · {j.break_count} pausa(s) de {j.break_minutes} min</div>
-          <div className="row">
-            <Link className="button" to={`/gestao/vagas/${j.id}`}>Candidaturas</Link>
-            {j.status === 'RASCUNHO' && <button onClick={() => setStatus(j.id, 'ABERTA')}>Publicar</button>}
-            {j.status === 'ABERTA' && <button onClick={() => setStatus(j.id, 'ENCERRADA')}>Encerrar</button>}
-            {j.status === 'ENCERRADA' && me.user.role === 'ADMINISTRADOR' && <button onClick={() => setStatus(j.id, 'ABERTA')}>Reabrir</button>}
-            {(j.status === 'RASCUNHO' || j.status === 'ABERTA') && <button className="danger" onClick={() => setStatus(j.id, 'CANCELADA')}>Cancelar</button>}
-          </div>
+      <div className="card tight">
+        <div className="tabs" role="tablist">
+          {TABS.map((t) => (
+            <button key={t.key} role="tab" aria-selected={tab === t.key} className={`tab${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>
+              {t.text}<span className="count">{count(t.key)}</span>
+            </button>
+          ))}
         </div>
-      ))}
+        {!jobs ? <Loading /> : shown.length === 0 ? (
+          <EmptyState icon="briefcase" title={tab ? `Nenhuma vaga ${TABS.find((t) => t.key === tab)?.text.toLowerCase()}` : 'Nenhuma vaga nesta unidade'} text="Crie uma vaga para começar a receber candidaturas." />
+        ) : (
+          <div className="table-wrap">
+            <table className="responsive">
+              <thead>
+                <tr><th>Data</th><th>Vaga</th><th>Preenchimento</th><th className="num">Pendentes</th><th className="num">Diária</th><th>Status</th><th>Ações</th></tr>
+              </thead>
+              <tbody>
+                {shown.map((j) => (
+                  <tr key={j.id}>
+                    <td data-label="Data"><span className="strong">{dateBR(j.starts_at)}</span><span className="muted">{fmtTime(j.starts_at)}–{fmtTime(j.ends_at)}</span></td>
+                    <td data-label="Vaga"><span className="strong">{j.title}</span><span className="muted">{j.break_count ? `${j.break_count} pausa(s) de ${j.break_minutes} min` : 'Sem pausas'}</span></td>
+                    <td data-label="Preenchimento"><Progress value={Number(j.approved)} total={j.positions} /></td>
+                    <td data-label="Pendentes" className="num">{Number(j.pending) > 0 ? <StatusBadge tone="warning">{j.pending}</StatusBadge> : <span className="muted">0</span>}</td>
+                    <td data-label="Diária" className="num">{fmtMoney(j.daily_value)}</td>
+                    <td data-label="Status"><StatusBadge status={j.status} /></td>
+                    <td data-label="Ações">
+                      <div className="row">
+                        <Link className="btn sm dark" to={`/gestao/vagas/${j.id}`}>Candidaturas{Number(j.pending) > 0 && ` (${j.pending})`}</Link>
+                        {j.status === 'RASCUNHO' && <button className="sm" disabled={!!busy} onClick={() => setStatus(j, 'ABERTA')}>Publicar</button>}
+                        {j.status === 'ABERTA' && <button className="sm" disabled={!!busy} onClick={() => setStatus(j, 'ENCERRADA')}>Encerrar</button>}
+                        {j.status === 'ENCERRADA' && me.user.role === 'ADMINISTRADOR' && <button className="sm" disabled={!!busy} onClick={() => setStatus(j, 'ABERTA')}>Reabrir</button>}
+                        {(j.status === 'RASCUNHO' || j.status === 'ABERTA') && <button className="sm ghost text-danger" disabled={!!busy} onClick={() => setStatus(j, 'CANCELADA')}>Cancelar</button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
