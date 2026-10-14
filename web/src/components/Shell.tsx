@@ -1,11 +1,12 @@
-// Estrutura do app: barra lateral (desktop, recolhível), gaveta (celular), abas inferiores do profissional e barra superior.
-import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { isBlocked, label, type Me } from '../lib/api';
+// Estrutura do app: barra lateral (desktop, recolhível), gaveta (celular), abas inferiores do profissional e barra superior com busca.
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
+import { api, fmtDate, isBlocked, label, type Me } from '../lib/api';
 import { Icon, type IconName } from './icons';
 
 type Item = { to: string; text: string; icon: IconName; count?: number };
-type Group = { title?: string; items: Item[] };
+type Group = { items: Item[] };
+type Results = { workers: { id: string; name: string; status: string }[]; jobs: { id: string; title: string; starts_at: string; unit_name: string }[]; units: { id: string; code: string; name: string }[] };
 
 const store = {
   get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -24,46 +25,85 @@ function groupsFor(me: Me, inboxCount: number): Group[] {
     ] }];
   }
   const groups: Group[] = [
-    { title: 'Operação', items: [
+    { items: [
+      { to: '/gestao/inicio', text: 'Dashboard', icon: 'home' },
       { to: '/gestao/pendencias', text: 'Pendências', icon: 'inbox', count: inboxCount },
-      { to: '/gestao/atividades', text: 'Atividades', icon: 'activity' },
       { to: '/gestao/vagas', text: 'Vagas', icon: 'briefcase' },
+      { to: '/gestao/atividades', text: 'Atividades', icon: 'calendar' },
+      { to: '/gestao/relatorios', text: 'Relatórios', icon: 'chart' },
     ] },
-    { title: 'Pessoas', items: [
+    { items: [
       { to: '/gestao/documentos', text: 'Documentos', icon: 'file' },
       { to: '/gestao/ocorrencias', text: 'Ocorrências', icon: 'alert' },
+      ...(role === 'ADMINISTRADOR' ? [
+        { to: '/admin/unidades', text: 'Unidades', icon: 'store' as const },
+        { to: '/admin/usuarios', text: 'Usuários', icon: 'user' as const },
+      ] : []),
     ] },
-    { title: 'Análise', items: [{ to: '/gestao/relatorios', text: 'Relatórios', icon: 'chart' }] },
   ];
-  if (role === 'ADMINISTRADOR') groups.push({ title: 'Administração', items: [
-    { to: '/admin/unidades', text: 'Unidades', icon: 'store' },
-    { to: '/admin/usuarios', text: 'Usuários', icon: 'users' },
-  ] });
   return groups;
 }
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
 
+/** Busca do topo (gestor/admin): profissionais, vagas e unidades no escopo do usuário. */
+function Search() {
+  const [term, setTerm] = useState('');
+  const [results, setResults] = useState<Results | null>(null);
+  const [open, setOpen] = useState(false);
+  const { pathname } = useLocation();
+  useEffect(() => { setOpen(false); setTerm(''); }, [pathname]);
+  useEffect(() => {
+    if (term.trim().length < 2) { setResults(null); return; }
+    const t = setTimeout(() => api<Results>(`/manage/search?q=${encodeURIComponent(term.trim())}`).then(setResults, () => setResults(null)), 250);
+    return () => clearTimeout(t);
+  }, [term]);
+  const empty = results && !results.workers.length && !results.jobs.length && !results.units.length;
+
+  return (
+    <div className="search" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }} onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
+      <Icon name="search" size={18} />
+      <input type="search" value={term} onChange={(e) => { setTerm(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder="Buscar profissionais, vagas, unidades..." aria-label="Buscar profissionais, vagas e unidades" />
+      {open && results && (
+        <div className="search-results">
+          {empty && <div className="none">Nada encontrado para “{term.trim()}”.</div>}
+          {!!results.workers.length && <div className="group-title">Profissionais</div>}
+          {results.workers.map((w) => <Link key={w.id} to={`/gestao/profissionais/${w.id}`}><span>{w.name}</span><small>{label(w.status)}</small></Link>)}
+          {!!results.jobs.length && <div className="group-title">Vagas</div>}
+          {results.jobs.map((j) => <Link key={j.id} to={`/gestao/vagas/${j.id}`}><span>{j.title}</span><small>{j.unit_name} · {fmtDate(j.starts_at)}</small></Link>)}
+          {!!results.units.length && <div className="group-title">Unidades</div>}
+          {results.units.map((u) => <Link key={u.id} to={`/gestao/atividades?unit=${u.id}`}><span>{u.name}</span><small>{u.code}</small></Link>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCount: number; onLogout: () => void; children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(() => store.get('nav-collapsed') === '1');
   const [drawer, setDrawer] = useState(false);
+  const userMenu = useRef<HTMLDetailsElement>(null);
   const { pathname } = useLocation();
-  useEffect(() => setDrawer(false), [pathname]);
+  useEffect(() => { setDrawer(false); userMenu.current?.removeAttribute('open'); }, [pathname]);
 
   const worker = me.user.role === 'PROFISSIONAL';
   const groups = groupsFor(me, inboxCount);
-  const toggle = () => { store.set('nav-collapsed', collapsed ? '0' : '1'); setCollapsed(!collapsed); };
+  // Desktop: recolhe a barra (preferência lembrada). Celular/tablet: abre a gaveta.
+  const menu = () => {
+    if (window.matchMedia('(max-width: 1023px)').matches) return setDrawer(true);
+    store.set('nav-collapsed', collapsed ? '0' : '1');
+    setCollapsed(!collapsed);
+  };
 
   return (
     <div className={`app${collapsed ? ' collapsed' : ''}${drawer ? ' drawer-open' : ''}${worker ? ' worker' : ''}`}>
       <aside className="sidebar" aria-label="Navegação principal">
         <div className="brand">
-          <img className="full" src="/logo.png" alt="UP Service Intermediações" />
-          <img className="mark" src="/logo-mark.png" alt="UP Service" />
+          <img className="full" src="/logo-dark.png" alt="UP Service Intermediações" />
+          <img className="mark" src="/logo-mark-dark.png" alt="UP Service" />
         </div>
         {groups.map((g, i) => (
-          <nav key={i} className="nav-group" aria-label={g.title}>
-            {g.title && <div className="nav-group-title">{g.title}</div>}
+          <nav key={i} className="nav-group" aria-label={i ? 'Cadastros' : 'Operação'}>
             {g.items.map((it) => (
               <NavLink key={it.to} to={it.to} className="nav-link" title={collapsed ? it.text : undefined}>
                 <Icon name={it.icon} />
@@ -74,30 +114,39 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
           </nav>
         ))}
         <div className="sidebar-footer">
-          <button className="collapse-btn" onClick={toggle} aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}>
-            <Icon name={collapsed ? 'chevronRight' : 'chevronLeft'} size={18} />
-            {!collapsed && 'Recolher'}
-          </button>
+          <a className="help-card" href="mailto:contato@upserviceintermed.com" title="Precisa de ajuda?">
+            <Icon name="headset" />
+            <strong>Precisa de ajuda?</strong>
+            <small>Entre em contato com o suporte da UP Service.</small>
+          </a>
         </div>
       </aside>
       <div className="backdrop" onClick={() => setDrawer(false)} />
 
       <div className="main">
         <header className="topbar">
-          <button className="icon-btn menu-btn" onClick={() => setDrawer(true)} aria-label="Abrir menu"><Icon name="menu" /></button>
+          <button className="icon-btn menu-btn" onClick={menu} aria-label="Menu" aria-expanded={drawer || !collapsed}><Icon name="menu" size={22} /></button>
           <img className="topbar-logo" src="/logo-mark.png" alt="UP Service" />
+          {!worker && <Search />}
           <div className="spacer" />
           {!worker && (
             <NavLink to="/gestao/pendencias" className="icon-btn" aria-label={`Pendências: ${inboxCount}`} title="Pendências">
-              <Icon name="bell" />
+              <Icon name="bell" size={22} />
               {inboxCount > 0 && <span className="dot">{inboxCount}</span>}
             </NavLink>
           )}
-          <div className="user-chip">
-            <span className="avatar" aria-hidden="true">{initials(me.user.name)}</span>
-            <span className="who"><strong>{me.user.name}</strong><small>{label(me.user.role)}</small></span>
-          </div>
-          <button className="icon-btn" onClick={onLogout} aria-label="Sair" title="Sair"><Icon name="logout" /></button>
+          <span className="divider" />
+          <details className="user-menu" ref={userMenu}>
+            <summary aria-label="Menu do usuário">
+              <span className="avatar" aria-hidden="true">{initials(me.user.name)}</span>
+              <span className="who"><strong>{me.user.name}</strong><small>{label(me.user.role)}</small></span>
+              <span className="chev"><Icon name="chevronDown" size={18} /></span>
+            </summary>
+            <div className="menu">
+              <div className="email">{me.user.email}</div>
+              <button className="ghost" onClick={onLogout}><Icon name="logout" size={18} />Sair</button>
+            </div>
+          </details>
         </header>
         <main className="content">{children}</main>
       </div>

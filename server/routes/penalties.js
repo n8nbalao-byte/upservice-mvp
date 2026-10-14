@@ -2,7 +2,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { audit } from '../audit.js';
-import { assertUnit, requireRole, workerAllowed } from '../auth.js';
+import { assertUnit, requireRole, unitScope, workerAllowed, workerScope } from '../auth.js';
 import { q, tx } from '../db.js';
 import { fail, requireReason, text } from '../http.js';
 import { applyBlock, createOccurrence, ctx, decideOccurrence, endBlock, flush } from '../penalties.js';
@@ -12,14 +12,6 @@ const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
 const MANUAL_TYPES = ['ABANDONO', 'FRAUDE', 'REGRA_OPERACIONAL'];
 
-/** Mesmo escopo de workerAllowed, em SQL: admin vê tudo; gestor, quem se candidatou em loja vinculada a ele. */
-const workerScope = (user, col) => (user.role === 'ADMINISTRADOR'
-  ? ['1 = 1', []]
-  : [`EXISTS (SELECT 1 FROM applications sa JOIN jobs sj ON sj.id = sa.job_id JOIN unit_managers sm ON sm.unit_id = sj.unit_id AND sm.active = 1
-             WHERE sa.user_id = ${col} AND sm.user_id = ?)`, [user.id]]);
-const unitScope = (user, col) => (user.role === 'ADMINISTRADOR'
-  ? ['1 = 1', []]
-  : [`${col} IN (SELECT unit_id FROM unit_managers WHERE user_id = ? AND active = 1)`, [user.id]]);
 
 /**
  * Quem pode reverter um bloqueio: admin sempre; gestor só o que ele mesmo aplicou ou o bloqueio automático

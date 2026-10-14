@@ -91,4 +91,13 @@ export async function workerAllowed(user, workerId) {
   return !!row;
 }
 
+/** Mesmo escopo de workerAllowed, em SQL: admin vê tudo; gestor, quem se candidatou em loja vinculada a ele. */
+export const workerScope = (user, col) => (user.role === 'ADMINISTRADOR'
+  ? ['1 = 1', []]
+  : [`EXISTS (SELECT 1 FROM applications sa JOIN jobs sj ON sj.id = sa.job_id JOIN unit_managers sm ON sm.unit_id = sj.unit_id AND sm.active = 1
+             WHERE sa.user_id = ${col} AND sm.user_id = ?)`, [user.id]]);
+export const unitScope = (user, col) => (user.role === 'ADMINISTRADOR'
+  ? ['1 = 1', []]
+  : [`${col} IN (SELECT unit_id FROM unit_managers WHERE user_id = ? AND active = 1)`, [user.id]]);
+
 export const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status });

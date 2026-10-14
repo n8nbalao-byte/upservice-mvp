@@ -541,3 +541,24 @@ test('unidade bloqueada não recebe vagas; profissional bloqueado entra só em m
   assert.equal(me.body.user.status, 'BLOQUEADO_PERMANENTEMENTE');
   assert.equal((await call(s.w2, 'GET', '/api/jobs')).status, 403);
 });
+
+test('dashboard e busca respeitam o escopo do gestor', { skip }, async () => {
+  const starts = new Date(Date.now() + 86400e3);
+  assert.equal((await call(s.admin, 'POST', '/api/manage/jobs', {
+    unitId: s.unitB, title: 'Vigia noturno', startsAt: starts, endsAt: new Date(starts.getTime() + 8 * 3600e3), positions: 2, dailyValue: 150, breakCount: 1, breakMinutes: 15, publish: true,
+  })).status, 201);
+  assert.equal((await call(s.w1, 'GET', '/api/manage/dashboard')).status, 403);
+  assert.equal((await call(s.w1, 'GET', '/api/manage/search?q=Vigia')).status, 403);
+
+  const admin = (await call(s.admin, 'GET', '/api/manage/dashboard')).body;
+  const gestor = (await call(s.gestor, 'GET', '/api/manage/dashboard')).body;
+  assert.ok(admin.latestJobs.some((j) => j.title === 'Vigia noturno'));
+  assert.ok(!gestor.latestJobs.some((j) => j.unit_name === 'Loja B'), 'gestor não vê vaga de loja sem vínculo');
+  assert.ok(admin.openJobs.jobs > gestor.openJobs.jobs);
+
+  assert.equal((await call(s.admin, 'GET', '/api/manage/search?q=Vigia')).body.jobs.length, 1);
+  const found = (await call(s.gestor, 'GET', '/api/manage/search?q=Loja')).body;
+  assert.deepEqual(found.units.map((u) => u.name), ['Loja A']);
+  assert.equal((await call(s.gestor, 'GET', '/api/manage/search?q=Vigia')).body.jobs.length, 0);
+  assert.equal((await call(s.gestor, 'GET', '/api/manage/search?q=%25%25')).body.jobs.length, 0, 'curinga do LIKE é escapado');
+});

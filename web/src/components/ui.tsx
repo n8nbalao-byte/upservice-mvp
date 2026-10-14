@@ -4,14 +4,14 @@ import { Link } from 'react-router-dom';
 import { label } from '../lib/api';
 import { Icon, type IconName } from './icons';
 
-export type Tone = 'neutral' | 'gold' | 'success' | 'warning' | 'danger' | 'info';
+export type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'info';
 
 /** Cor por significado de cada status do sistema. O contexto pode sobrescrever (ex.: contestação ABERTA = atenção). */
 const STATUS_TONE: Record<string, Tone> = {
   APROVADA: 'success', APROVADO: 'success', CONCLUIDA: 'success', FINALIZADA: 'success', ATIVA: 'success', ATIVO: 'success',
   GPS_VALIDADO: 'success', ABERTA: 'success',
   PENDENTE: 'warning', EM_ANALISE: 'warning', PAUSA_EXCEDIDA: 'warning', PENDENTE_DE_EXCECAO: 'warning', PENDENTE_DE_FECHAMENTO: 'warning',
-  EM_ATIVIDADE: 'gold', EXCECAO_APROVADA: 'gold', FECHAMENTO_ADMINISTRATIVO: 'gold', AJUSTADA: 'gold',
+  EM_ATIVIDADE: 'accent', EXCECAO_APROVADA: 'accent', FECHAMENTO_ADMINISTRATIVO: 'accent', AJUSTADA: 'accent',
   EM_PAUSA: 'info', ENCERRADA: 'neutral', RASCUNHO: 'neutral', AGUARDANDO_CHECKIN: 'neutral', MANTIDA: 'neutral', INATIVA: 'neutral', INATIVO: 'neutral',
   RECUSADA: 'danger', REJEITADO: 'danger', CANCELADA: 'danger', CANCELADA_ADMINISTRATIVAMENTE: 'danger', NAO_COMPARECEU: 'danger',
   BLOQUEADO_TEMPORARIAMENTE: 'danger', BLOQUEADO_PERMANENTEMENTE: 'danger', BLOQUEADA_FINANCEIRA: 'danger',

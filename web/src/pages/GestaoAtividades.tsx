@@ -136,7 +136,7 @@ export default function GestaoAtividades() {
 
       <div className="stats">
         <Stat label="Aguardando check-in" value={by('AGUARDANDO_CHECKIN')} tone="neutral" onClick={() => toggle('AGUARDANDO_CHECKIN')} selected={filter === 'AGUARDANDO_CHECKIN'} />
-        <Stat label="Em atividade" value={by('EM_ATIVIDADE')} tone="gold" onClick={() => toggle('EM_ATIVIDADE')} selected={filter === 'EM_ATIVIDADE'} />
+        <Stat label="Em atividade" value={by('EM_ATIVIDADE')} tone="accent" onClick={() => toggle('EM_ATIVIDADE')} selected={filter === 'EM_ATIVIDADE'} />
         <Stat label="Em pausa" value={by('EM_PAUSA') + by('PAUSA_EXCEDIDA')} tone="info" onClick={() => toggle('EM_PAUSA')} selected={filter === 'EM_PAUSA'} />
         <Stat label="Precisam de atenção" value={attentionCount} tone={attentionCount ? 'danger' : 'neutral'} onClick={() => toggle('ATTENTION')} selected={filter === 'ATTENTION'} />
         <Stat label="Finalizadas" value={by('FINALIZADA')} tone="success" onClick={() => toggle('FINALIZADA')} selected={filter === 'FINALIZADA'} />

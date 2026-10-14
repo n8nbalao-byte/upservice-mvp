@@ -8,6 +8,7 @@ import AdminUnidades from './pages/AdminUnidades';
 import AdminUsuarios from './pages/AdminUsuarios';
 import Atividade from './pages/Atividade';
 import Cadastro from './pages/Cadastro';
+import Dashboard from './pages/Dashboard';
 import GestaoAtividades from './pages/GestaoAtividades';
 import GestaoCandidaturas from './pages/GestaoCandidaturas';
 import GestaoDocumentos from './pages/GestaoDocumentos';
@@ -102,6 +103,7 @@ export default function App() {
               )
             ) : (
               <Routes>
+                <Route path="/gestao/inicio" element={<Dashboard />} />
                 <Route path="/gestao/pendencias" element={<Pendencias />} />
                 <Route path="/gestao/vagas" element={<GestaoVagas />} />
                 <Route path="/gestao/vagas/:id" element={<GestaoCandidaturas />} />
@@ -112,7 +114,7 @@ export default function App() {
                 <Route path="/gestao/relatorios" element={<Relatorios />} />
                 {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
-                <Route path="*" element={<Navigate to="/gestao/pendencias" />} />
+                <Route path="*" element={<Navigate to="/gestao/inicio" />} />
               </Routes>
             )}
           </Shell>
