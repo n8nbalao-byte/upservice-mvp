@@ -21,6 +21,23 @@ const unitScope = (user, col) => (user.role === 'ADMINISTRADOR'
   ? ['1 = 1', []]
   : [`${col} IN (SELECT unit_id FROM unit_managers WHERE user_id = ? AND active = 1)`, [user.id]]);
 
+/**
+ * Quem pode reverter um bloqueio: admin sempre; gestor só o que ele mesmo aplicou ou o bloqueio automático
+ * (3 faltas) que envolve falta de loja dele. Bloqueio do admin ou de outro gestor não é revertido por gestor.
+ */
+async function assertPenaltyAuthority(tq, user, p) {
+  if (user.role === 'ADMINISTRADOR' || p.created_by === user.id) return;
+  if (p.created_by === null) {
+    const [own] = await tq(
+      `SELECT 1 FROM occurrences o JOIN unit_managers m ON m.unit_id = o.unit_id AND m.active = 1
+       WHERE o.penalty_id = ? AND m.user_id = ? LIMIT 1`,
+      [p.id, user.id],
+    );
+    if (own) return;
+  }
+  fail(403, 'Este bloqueio foi aplicado por outra pessoa; só ela ou um administrador pode revertê-lo.');
+}
+
 /** Tudo o que a pessoa vê sobre si: ocorrências confirmadas/canceladas, bloqueios e contestações. */
 async function history(userId, { includePending = false } = {}) {
   const [occurrences, penalties, contestations] = await Promise.all([
@@ -146,6 +163,7 @@ r.post('/manage/penalties/:id/end', MANAGERS, async (req, res) => {
     const [p] = await tq('SELECT * FROM penalties WHERE id = ? FOR UPDATE', [req.params.id]);
     if (!p || !(await workerAllowed(req.user, p.user_id))) fail(404, 'Não encontrado.');
     if (p.status !== 'ATIVA') fail(409, 'Este bloqueio não está ativo.');
+    await assertPenaltyAuthority(tq, req.user, p);
     const c = ctx(tq, req);
     await endBlock(c, p, 'ENCERRADA', reason);
     return c;
@@ -173,6 +191,8 @@ r.post('/manage/contestations/:id/decide', MANAGERS, async (req, res) => {
     const c = ctx(tq, req);
     const [p] = ct.penalty_id ? await tq('SELECT * FROM penalties WHERE id = ? FOR UPDATE', [ct.penalty_id]) : [];
     const [o] = ct.occurrence_id ? await tq('SELECT * FROM occurrences WHERE id = ? FOR UPDATE', [ct.occurrence_id]) : [];
+    if (p) await assertPenaltyAuthority(tq, req.user, p);
+    if (o) await assertUnit(req.user, o.unit_id);
     let newEndsAt = null;
     if (decision === 'CANCELADA') {
       if (p?.status === 'ATIVA') await endBlock(c, p, 'CANCELADA', `Contestação ${ct.protocol} aceita: ${reason}`);
