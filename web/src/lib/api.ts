@@ -54,5 +54,12 @@ export const LABEL: Record<string, string> = {
   GPS_INDISPONIVEL: 'GPS indisponível', PRECISAO_INSUFICIENTE: 'Precisão insuficiente', PERMISSAO_NEGADA: 'Permissão negada',
   FORA_DO_RAIO: 'Fora do raio', FORA_DO_HORARIO: 'Fora do horário', OUTRO: 'Outro',
   INFORMADO_PROFISSIONAL: 'Horário informado pelo profissional', PREVISTO: 'Horário previsto da vaga', CONFIRMADO_GESTOR: 'Horário confirmado pelo gestor',
+  FALTA: 'Falta', CHECKOUT_AUSENTE: 'Checkout ausente', ABANDONO: 'Abandono de atividade', FRAUDE: 'Tentativa de fraude',
+  REGRA_OPERACIONAL: 'Descumprimento de regra operacional', CONFIRMADA: 'Confirmada', MANTIDA: 'Mantida', AJUSTADA: 'Ajustada',
+  BLOQUEIO_TEMPORARIO: 'Bloqueio temporário', BLOQUEIO_PERMANENTE: 'Bloqueio permanente', APP: 'App', EMAIL: 'E-mail',
+  EXCECAO: 'Exceção', CHECKOUT_PENDENTE: 'Checkout pendente', CANDIDATURA: 'Candidaturas', DOCUMENTO: 'Documentos',
+  OCORRENCIA: 'Ocorrências', CONTESTACAO: 'Contestações',
 };
+export const isBlocked = (status: string) => status === 'BLOQUEADO_TEMPORARIAMENTE' || status === 'BLOQUEADO_PERMANENTEMENTE';
+export const fmtDate = (s: string) => new Date(s).toLocaleDateString('pt-BR', { timeZone: TZ });
 export const label = (s: string | null | undefined) => (s ? LABEL[s] ?? s : '—');

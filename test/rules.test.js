@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkinWindowError, distanceMeters, exceptionWindowError, isValidCpf, nextState, transitionError, workedTime } from '../server/rules.js';
+import { checkinWindowError, distanceMeters, exceptionWindowError, isStrike, isValidCpf, nextState, transitionError, workedTime } from '../server/rules.js';
 
 test('distância: 0,0027° de latitude ≈ 300 m', () => {
   const d = distanceMeters({ lat: -23.55, lng: -46.63 }, { lat: -23.5527, lng: -46.63 });
@@ -56,6 +56,14 @@ test('exceção de check-in: nunca para chegar cedo; atraso aceito até o térmi
   assert.match(exceptionWindowError('CHECK_IN', start, end, at(9 * 60 + 1)), /terminou/);
   assert.equal(exceptionWindowError('CHECK_OUT', start, end, at(-500)), null, 'janela só vale para check-in');
   assert.match(transitionError('PENDENTE_DE_EXCECAO', 'CHECK_OUT'), /exceção/);
+});
+
+test('só falta confirmada e ainda não usada num bloqueio conta para as 3 faltas', () => {
+  assert.ok(isStrike({ type: 'FALTA', status: 'CONFIRMADA', penalty_id: null }));
+  assert.ok(!isStrike({ type: 'FALTA', status: 'PENDENTE', penalty_id: null }));
+  assert.ok(!isStrike({ type: 'FALTA', status: 'CANCELADA', penalty_id: null }));
+  assert.ok(!isStrike({ type: 'FALTA', status: 'CONFIRMADA', penalty_id: 'p1' }), 'contagem recomeça depois do bloqueio');
+  assert.ok(!isStrike({ type: 'PAUSA_EXCEDIDA', status: 'CONFIRMADA', penalty_id: null }));
 });
 
 test('CPF', () => {

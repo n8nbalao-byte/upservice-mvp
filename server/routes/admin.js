@@ -2,9 +2,11 @@
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { audit } from '../audit.js';
-import { publicUser, requireRole, workerAllowed } from '../auth.js';
+import { canLogin, publicUser, requireRole, workerAllowed } from '../auth.js';
 import { q, tx } from '../db.js';
 import { geocode, lookupCep } from '../geo.js';
+import { applyBlock, ctx, endBlock, flush } from '../penalties.js';
+import { BLOCK_DAYS } from '../rules.js';
 import { fail, int, num, requireReason, text } from '../http.js';
 import { profileState } from './worker.js';
 
@@ -113,11 +115,29 @@ r.patch('/admin/users/:id', ADMIN, async (req, res) => {
   if (!before) fail(404, 'Não encontrado.');
   const after = { role: req.body.role ?? before.role, status: req.body.status ?? before.status };
   if (!ROLES.includes(after.role) || !USER_STATUS.includes(after.status)) fail(400, 'Papel ou status inválido.');
-  await tx(async (tq) => {
-    await tq('UPDATE users SET role = ?, status = ? WHERE id = ?', [after.role, after.status, req.params.id]);
-    if (after.status !== 'ATIVO' && after.status !== 'EM_ANALISE') await tq('DELETE FROM sessions WHERE user_id = ?', [req.params.id]);
+  const blockType = { BLOQUEADO_TEMPORARIAMENTE: 'BLOQUEIO_TEMPORARIO', BLOQUEADO_PERMANENTEMENTE: 'BLOQUEIO_PERMANENTE' };
+  const c = await tx(async (tq) => {
+    const c = ctx(tq, req);
+    await tq('UPDATE users SET role = ? WHERE id = ?', [after.role, req.params.id]);
+    const worker = after.role === 'PROFISSIONAL';
+    if (after.status !== before.status) {
+      if (worker && blockType[after.status]) {
+        // Bloqueio de profissional sempre vira penalidade: prazo, aviso, vagas futuras liberadas e contestação.
+        await applyBlock(c, { userId: req.params.id, type: blockType[after.status], reason, days: after.status === 'BLOQUEADO_TEMPORARIAMENTE' ? BLOCK_DAYS : null });
+      } else if (worker && blockType[before.status] && after.status === 'ATIVO') {
+        for (const p of await tq("SELECT * FROM penalties WHERE user_id = ? AND status = 'ATIVA' FOR UPDATE", [req.params.id])) await endBlock(c, p, 'ENCERRADA', reason);
+        await tq("UPDATE users SET status = 'ATIVO' WHERE id = ?", [req.params.id]);
+      } else {
+        await tq('UPDATE users SET status = ? WHERE id = ?', [after.status, req.params.id]);
+      }
+    }
+    // Quem não pode mais entrar perde as sessões abertas (profissional bloqueado mantém o modo restrito).
+    const [now] = await tq('SELECT role, status FROM users WHERE id = ?', [req.params.id]);
+    if (!canLogin(now)) await tq('DELETE FROM sessions WHERE user_id = ?', [req.params.id]);
     await audit(tq, req, 'USER_UPDATE', 'user', req.params.id, { before, after, reason });
+    return c;
   });
+  await flush(c);
   res.json({ ok: true });
 });
 

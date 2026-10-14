@@ -5,7 +5,8 @@ import { audit } from '../audit.js';
 import { assertUnit, requireRole } from '../auth.js';
 import { q, tx } from '../db.js';
 import { HttpError, fail, requireReason, text } from '../http.js';
-import { sendMail } from '../mail.js';
+import { sendMailSafe } from '../mail.js';
+import { createOccurrence, ctx as penaltyCtx, endBlock, flush, managerEmails } from '../penalties.js';
 import {
   CHECKOUT_TOLERANCE_MS, CLOSURE_SOURCES, EVENT_TYPES, EXCEPTION_REASONS,
   checkinWindowError, distanceMeters, exceptionWindowError, nextState, transitionError, workedTime,
@@ -147,7 +148,7 @@ r.post('/sessions/:id/exceptions', requireRole('PROFISSIONAL'), async (req, res)
 
   let saved;
   try {
-    const id = await tx(async (tq) => {
+    const done = await tx(async (tq) => {
       const now = new Date();
       const s = await loadOwnSession(tq, req);
       await consumeToken(tq, s.id, token, now);
@@ -170,9 +171,12 @@ r.post('/sessions/:id/exceptions', requireRole('PROFISSIONAL'), async (req, res)
       await tq('INSERT INTO presence_exceptions SET ?', [exc]);
       await tq("UPDATE work_sessions SET status = 'PENDENTE_DE_EXCECAO' WHERE id = ?", [s.id]);
       await audit(tq, req, 'EXCEPTION_REQUEST', 'presence_exception', exc.id, { after: { type, reason: exc.reason, distance_m: exc.distance_m } });
-      return exc.id;
+      return { id: exc.id, unitId: s.unit_id, unitName: s.unit_name, title: s.title };
     });
-    res.status(201).json({ id, status: 'PENDENTE_DE_EXCECAO' });
+    for (const to of await managerEmails(q, done.unitId)) {
+      await sendMailSafe(to, `UpService: exceção para analisar em ${done.unitName}`, `${req.user.name} pediu exceção de presença na vaga "${done.title}". Analise em Atividades ou na central de pendências do painel.`);
+    }
+    res.status(201).json({ id: done.id, status: 'PENDENTE_DE_EXCECAO' });
   } catch (e) {
     if (saved) await removeFile(saved.key);
     throw e;
@@ -289,30 +293,28 @@ r.post('/manage/applications/:id/confirm', MANAGERS, async (req, res) => {
   if (result === 'NAO_COMPARECEU' && (s.status !== 'AGUARDANDO_CHECKIN' || new Date() < new Date(new Date(s.starts_at).getTime() + 15 * 60000))) {
     fail(409, 'Falta só pode ser registrada sem check-in e após a tolerância de 15 minutos.');
   }
-  try {
-    await q('INSERT INTO daily_confirmations (application_id, result, note, confirmed_by) VALUES (?,?,?,?)', [req.params.id, result, note, req.user.id]);
-  } catch (e) {
-    if (e.code === 'ER_DUP_ENTRY') fail(409, 'Esta diária já foi confirmada.');
-    throw e;
-  }
-  await audit(q, req, 'DAILY_CONFIRM', 'application', req.params.id, { after: { result, note } });
+  const c = await tx(async (tq) => {
+    try {
+      await tq('INSERT INTO daily_confirmations (application_id, result, note, confirmed_by) VALUES (?,?,?,?)', [req.params.id, result, note, req.user.id]);
+    } catch (e) {
+      if (e.code === 'ER_DUP_ENTRY') fail(409, 'Esta diária já foi confirmada.');
+      throw e;
+    }
+    await audit(tq, req, 'DAILY_CONFIRM', 'application', req.params.id, { after: { result, note } });
+    const pc = penaltyCtx(tq, req);
+    if (result === 'NAO_COMPARECEU') {
+      await createOccurrence(pc, {
+        userId: s.user_id, unitId: s.unit_id, sessionId: s.id, applicationId: req.params.id, type: 'FALTA',
+        description: note || 'Não compareceu (confirmado pelo gestor)', status: 'CONFIRMADA',
+      });
+    }
+    return pc;
+  });
+  await flush(c);
   res.json({ ok: true });
 });
 
 // ---------- Varredura periódica ----------
-
-async function mailOrLog(to, subject, body) {
-  try {
-    await sendMail(to, subject, body);
-    return true;
-  } catch (e) {
-    console.error('falha ao enviar e-mail', subject, e.message);
-    return false;
-  }
-}
-
-const unitManagerEmails = (unitId) =>
-  q("SELECT u.email FROM unit_managers m JOIN users u ON u.id = m.user_id WHERE m.unit_id = ? AND m.active = 1 AND u.status = 'ATIVO'", [unitId]);
 
 // ponytail: roda via setInterval no processo do app; mover para o cron da Hostinger se o processo hibernar sem tráfego.
 export async function sweep() {
@@ -320,12 +322,19 @@ export async function sweep() {
 
   // 1. Pausa vencida → PAUSA_EXCEDIDA + e-mail ao profissional.
   await q("UPDATE work_sessions SET status = 'PAUSA_EXCEDIDA' WHERE status = 'EM_PAUSA' AND break_ends_at < ?", [now]);
+  // Ocorrência nasce PENDENTE: o gestor confirma ou cancela (pode ter sido falha técnica).
+  await q(
+    `INSERT IGNORE INTO occurrences (id, user_id, unit_id, work_session_id, application_id, type, description, status)
+     SELECT UUID(), a.user_id, j.unit_id, ws.id, a.id, 'PAUSA_EXCEDIDA', 'Pausa passou do tempo configurado na vaga', 'PENDENTE'
+     FROM work_sessions ws JOIN applications a ON a.id = ws.application_id JOIN jobs j ON j.id = a.job_id
+     WHERE ws.status = 'PAUSA_EXCEDIDA'`,
+  );
   const breaks = await q(
     `SELECT ws.id, w.email, w.name FROM work_sessions ws JOIN applications a ON a.id = ws.application_id JOIN users w ON w.id = a.user_id
      WHERE ws.status = 'PAUSA_EXCEDIDA' AND ws.break_email_sent_at IS NULL`,
   );
   for (const d of breaks) {
-    if (await mailOrLog(d.email, 'UpService: sua pausa terminou', `Olá, ${d.name}.\n\nO tempo da sua pausa terminou. Abra o app UpService e registre o retorno.\n\nEste é um aviso automático.`)) {
+    if (await sendMailSafe(d.email, 'UpService: sua pausa terminou', `Olá, ${d.name}.\n\nO tempo da sua pausa terminou. Abra o app UpService e registre o retorno.\n\nEste é um aviso automático.`)) {
       await q('UPDATE work_sessions SET break_email_sent_at = ? WHERE id = ?', [now, d.id]);
     }
   }
@@ -337,9 +346,9 @@ export async function sweep() {
     [ACTIVE, now],
   );
   for (const s of late) {
-    await mailOrLog(s.email, 'UpService: faça seu checkout', `Olá, ${s.worker_name}.\n\nO horário da vaga "${s.title}" em ${s.unit_name} terminou e o checkout ainda não foi feito. Abra o app UpService e registre o checkout.\n\nEste é um aviso automático.`);
-    for (const m of await unitManagerEmails(s.unit_id)) {
-      await mailOrLog(m.email, `UpService: checkout pendente em ${s.unit_name}`, `${s.worker_name} ainda não fez checkout da vaga "${s.title}" em ${s.unit_name}. Após 30 minutos a atividade fica pendente de fechamento no painel Atividades.`);
+    await sendMailSafe(s.email, 'UpService: faça seu checkout', `Olá, ${s.worker_name}.\n\nO horário da vaga "${s.title}" em ${s.unit_name} terminou e o checkout ainda não foi feito. Abra o app UpService e registre o checkout.\n\nEste é um aviso automático.`);
+    for (const to of await managerEmails(q, s.unit_id)) {
+      await sendMailSafe(to, `UpService: checkout pendente em ${s.unit_name}`, `${s.worker_name} ainda não fez checkout da vaga "${s.title}" em ${s.unit_name}. Após 30 minutos a atividade fica pendente de fechamento no painel Atividades.`);
     }
     await q('UPDATE work_sessions SET checkout_reminder_at = ? WHERE id = ?', [now, s.id]);
   }
@@ -349,6 +358,22 @@ export async function sweep() {
   for (const s of missing) {
     const moved = await q("UPDATE work_sessions SET status = 'PENDENTE_DE_FECHAMENTO' WHERE id = ? AND status IN (?)", [s.id, ACTIVE]);
     if (moved.affectedRows) await audit(q, null, 'CHECKOUT_AUSENTE', 'work_session', s.id, { before: { status: s.status }, after: { status: 'PENDENTE_DE_FECHAMENTO' } });
+  }
+  await q(
+    `INSERT IGNORE INTO occurrences (id, user_id, unit_id, work_session_id, application_id, type, description, status)
+     SELECT UUID(), a.user_id, j.unit_id, ws.id, a.id, 'CHECKOUT_AUSENTE', 'Checkout não realizado até 30 minutos após o término', 'PENDENTE'
+     FROM work_sessions ws JOIN applications a ON a.id = ws.application_id JOIN jobs j ON j.id = a.job_id
+     WHERE ws.status = 'PENDENTE_DE_FECHAMENTO'`,
+  );
+
+  // 4. Bloqueio temporário vencido → reativação automática (v4.0 §4).
+  for (const p of await q("SELECT * FROM penalties WHERE status = 'ATIVA' AND type = 'BLOQUEIO_TEMPORARIO' AND ends_at < ?", [now])) {
+    const c = await tx(async (tq) => {
+      const pc = penaltyCtx(tq, null);
+      await endBlock(pc, p, 'ENCERRADA', 'Fim do prazo do bloqueio temporário');
+      return pc;
+    });
+    await flush(c);
   }
 }
 

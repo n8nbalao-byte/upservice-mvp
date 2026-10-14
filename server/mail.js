@@ -15,3 +15,14 @@ export async function sendMail(to, subject, text) {
   });
   await transport.sendMail({ from: process.env.MAIL_FROM || process.env.SMTP_USER, to, subject, text });
 }
+
+/** Aviso por e-mail nunca derruba a operação: falha só vai para o log. */
+export async function sendMailSafe(to, subject, text) {
+  try {
+    await sendMail(to, subject, text);
+    return true;
+  } catch (e) {
+    console.error('falha ao enviar e-mail', subject, e.message);
+    return false;
+  }
+}

@@ -11,6 +11,8 @@ const skip = url ? false : 'TEST_DATABASE_URL não definido';
 const UNIT = { lat: -23.55, lng: -46.63 };
 const ADDR = { cep: '03653-000', street: 'Av. Amador Bueno da Veiga', number: '2521', district: 'Penha de França', city: 'São Paulo', uf: 'SP' };
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200)]).toString('base64');
+// Selfie de celular real (~400 KB): pega limites de corpo de requisição baixos demais.
+const BIG_JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400 * 1024)]).toString('base64');
 
 let server, base, q, closeDb, sweep;
 const s = {}; // estado compartilhado entre os testes, que rodam em sequência
@@ -61,6 +63,14 @@ async function askException(cookie, sessionId, type, reason, extra = {}) {
   const token = (await call(cookie, 'POST', `/api/sessions/${sessionId}/token`, {})).body.token;
   return call(cookie, 'POST', `/api/sessions/${sessionId}/exceptions`, { type, token, reason, selfie: JPEG, errorMessage: 'GPS indisponível', message: 'Estou na loja', ...extra });
 }
+
+async function absent(worker, title) {
+  const a = await approvedSession(worker, title);
+  await q('UPDATE jobs SET starts_at = ?, ends_at = ? WHERE id = ?', [new Date(Date.now() - 3600e3), new Date(Date.now() + 7 * 3600e3), a.job]);
+  return call(s.gestor, 'POST', `/api/manage/applications/${a.application}/confirm`, { result: 'NAO_COMPARECEU', note: 'Não apareceu' });
+}
+
+const userByEmail = async (email) => (await q('SELECT id, status FROM users WHERE email = ?', [email]))[0];
 
 const sessionStatus = async (id) => (await q('SELECT status FROM work_sessions WHERE id = ?', [id]))[0].status;
 
@@ -304,7 +314,96 @@ test('checkout esquecido: lembrete, pendência após 30 min e fechamento adminis
   assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${application}/confirm`, { result: 'CONCLUIDA' })).status, 200);
 });
 
-test('unidade bloqueada não recebe vagas; usuário bloqueado perde a sessão', { skip }, async () => {
+test('selfie de tamanho real passa no registro e no pedido de exceção', { skip }, async () => {
+  const { session } = await approvedSession(s.w1, 'Selfie grande');
+  const asked = await askException(s.w1, session, 'CHECK_IN', 'GPS_INDISPONIVEL', { selfie: BIG_JPEG });
+  assert.equal(asked.status, 201, 'exceção com selfie de ~400 KB');
+  const token = (await call(s.w1, 'POST', `/api/sessions/${session}/token`, {})).body.token;
+  const big = await call(s.w1, 'POST', `/api/sessions/${session}/events`, { type: 'CHECK_IN', token, ...UNIT, accuracy: 20, selfie: BIG_JPEG });
+  assert.notEqual(big.status, 413, 'registro com selfie de ~400 KB não estoura o limite');
+});
+
+test('3 faltas confirmadas: bloqueio de 15 dias, vaga futura liberada e modo restrito com contestação', { skip }, async () => {
+  s.w5 = await login('w5@test.dev');
+  await completeWorker(s.w5, '123.456.789-09');
+  const future = await approvedSession(s.w5, 'Vaga futura');
+  assert.equal((await absent(s.w5, 'Falta 1')).status, 200);
+  assert.equal((await absent(s.w5, 'Falta 2')).status, 200);
+  assert.equal((await userByEmail('w5@test.dev')).status, 'ATIVO', 'duas faltas ainda não bloqueiam');
+  assert.equal((await absent(s.w5, 'Falta 3')).status, 200);
+
+  const u = await userByEmail('w5@test.dev');
+  s.w5Id = u.id;
+  assert.equal(u.status, 'BLOQUEADO_TEMPORARIAMENTE');
+  const [p] = await q("SELECT * FROM penalties WHERE user_id = ? AND status = 'ATIVA'", [u.id]);
+  assert.equal(p.type, 'BLOQUEIO_TEMPORARIO');
+  assert.equal(Math.round((p.ends_at - p.starts_at) / 86400e3), 15);
+  const [linked] = await q('SELECT COUNT(*) AS n FROM occurrences WHERE penalty_id = ?', [p.id]);
+  assert.equal(Number(linked.n), 3, 'as 3 faltas ficam vinculadas ao bloqueio');
+  const [fa] = await q('SELECT status, cancel_reason FROM applications WHERE id = ?', [future.application]);
+  assert.equal(fa.status, 'CANCELADA', 'vaga futura liberada');
+
+  assert.equal((await call(s.w5, 'GET', '/api/me')).status, 200);
+  assert.equal((await call(s.w5, 'GET', '/api/jobs')).status, 403, 'bloqueado não vê vagas');
+  const mine = (await call(s.w5, 'GET', '/api/me/occurrences')).body;
+  assert.equal(mine.occurrences.length, 3);
+  assert.equal(mine.strikes, 0, 'contagem recomeça após o bloqueio');
+  const contest = await call(s.w5, 'POST', '/api/me/contestations', { penaltyId: p.id, message: 'Estive doente, tenho atestado médico' });
+  assert.equal(contest.status, 201);
+  assert.match(contest.body.protocol, /^CT-\d{8}-[0-9A-F]{4}$/);
+  assert.equal((await call(s.w5, 'POST', '/api/me/contestations', { penaltyId: p.id, message: 'De novo a mesma contestação' })).status, 409);
+});
+
+test('contestação aceita reativa; nova falta sozinha não bloqueia; bloqueio vencido reativa', { skip }, async () => {
+  const inbox = (await call(s.gestor, 'GET', '/api/manage/inbox')).body.items.map((i) => i.kind);
+  assert.ok(inbox.includes('CONTESTACAO') && inbox.includes('EXCECAO'), 'central de pendências mostra contestação e exceção');
+  const [ct] = await q("SELECT id FROM contestations WHERE user_id = ? AND status = 'ABERTA'", [s.w5Id]);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/contestations/${ct.id}/decide`, { decision: 'CANCELADA', reason: 'Atestado médico apresentado' })).status, 200);
+  assert.equal((await userByEmail('w5@test.dev')).status, 'ATIVO');
+
+  assert.equal((await absent(s.w5, 'Falta 4')).status, 200);
+  assert.equal((await userByEmail('w5@test.dev')).status, 'ATIVO', 'faltas já usadas num bloqueio não voltam a contar');
+
+  assert.equal((await call(s.admin, 'PATCH', `/api/admin/users/${s.w5Id}`, { status: 'BLOQUEADO_TEMPORARIAMENTE', reason: 'Bloqueio manual para teste' })).status, 200);
+  const [p] = await q("SELECT id FROM penalties WHERE user_id = ? AND status = 'ATIVA'", [s.w5Id]);
+  assert.ok(p, 'bloqueio pelo admin também vira penalidade');
+  await q('UPDATE penalties SET ends_at = ? WHERE id = ?', [new Date(Date.now() - 1000), p.id]);
+  await sweep();
+  assert.equal((await userByEmail('w5@test.dev')).status, 'ATIVO', 'reativação automática no fim do prazo');
+});
+
+test('bloqueio permanente exige confirmação digitada; gestor de outra loja não alcança', { skip }, async () => {
+  const g2 = await login('gestor2@test.dev');
+  const g2Id = (await userByEmail('gestor2@test.dev')).id;
+  await call(s.admin, 'PATCH', `/api/admin/users/${g2Id}`, { role: 'GESTOR', reason: 'Gestor da loja B no piloto' });
+  await call(s.admin, 'PUT', `/api/admin/users/${g2Id}/units`, { unitIds: [s.unitB] });
+
+  const block = (who, body) => call(who, 'POST', `/api/manage/workers/${s.w5Id}/block`, { reason: 'Fraude comprovada no registro de presença', ...body });
+  assert.equal((await block(s.gestor, {})).status, 400, 'sem digitar BLOQUEAR');
+  assert.equal((await block(g2, { confirm: 'BLOQUEAR' })).status, 404, 'gestor sem vínculo com o profissional');
+  assert.equal((await block(s.gestor, { confirm: 'BLOQUEAR' })).status, 200);
+  assert.equal((await userByEmail('w5@test.dev')).status, 'BLOQUEADO_PERMANENTEMENTE');
+  assert.equal((await block(s.gestor, { confirm: 'BLOQUEAR' })).status, 409);
+
+  const [p] = await q("SELECT id FROM penalties WHERE user_id = ? AND type = 'BLOQUEIO_PERMANENTE' AND status = 'ATIVA'", [s.w5Id]);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/penalties/${p.id}/end`, { reason: 'Reavaliado com a operação' })).status, 200);
+  assert.equal((await userByEmail('w5@test.dev')).status, 'ATIVO');
+});
+
+test('pausa excedida e checkout ausente viram ocorrência pendente, que o gestor confirma ou cancela', { skip }, async () => {
+  const pending = await q("SELECT id, type, user_id FROM occurrences WHERE status = 'PENDENTE' ORDER BY type");
+  assert.deepEqual([...new Set(pending.map((o) => o.type))], ['CHECKOUT_AUSENTE', 'PAUSA_EXCEDIDA']);
+  const list = (await call(s.gestor, 'GET', '/api/manage/occurrences')).body;
+  assert.ok(list.occurrences.length >= 2);
+  const pause = pending.find((o) => o.type === 'PAUSA_EXCEDIDA');
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/occurrences/${pause.id}/decide`, { decision: 'CONFIRMADA', reason: 'Voltou 20 minutos atrasado' })).status, 200);
+  const worker = (await q('SELECT status FROM users WHERE id = ?', [pause.user_id]))[0];
+  assert.equal(worker.status, 'ATIVO', 'pausa excedida não conta como falta');
+  assert.equal((await call(s.gestor, 'POST', '/api/manage/occurrences', { userId: pause.user_id, unitId: s.unitA, type: 'ABANDONO', description: 'Saiu no meio do turno sem avisar' })).status, 201);
+  assert.equal((await call(s.gestor, 'POST', '/api/manage/occurrences', { userId: pause.user_id, unitId: s.unitA, type: 'FALTA', description: 'Falta só pela confirmação da diária' })).status, 400);
+});
+
+test('unidade bloqueada não recebe vagas; profissional bloqueado entra só em modo restrito', { skip }, async () => {
   assert.equal((await call(s.admin, 'POST', `/api/units/${s.unitA}/status`, { status: 'BLOQUEADA_FINANCEIRA', reason: 'Pagamento em atraso desde setembro' })).status, 200);
   const starts = new Date(Date.now() + 3600e3);
   const r = await call(s.gestor, 'POST', '/api/manage/jobs', {
@@ -314,5 +413,8 @@ test('unidade bloqueada não recebe vagas; usuário bloqueado perde a sessão', 
 
   const [u] = await q("SELECT id FROM users WHERE email = 'w2@test.dev'");
   await call(s.admin, 'PATCH', `/api/admin/users/${u.id}`, { status: 'BLOQUEADO_PERMANENTEMENTE', reason: 'Teste de bloqueio permanente' });
-  assert.equal((await call(s.w2, 'GET', '/api/me')).status, 401);
+  const me = await call(s.w2, 'GET', '/api/me');
+  assert.equal(me.status, 200, 'profissional bloqueado entra em modo restrito');
+  assert.equal(me.body.user.status, 'BLOQUEADO_PERMANENTEMENTE');
+  assert.equal((await call(s.w2, 'GET', '/api/jobs')).status, 403);
 });

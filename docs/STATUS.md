@@ -13,8 +13,8 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 | 1 | Cadastro, documentos, unidades e vagas | ✅ em produção |
 | 2 | Presença, selfie, GPS e pausas | ✅ em produção |
 | 3 | Horas, notificações e exceções | ✅ em produção |
-| 4 | Punições, bloqueios e contestação | ⬜ próximo |
-| 5 | Monitoramento, relatórios e escala | ⬜ |
+| 4 | Punições, bloqueios e contestação | ✅ em produção |
+| 5 | Monitoramento, relatórios e escala | ⬜ próximo |
 
 ## Itens da linha de base (seção 11, 52 PRs)
 
@@ -26,10 +26,10 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 | 2 | Bootstrap da aplicação | ✅ | Express 5 + React/Vite/TS |
 | 3 | CI/CD e ambientes | 🟡 | Deploy automático na Hostinger a cada push no `main`. Sem GitHub Actions e sem ambiente de homologação separado |
 | 4 | Google Auth | ✅ | Projeto Google Cloud `upservice-511606`, app publicado |
-| 5 | Banco e migrations | ✅ | MariaDB 11.8 na Hostinger; migrations 001 a 003 aplicadas |
+| 5 | Banco e migrations | ✅ | MariaDB 11.8 na Hostinger; migrations 001 a 004 aplicadas |
 | 6 | Storage privado de documentos e selfies | ✅ | `~/upservice-storage` (fora do deploy, permissão 700); acesso só por `/api/files/*` |
 | 7 | Matriz de autorização | ✅ | Ver README → Perfis e permissões; testes de escopo em `test/api.test.js` |
-| 8 | Auditoria e logs | 🟡 | `audit_events` append-only (login, cadastro, vagas, decisões, presença recusada, exceções, checkout ausente, fechamentos, visualização de documentos e selfies). Sem tela de consulta |
+| 8 | Auditoria e logs | 🟡 | `audit_events` append-only (login, cadastro, vagas, decisões, presença recusada, exceções, checkout ausente, fechamentos, ocorrências, bloqueios, contestações, visualização de documentos e selfies). Sem tela de consulta |
 | 9 | Backup e restauração | ⬜ | Depende do backup da Hostinger; restauração não testada |
 | 10 | Política de privacidade e consentimentos | 🟡 | `/privacidade.html` e `/termos.html` publicados; aceite registrado no cadastro. Falta revisão jurídica |
 
@@ -69,13 +69,13 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 
 | # | Item | Status | Observação |
 |---|---|---|---|
-| 33 | Ocorrências e faltas | 🟡 | Falta registrada na confirmação; `CHECKOUT_AUSENTE` registrado na auditoria; entidade de ocorrência no Marco 4 |
-| 34 | Bloqueio temporário de profissional | 🟡 | Só manual pelo admin; regra de 3 faltas → 15 dias no Marco 4 |
-| 35 | Reativação | 🟡 | Manual; reativação automática no Marco 4 |
-| 36 | Bloqueio permanente manual e auditado | 🟡 | Admin com justificativa; gestor, confirmação extra e aviso ao profissional no Marco 4 |
-| 37 | Painel operacional por loja | 🟡 | "Atividades" com contadores por status, selfies e horas |
+| 33 | Ocorrências e faltas | ✅ | Falta confirmada pelo gestor; pausa excedida e checkout ausente geradas pela varredura como pendentes; abandono, fraude e regra operacional registradas manualmente. Falha técnica nunca vira falta |
+| 34 | Bloqueio temporário de profissional | ✅ | 3 faltas confirmadas desde o último bloqueio → 15 dias; vagas aprovadas futuras liberadas; aviso por e-mail |
+| 35 | Reativação | ✅ | Automática no fim do prazo (varredura) ou manual por gestor/admin com justificativa |
+| 36 | Bloqueio permanente manual e auditado | ✅ | Gestor (suas lojas) ou admin, justificativa + confirmação digitada (BLOQUEAR), aviso e auditoria |
+| 37 | Painel operacional por loja | 🟡 | "Atividades" com contadores por status, selfies e horas; central de **Pendências** com aviso sonoro e notificação do navegador |
 | 38 | Indicadores consolidados | ⬜ | Marco 5 |
-| 39 | Atualização periódica do painel | ✅ | 30 s, com horário da última atualização |
+| 39 | Atualização periódica do painel | ✅ | Atividades a cada 30 s; Pendências e Ocorrências a cada 20 s, com horário da última atualização |
 | 40 | Alertas de localização com a página ativa | ⬜ | Marco 5 |
 | 41 | Relatórios de presença, diárias, horas e exceções | ⬜ | Marco 5 |
 | 42 | Exportação CSV segura | ⬜ | Marco 5 |
@@ -84,12 +84,12 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 
 | # | Item | Status | Observação |
 |---|---|---|---|
-| 43 | Testes E2E | 🟡 | Integração da API contra MariaDB (19 testes no total); sem E2E de navegador |
+| 43 | Testes E2E | 🟡 | Integração da API contra MariaDB (25 testes no total); sem E2E de navegador |
 | 44 | Testes de autorização | ✅ | Papel via payload, escopo de unidade, selfies e documentos alheios |
 | 45 | Testes de documentos e storage privado | ✅ | |
 | 46 | Testes de GPS, câmera e permissões | ⬜ | Precisa de celular real na loja |
 | 47 | Testes de pausas e notificações | 🟡 | Automatizados; e-mail real ainda não recebido em teste |
-| 48 | Testes de punições e bloqueios | 🟡 | Bloqueio de conta e de unidade testados; punições no Marco 4 |
+| 48 | Testes de punições e bloqueios | ✅ | 3 faltas, modo restrito, contestação, reativação automática, bloqueio permanente e escopo do gestor |
 | 49 | Testes em Android e rede móvel | ⬜ | |
 | 50 | Teste de carga | ⬜ | Marco 5 |
 | 51 | Homologação | 🟡 | Em andamento com usuários reais |
@@ -113,10 +113,10 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 | Gestor aprova ou recusa exceções | ✅ |
 | Checkout esquecido gera pendência, não checkout falso | ✅ lembrete no término, pendência após 30 min |
 | Distinção entre GPS validado, exceção e fechamento administrativo | ✅ nos registros, nas horas e no painel |
-| Três faltas confirmadas geram bloqueio de 15 dias | ⬜ Marco 4 |
-| Bloqueio permanente manual por gestor ou admin | 🟡 só admin hoje |
-| Contestação pelo app e por e-mail | ⬜ Marco 4 |
-| Punições diferenciam falta confirmada de falha técnica | ⬜ Marco 4 |
+| Três faltas confirmadas geram bloqueio de 15 dias | ✅ |
+| Bloqueio permanente manual por gestor ou admin | ✅ |
+| Contestação pelo app e por e-mail | ✅ protocolo CT-AAAAMMDD-XXXX |
+| Punições diferenciam falta confirmada de falha técnica | ✅ |
 | Bloqueios preservam o histórico | ✅ |
 | Painel mostra a última atualização | ✅ |
 | Aviso de localização não atualizada com a página fechada | ⬜ Marco 5 |
@@ -131,9 +131,19 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 - **Checkout esquecido:** no término, e-mail de lembrete ao profissional e alerta aos gestores da unidade. Após 30 min, a jornada fica `PENDENTE_DE_FECHAMENTO` (`CHECKOUT_AUSENTE` na auditoria); o profissional informa o horário de saída e o gestor encerra com a origem do horário e justificativa (`FECHAMENTO_ADMINISTRATIVO`).
 - **Horas:** pausa aberta no fechamento conta como pausa; registros, horas e painel mostram a origem.
 
-## Próximo: Marco 4 — Punições, bloqueios e contestação
+## Marco 4 — entregue
 
-Regras fechadas na v4.0 (seções 4, 5 e 6): ocorrência com motivo e evidências; 1ª ocorrência = aviso, 2ª = revisão do gestor, 3ª falta confirmada = bloqueio de 15 dias com reativação automática; falha técnica (GPS, câmera, internet) nunca gera falta; bloqueio permanente por gestor (suas lojas) ou admin com motivo, confirmação extra, aviso e auditoria; contestação pelo app (protocolo, decisão `MANTIDA`/`CANCELADA`/`AJUSTADA`) e por e-mail registrado manualmente, sem suspender o bloqueio automaticamente.
+Decisões tomadas em 14/10/2026: as 3 faltas contam **desde o último bloqueio**; o bloqueio **cancela as vagas aprovadas futuras** (liberando a posição); o profissional bloqueado entra em **modo restrito** (vê motivo e prazo e contesta, mas não vê vagas nem registra presença).
+
+- **Ocorrências:** falta (confirmada pelo gestor na diária); pausa excedida e checkout ausente (criadas pela varredura como pendentes, o gestor confirma ou cancela); abandono, fraude e regra operacional (manuais). 1ª confirmada = aviso por e-mail; 2ª = alerta de revisão aos gestores.
+- **Bloqueios:** temporário de 15 dias na 3ª falta, com reativação automática; permanente só manual, com justificativa e "BLOQUEAR" digitado. O bloqueio pelo menu Usuários segue o mesmo fluxo.
+- **Contestação:** pelo app (protocolo) ou registrada pelo gestor a partir de e-mail; decisão Mantida, Cancelada (anula a punição) ou Ajustada (novo prazo); não suspende o bloqueio.
+- **Central de pendências:** o sino do menu do gestor/admin mostra exceções, checkouts pendentes, contestações, ocorrências, candidaturas e documentos. Atualiza a cada 20 s, toca um aviso e mostra notificação do navegador quando surge algo novo. Exceção pedida também gera e-mail aos gestores da loja.
+- **Correção:** a rota de pedido de exceção aceitava só 100 KB; selfies reais de celular falhavam. Agora aceita até 1 MB, como o registro normal, com teste usando uma selfie de 400 KB.
+
+## Próximo: Marco 5 — Monitoramento, relatórios e escala
+
+Indicadores consolidados (item 38), alerta de localização com a página ativa (40), relatórios de presença, diárias, horas e exceções (41), exportação CSV segura (42), testes de carga (50) e de Android em rede móvel (49).
 
 ## Pendências de operação
 

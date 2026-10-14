@@ -4,9 +4,9 @@ import { useMe } from '../App';
 import { api, fmtDateTime, fmtMoney, fmtTime, label, todayBR, type Unit } from '../lib/api';
 
 /** Seletor de unidade compartilhado pelas telas de gestão; lembra a última escolha. */
-export function useUnitPicker() {
+export function useUnitPicker(initialId?: string | null) {
   const [units, setUnits] = useState<Unit[]>([]);
-  const [unitId, setUnitIdState] = useState(() => localStorage.getItem('unitId') ?? '');
+  const [unitId, setUnitIdState] = useState(() => initialId || localStorage.getItem('unitId') || '');
   const setUnitId = (id: string) => { localStorage.setItem('unitId', id); setUnitIdState(id); };
   useEffect(() => {
     api<Unit[]>('/units').then((list) => {
