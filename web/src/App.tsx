@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { api, isBlocked, type Me } from './lib/api';
+import { CHANGED, api, isBlocked, type Me } from './lib/api';
 import { beep } from './lib/device';
 import { Shell } from './components/Shell';
 import { DialogProvider, Loading } from './components/ui';
 import AdminUnidades from './pages/AdminUnidades';
 import AdminUsuarios from './pages/AdminUsuarios';
+import Ajustes from './pages/Ajustes';
 import Atividade from './pages/Atividade';
 import Cadastro from './pages/Cadastro';
 import Dashboard from './pages/Dashboard';
@@ -56,7 +57,8 @@ function useInboxPolling(enabled: boolean) {
     if (!enabled) return;
     refresh();
     const t = setInterval(refresh, INBOX_POLL_MS);
-    return () => clearInterval(t);
+    window.addEventListener(CHANGED, refresh);
+    return () => { clearInterval(t); window.removeEventListener(CHANGED, refresh); };
   }, [enabled]);
 
   useEffect(() => {
@@ -112,6 +114,7 @@ export default function App() {
                 <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
                 <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />
                 <Route path="/gestao/relatorios" element={<Relatorios />} />
+                <Route path="/gestao/ajustes" element={<Ajustes />} />
                 {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
                 <Route path="*" element={<Navigate to="/gestao/inicio" />} />

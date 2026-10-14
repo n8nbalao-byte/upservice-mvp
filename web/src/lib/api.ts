@@ -4,14 +4,20 @@ export class ApiError extends Error {
   }
 }
 
+/** Disparado depois de toda alteração salva com sucesso: quem mostra contadores recarrega na hora. */
+export const CHANGED = 'upservice:changed';
+
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+  const method = opts.method ?? (opts.body === undefined ? 'GET' : 'POST');
   const res = await fetch(`/api${path}`, {
-    method: opts.method ?? (opts.body === undefined ? 'GET' : 'POST'),
+    cache: 'no-store',
+    method,
     headers: opts.body === undefined ? {} : { 'Content-Type': 'application/json' },
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
   if (!res.ok) throw new ApiError(res.status, data?.error ?? 'Erro inesperado. Tente novamente.');
+  if (method !== 'GET') window.dispatchEvent(new Event(CHANGED));
   return data as T;
 }
 

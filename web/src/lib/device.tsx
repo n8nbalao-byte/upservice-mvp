@@ -90,16 +90,62 @@ export async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-/** Bipe curto + vibração; usado no fim da pausa e nas novas pendências do painel. */
-export function beep() {
+// ---------- Som das notificações do painel (preferência deste navegador) ----------
+
+export type SoundTone = 'suave' | 'sino' | 'duplo' | 'classico';
+export type SoundPrefs = { enabled: boolean; tone: SoundTone; volume: number };
+export const SOUND_TONES: { key: SoundTone; name: string; hint: string }[] = [
+  { key: 'suave', name: 'Suave', hint: 'Um toque curto e baixo' },
+  { key: 'sino', name: 'Sino', hint: 'Toque de sino que some devagar' },
+  { key: 'duplo', name: 'Duplo', hint: 'Dois toques rápidos, subindo' },
+  { key: 'classico', name: 'Bipe clássico', hint: 'O bipe agudo de antes' },
+];
+const SOUND_KEY = 'notify-sound';
+const SOUND_DEFAULT: SoundPrefs = { enabled: true, tone: 'suave', volume: 40 };
+
+export function getSoundPrefs(): SoundPrefs {
+  try { return { ...SOUND_DEFAULT, ...JSON.parse(localStorage.getItem(SOUND_KEY) ?? '{}') }; } catch { return SOUND_DEFAULT; }
+}
+export function setSoundPrefs(p: SoundPrefs) {
+  try { localStorage.setItem(SOUND_KEY, JSON.stringify(p)); } catch { /* sem armazenamento: vale só nesta sessão */ }
+}
+
+/** Notas de cada modelo: [frequência Hz, início s, duração s, forma da onda]. */
+const NOTES: Record<SoundTone, [number, number, number, OscillatorType][]> = {
+  suave: [[660, 0, 0.35, 'sine']],
+  sino: [[880, 0, 1.2, 'sine'], [1760, 0, 0.6, 'sine'], [2640, 0, 0.3, 'sine']],
+  duplo: [[740, 0, 0.16, 'triangle'], [988, 0.2, 0.22, 'triangle']],
+  classico: [[880, 0, 0.5, 'square']],
+};
+
+/** Toca o modelo escolhido no volume próprio do app (ganho do WebAudio), sem mexer no volume do sistema. */
+export function playTone(tone: SoundTone, volume: number) {
   try {
     const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    osc.frequency.value = 880;
-    osc.connect(ctx.destination);
-    osc.start();
-    setTimeout(() => { osc.stop(); ctx.close(); }, 500);
+    const peak = Math.max(0, Math.min(1, volume / 100)) * (tone === 'classico' ? 0.15 : 0.5);
+    let end = 0;
+    for (const [freq, at, dur, type] of NOTES[tone]) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + at;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
+      end = Math.max(end, at + dur);
+    }
+    setTimeout(() => ctx.close(), (end + 0.3) * 1000);
   } catch { /* sem áudio: segue o alerta visual */ }
+}
+
+/** Nova pendência no painel: som conforme os ajustes (pode estar desligado) + vibração. */
+export function beep() {
+  const p = getSoundPrefs();
+  if (p.enabled && p.volume > 0) playTone(p.tone, p.volume);
   navigator.vibrate?.([200, 100, 200]);
 }
 

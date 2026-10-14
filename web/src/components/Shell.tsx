@@ -86,6 +86,13 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
   const { pathname } = useLocation();
   useEffect(() => { setDrawer(false); userMenu.current?.removeAttribute('open'); }, [pathname]);
 
+  const [whatsapp, setWhatsapp] = useState<string | null>(null);
+  useEffect(() => { api<{ supportWhatsapp: string | null }>('/config').then((c) => setWhatsapp(c.supportWhatsapp), () => {}); }, []);
+  // WhatsApp do suporte (SUPPORT_WHATSAPP no servidor); enquanto não for definido, abre o e-mail.
+  const help = whatsapp
+    ? `https://wa.me/${whatsapp}?text=${encodeURIComponent('Olá! Preciso de ajuda com o app UP Service.')}`
+    : 'mailto:contato@upserviceintermed.com';
+
   const worker = me.user.role === 'PROFISSIONAL';
   const groups = groupsFor(me, inboxCount);
   // Desktop: recolhe a barra (preferência lembrada). Celular/tablet: abre a gaveta.
@@ -98,7 +105,6 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
   return (
     <div className={`app${collapsed ? ' collapsed' : ''}${drawer ? ' drawer-open' : ''}${worker ? ' worker' : ''}`}>
       <aside className="sidebar" aria-label="Navegação principal">
-        <div className="brand"><span className="full">UP Service</span><span className="mark">UP</span></div>
         {groups.map((g, i) => (
           <nav key={i} className="nav-group" aria-label={i ? 'Cadastros' : 'Operação'}>
             {g.items.map((it) => (
@@ -111,10 +117,10 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
           </nav>
         ))}
         <div className="sidebar-footer">
-          <a className="help-card" href="mailto:contato@upserviceintermed.com" title="Precisa de ajuda?">
+          <a className="help-card" href={help} target="_blank" rel="noopener noreferrer" title="Precisa de ajuda?">
             <Icon name="headset" />
             <strong>Precisa de ajuda?</strong>
-            <small>Entre em contato com o suporte da UP Service.</small>
+            <small>Entre em contato com o suporte.</small>
           </a>
         </div>
       </aside>
@@ -141,6 +147,7 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
             </summary>
             <div className="menu">
               <div className="email">{me.user.email}</div>
+              {!worker && <Link className="menu-link" to="/gestao/ajustes"><Icon name="bell" size={18} />Ajustes de notificação</Link>}
               <button className="ghost" onClick={onLogout}><Icon name="logout" size={18} />Sair</button>
             </div>
           </details>

@@ -562,3 +562,14 @@ test('dashboard e busca respeitam o escopo do gestor', { skip }, async () => {
   assert.equal((await call(s.gestor, 'GET', '/api/manage/search?q=Vigia')).body.jobs.length, 0);
   assert.equal((await call(s.gestor, 'GET', '/api/manage/search?q=%25%25')).body.jobs.length, 0, 'curinga do LIKE é escapado');
 });
+
+test('API nunca em cache e WhatsApp do suporte só com dígitos', { skip }, async () => {
+  delete process.env.SUPPORT_WHATSAPP;
+  const before = await call(null, 'GET', '/api/config');
+  assert.equal(before.res.headers.get('cache-control'), 'no-store');
+  assert.equal(before.body.supportWhatsapp, null);
+  process.env.SUPPORT_WHATSAPP = '+55 (11) 99999-0000';
+  assert.equal((await call(null, 'GET', '/api/config')).body.supportWhatsapp, '5511999990000');
+  delete process.env.SUPPORT_WHATSAPP;
+  assert.equal((await call(s.admin, 'GET', '/api/admin/users')).res.headers.get('cache-control'), 'no-store');
+});

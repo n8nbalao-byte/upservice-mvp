@@ -43,6 +43,8 @@ const restrictBlocked = (req, res, next) => {
   next();
 };
 
+// Respostas da API nunca ficam em cache (navegador nem CDN da Hostinger): depois de salvar, a tela recarrega dados novos.
+app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use('/api', loadUser, restrictBlocked, auth, worker, jobs, presence, penalties, reports, dashboard, admin, files);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Não encontrado.' }));
 
