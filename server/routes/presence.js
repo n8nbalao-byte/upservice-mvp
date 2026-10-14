@@ -8,7 +8,7 @@ import { HttpError, fail, requireReason, text } from '../http.js';
 import { sendMailSafe } from '../mail.js';
 import { createOccurrence, ctx as penaltyCtx, endBlock, flush, managerEmails } from '../penalties.js';
 import {
-  CHECKOUT_TOLERANCE_MS, CLOSURE_SOURCES, EVENT_TYPES, EXCEPTION_REASONS,
+  ALERT_COOLDOWN_MS, CHECKOUT_TOLERANCE_MS, CLOSURE_SOURCES, EVENT_TYPES, EXCEPTION_REASONS, PING_MIN_GAP_MS,
   checkinWindowError, distanceMeters, exceptionWindowError, nextState, transitionError, workedTime,
 } from '../rules.js';
 import { decodeBase64, removeFile, saveFile, sniff } from '../storage.js';
@@ -40,6 +40,18 @@ const exceptionsOf = (sessionIds) =>
          FROM presence_exceptions WHERE work_session_id IN (?) ORDER BY requested_at`, [sessionIds])
     : Promise.resolve([]);
 
+const alertsOf = (sessionIds) =>
+  sessionIds.length
+    ? q('SELECT id, work_session_id, at, accuracy_m, distance_m, acknowledged_at FROM location_alerts WHERE work_session_id IN (?) ORDER BY at', [sessionIds])
+    : Promise.resolve([]);
+
+function readPosition(body) {
+  const pos = { lat: Number(body.lat), lng: Number(body.lng) };
+  const accuracy = Number(body.accuracy);
+  if (!(Math.abs(pos.lat) <= 90 && Math.abs(pos.lng) <= 180 && accuracy > 0)) fail(400, 'Localização GPS obrigatória.');
+  return { pos, accuracy };
+}
+
 function readSelfie(body) {
   const img = decodeBase64(body.selfie);
   if (sniff(img) !== 'image/jpeg' || img.length > MAX_SELFIE_BYTES) fail(400, 'Selfie obrigatória, tirada pela câmera.');
@@ -64,6 +76,14 @@ async function applyEvent(tq, s, next, e) {
   await tq('UPDATE work_sessions SET status = ?, breaks_used = breaks_used + ?, break_ends_at = ?, break_email_sent_at = NULL WHERE id = ?', [
     next, pauseStart ? 1 : 0, pauseStart ? new Date(new Date(e.at).getTime() + s.break_minutes * 60000) : null, s.id,
   ]);
+  if (next === 'FINALIZADA') await storeWorkedTime(tq, s.id);
+}
+
+/** Horas gravadas no fechamento: relatórios de muitos dias não precisam recalcular evento por evento. */
+export async function storeWorkedTime(tq, sessionId) {
+  const worked = workedTime(await tq('SELECT type, occurred_at, validation FROM presence_events WHERE work_session_id = ? ORDER BY occurred_at', [sessionId]));
+  if (worked) await tq('UPDATE work_sessions SET worked_min = ?, break_min = ?, sources = ? WHERE id = ?', [worked.workedMin, worked.breakMin, worked.sources.join(','), sessionId]);
+  return worked;
 }
 
 async function loadOwnSession(tq, req) {
@@ -133,6 +153,34 @@ r.post('/sessions/:id/events', requireRole('PROFISSIONAL'), async (req, res) => 
     }
     throw e;
   }
+});
+
+r.post('/sessions/:id/ping', requireRole('PROFISSIONAL'), async (req, res) => {
+  const { pos, accuracy } = readPosition(req.body);
+  const result = await tx(async (tq) => {
+    const s = await loadOwnSession(tq, req);
+    if (!ACTIVE.includes(s.status)) fail(409, 'A atividade não está em andamento.');
+    const now = new Date();
+    if (s.last_ping_at && now - new Date(s.last_ping_at) < PING_MIN_GAP_MS) return { ignored: true };
+    const distance = distanceMeters(pos, { lat: s.unit_lat, lng: s.unit_lng });
+    const inside = distance <= s.radius_m;
+    await tq('UPDATE work_sessions SET last_ping_at = ?, last_ping_distance_m = ?, last_ping_accuracy_m = ?, last_ping_inside = ? WHERE id = ?', [now, distance, accuracy, inside ? 1 : 0, s.id]);
+    // Só alerta com leitura confiável, fora do raio, em atividade (na pausa a pessoa pode sair) e uma vez a cada 30 min.
+    if (inside || s.status !== 'EM_ATIVIDADE' || accuracy > s.max_accuracy_m) return { inside };
+    const [recent] = await tq('SELECT 1 FROM location_alerts WHERE work_session_id = ? AND at > ? LIMIT 1', [s.id, new Date(now.getTime() - ALERT_COOLDOWN_MS)]);
+    if (recent) return { inside };
+    const alert = { id: randomUUID(), work_session_id: s.id, at: now, ...pos, accuracy_m: accuracy, distance_m: distance };
+    await tq('INSERT INTO location_alerts SET ?', [alert]);
+    await audit(tq, req, 'LOCATION_ALERT', 'work_session', s.id, { after: { distance_m: Math.round(distance), accuracy_m: Math.round(accuracy) } });
+    return { inside, alert: { unitId: s.unit_id, unitName: s.unit_name, title: s.title, distance } };
+  });
+  if (result.alert) {
+    const a = result.alert;
+    for (const to of await managerEmails(q, a.unitId)) {
+      await sendMailSafe(to, `UpService: saída do raio em ${a.unitName}`, `${req.user.name} está a ${Math.round(a.distance)} m de ${a.unitName} durante a atividade "${a.title}". Veja em Atividades ou na central de pendências.`);
+    }
+  }
+  res.json({ inside: result.inside ?? null, alert: !!result.alert, ignored: !!result.ignored });
 });
 
 // Falha de GPS, precisão, permissão, raio ou atraso: o profissional pede exceção e o gestor decide. Nunca vira GPS validado.
@@ -212,14 +260,33 @@ r.get('/manage/sessions', MANAGERS, async (req, res) => {
     [req.query.unitId, dayStart, new Date(dayStart.getTime() + 24 * 3600e3)],
   );
   const ids = sessions.map((s) => s.id);
-  const [events, exceptions] = await Promise.all([eventsOf(ids), exceptionsOf(ids)]);
+  const [events, exceptions, alerts] = await Promise.all([eventsOf(ids), exceptionsOf(ids), alertsOf(ids)]);
   res.json({
     serverNow: new Date(),
     sessions: sessions.map((s) => {
       const own = events.filter((e) => e.work_session_id === s.id);
-      return { ...s, events: own, exceptions: exceptions.filter((x) => x.work_session_id === s.id), worked: workedTime(own) };
+      return {
+        ...s, events: own, worked: workedTime(own),
+        exceptions: exceptions.filter((x) => x.work_session_id === s.id),
+        alerts: alerts.filter((a) => a.work_session_id === s.id),
+      };
     }),
   });
+});
+
+r.post('/manage/location-alerts/:id/ack', MANAGERS, async (req, res) => {
+  const [a] = await q(
+    `SELECT la.id, la.acknowledged_at, j.unit_id FROM location_alerts la JOIN work_sessions ws ON ws.id = la.work_session_id
+     JOIN applications ap ON ap.id = ws.application_id JOIN jobs j ON j.id = ap.job_id WHERE la.id = ?`,
+    [req.params.id],
+  );
+  if (!a) fail(404, 'Não encontrado.');
+  await assertUnit(req.user, a.unit_id);
+  if (!a.acknowledged_at) {
+    await q('UPDATE location_alerts SET acknowledged_by = ?, acknowledged_at = ? WHERE id = ?', [req.user.id, new Date(), a.id]);
+    await audit(q, req, 'LOCATION_ALERT_ACK', 'location_alert', a.id);
+  }
+  res.json({ ok: true });
 });
 
 async function loadManagedSession(tq, user, sessionId) {

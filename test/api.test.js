@@ -427,6 +427,105 @@ test('gestor não reverte bloqueio do admin nem decide contestação de ocorrên
   assert.equal((await userByEmail('w1@test.dev')).status, 'ATIVO');
 });
 
+test('monitoramento: ping dentro só atualiza; fora do raio em atividade alerta uma vez; pausa não alerta', { skip }, async () => {
+  const FAR = { lat: -23.56, lng: -46.63 };
+  const m = await approvedSession(s.w1, 'Monitorada');
+  assert.equal((await event(s.w1, m.session, 'CHECK_IN')).status, 200);
+  const ping = (who, where) => call(who, 'POST', `/api/sessions/${m.session}/ping`, { ...where, accuracy: 20 });
+  // A rota ignora leituras com menos de 60 s; o teste "envelhece" a última leitura.
+  const age = () => q('UPDATE work_sessions SET last_ping_at = ? WHERE id = ?', [new Date(Date.now() - 120e3), m.session]);
+  const alertCount = async () => Number((await q('SELECT COUNT(*) AS n FROM location_alerts WHERE work_session_id = ?', [m.session]))[0].n);
+
+  let r = await ping(s.w1, UNIT);
+  assert.deepEqual([r.status, r.body.inside, r.body.alert], [200, true, false]);
+  assert.equal((await ping(s.w1, FAR)).body.ignored, true, 'menos de 60 s da leitura anterior');
+  await age();
+  r = await ping(s.w1, FAR);
+  assert.deepEqual([r.body.inside, r.body.alert], [false, true]);
+  await age();
+  assert.equal((await ping(s.w1, FAR)).body.alert, false, 'um alerta a cada 30 min');
+  assert.equal(await alertCount(), 1);
+  assert.equal((await ping(s.w5, FAR)).status, 404, 'outro profissional');
+
+  const inbox = (await call(s.gestor, 'GET', '/api/manage/inbox')).body.items;
+  const item = inbox.find((i) => i.kind === 'SAIDA_DO_RAIO');
+  assert.ok(item, 'saída do raio aparece na central de pendências');
+  const [alert] = await q('SELECT id FROM location_alerts WHERE work_session_id = ?', [m.session]);
+  const g2 = await login('gestor2@test.dev');
+  assert.equal((await call(g2, 'POST', `/api/manage/location-alerts/${alert.id}/ack`, {})).status, 404, 'gestor de outra loja');
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/location-alerts/${alert.id}/ack`, {})).status, 200);
+  assert.ok(!(await call(s.gestor, 'GET', '/api/manage/inbox')).body.items.some((i) => i.kind === 'SAIDA_DO_RAIO'), 'ciente tira da central');
+
+  // Na pausa a pessoa pode sair da loja: sem alerta.
+  assert.equal((await event(s.w1, m.session, 'PAUSE_START')).status, 200);
+  await q('UPDATE location_alerts SET at = ? WHERE work_session_id = ?', [new Date(Date.now() - 31 * 60e3), m.session]);
+  await age();
+  assert.equal((await ping(s.w1, FAR)).body.alert, false);
+  assert.equal(await alertCount(), 1);
+
+  const day = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const panel = (await call(s.gestor, 'GET', `/api/manage/sessions?unitId=${s.unitA}&date=${day}`)).body.sessions.find((x) => x.id === m.session);
+  assert.ok(panel?.last_ping_at, 'painel mostra a última leitura');
+  assert.equal(panel.alerts.length, 1);
+});
+
+test('relatório: indicadores batem com o banco, horas gravadas no fechamento, escopo e limite de período', { skip }, async () => {
+  const day = (offset) => new Date(Date.now() + offset * 86400e3).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const from = day(-1);
+  const to = day(1);
+  const [fin] = await q("SELECT worked_min, sources FROM work_sessions WHERE id = ?", [s.session]);
+  assert.ok(fin.worked_min != null && fin.sources === 'GPS_VALIDADO', 'horas gravadas quando a jornada finaliza');
+
+  const rep = await call(s.admin, 'GET', `/api/manage/reports?from=${from}&to=${to}`);
+  assert.equal(rep.status, 200);
+  const ind = rep.body.indicators;
+  const [db] = await q(`SELECT SUM(result = 'CONCLUIDA') AS concluded, SUM(result = 'NAO_COMPARECEU') AS absences FROM daily_confirmations`);
+  assert.equal(ind.concluded, Number(db.concluded));
+  assert.equal(ind.absences, Number(db.absences));
+  const [hours] = await q(`SELECT COALESCE(SUM(ws.worked_min), 0) AS m FROM work_sessions ws JOIN applications a ON a.id = ws.application_id WHERE a.status = 'APROVADA' AND ws.status = 'FINALIZADA'`);
+  assert.equal(ind.workedMin, Number(hours.m), 'horas = soma das jornadas finalizadas');
+  assert.ok(ind.sources.GPS_VALIDADO > 0 && ind.sources.EXCECAO_APROVADA > 0 && ind.sources.FECHAMENTO_ADMINISTRATIVO > 0, 'registros por origem');
+  assert.ok(ind.exceptions.APROVADA > 0 && ind.exceptions.RECUSADA > 0);
+  assert.ok(ind.occurrences.FALTA >= 4);
+  assert.equal(ind.locationAlerts, 1);
+  assert.equal(rep.body.byUnit.reduce((t, u) => t + u.approved, 0), ind.approved);
+
+  const g2 = await login('gestor2@test.dev');
+  assert.equal((await call(g2, 'GET', `/api/manage/reports?from=${from}&to=${to}&unitId=${s.unitA}`)).status, 404, 'gestor B não vê loja A');
+  const mine = (await call(g2, 'GET', `/api/manage/reports?from=${from}&to=${to}`)).body;
+  assert.ok(mine.byUnit.every((u) => u.unitId === s.unitB), 'gestor vê só as lojas dele');
+  assert.equal((await call(s.admin, 'GET', `/api/manage/reports?from=${day(-40)}&to=${to}`)).status, 400, 'máximo de 31 dias');
+});
+
+test('CSV: BOM, separador, fórmula neutralizada, auditoria e escopo', { skip }, async () => {
+  const day = (offset) => new Date(Date.now() + offset * 86400e3).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const qs = `from=${day(-1)}&to=${day(1)}`;
+  const w1 = await userByEmail('w1@test.dev');
+  const [{ name }] = await q('SELECT name FROM users WHERE id = ?', [w1.id]);
+  await q('UPDATE users SET name = ? WHERE id = ?', ['=HYPERLINK("http://x")', w1.id]);
+  try {
+    const res = await fetch(`${base}/api/manage/reports/export.csv?${qs}`, { headers: { cookie: s.admin } });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/csv/);
+    // res.text() descarta o BOM; o Excel lê os bytes crus.
+    const raw = Buffer.from(await res.arrayBuffer());
+    assert.deepEqual([...raw.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'BOM UTF-8 para o Excel');
+    const body = raw.subarray(3).toString('utf8');
+    assert.ok(body.startsWith('"unidade_codigo";"unidade_nome";"data_vaga"'), 'cabeçalho com ;');
+    assert.ok(body.includes('"\'=HYPERLINK(""http://x"")"'), 'fórmula neutralizada');
+    assert.ok(!body.includes('@test.dev'), 'sem e-mail no arquivo');
+    const lines = body.trim().split('\r\n');
+    const rep = (await call(s.admin, 'GET', `/api/manage/reports?${qs}`)).body;
+    assert.equal(lines.length, rep.totalRows + 1);
+  } finally {
+    await q('UPDATE users SET name = ? WHERE id = ?', [name, w1.id]);
+  }
+  const [audited] = await q("SELECT after_json FROM audit_events WHERE action = 'REPORT_EXPORT' ORDER BY created_at DESC LIMIT 1");
+  assert.match(audited.after_json, /"rows":\d+/);
+  const g2 = await login('gestor2@test.dev');
+  assert.equal((await fetch(`${base}/api/manage/reports/export.csv?${qs}&unitId=${s.unitA}`, { headers: { cookie: g2 } })).status, 404);
+});
+
 test('unidade bloqueada não recebe vagas; profissional bloqueado entra só em modo restrito', { skip }, async () => {
   assert.equal((await call(s.admin, 'POST', `/api/units/${s.unitA}/status`, { status: 'BLOQUEADA_FINANCEIRA', reason: 'Pagamento em atraso desde setembro' })).status, 200);
   const starts = new Date(Date.now() + 3600e3);

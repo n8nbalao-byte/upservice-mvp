@@ -9,6 +9,7 @@ import files from './routes/files.js';
 import jobs from './routes/jobs.js';
 import penalties from './routes/penalties.js';
 import presence from './routes/presence.js';
+import reports from './routes/reports.js';
 import worker from './routes/worker.js';
 
 const dist = fileURLToPath(new URL('../web/dist/', import.meta.url));
@@ -41,7 +42,7 @@ const restrictBlocked = (req, res, next) => {
   next();
 };
 
-app.use('/api', loadUser, restrictBlocked, auth, worker, jobs, presence, penalties, admin, files);
+app.use('/api', loadUser, restrictBlocked, auth, worker, jobs, presence, penalties, reports, admin, files);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Não encontrado.' }));
 
 app.use(express.static(dist));

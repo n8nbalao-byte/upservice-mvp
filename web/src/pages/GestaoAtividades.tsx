@@ -4,6 +4,7 @@ import { useInbox } from '../App';
 import { api, fmtDateTime, fmtMinutes, fmtTime, label, toLocalInput, todayBR } from '../lib/api';
 import { useUnitPicker } from './GestaoVagas';
 
+const ACTIVE = ['EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA'];
 const COUNTED = ['AGUARDANDO_CHECKIN', 'EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA', 'PENDENTE_DE_EXCECAO', 'PENDENTE_DE_FECHAMENTO', 'FINALIZADA'];
 
 /** Checkout esquecido: o gestor escolhe de onde vem o horário de saída e justifica. */
@@ -58,6 +59,8 @@ export default function GestaoAtividades() {
     await api(`/manage/applications/${applicationId}/confirm`, { body: { result, note } }).then(afterAction, (e) => setError(e.message));
   }
 
+  const ack = (alertId: string) => api(`/manage/location-alerts/${alertId}/ack`, { body: {} }).then(afterAction, (e) => setError(e.message));
+
   async function decide(excId: string, decision: 'APROVADA' | 'RECUSADA') {
     const reason = prompt(`Justificativa para ${decision === 'APROVADA' ? 'aprovar' : 'recusar'} a exceção (10 a 500 caracteres):`);
     if (reason) await api(`/manage/exceptions/${excId}/decide`, { body: { decision, reason } }).then(afterAction, (e) => setError(e.message));
@@ -102,6 +105,20 @@ export default function GestaoAtividades() {
                 ))}
               </div>
             )}
+
+            {ACTIVE.includes(s.status) && (() => {
+              // Nunca afirmar presença contínua: sem leitura há mais de 20 min, o painel diz isso (v4.0 §9).
+              const stale = !s.last_ping_at || new Date(data!.serverNow).getTime() - new Date(s.last_ping_at).getTime() > 20 * 60e3;
+              return stale
+                ? <div className="warn">Localização não atualizada {s.last_ping_at ? `desde ${fmtTime(s.last_ping_at)}` : 'desde o último registro'} (tela do profissional fechada ou sem sinal).</div>
+                : <div className="muted">Última localização às {fmtTime(s.last_ping_at)} · {s.last_ping_inside ? 'dentro do raio' : 'fora do raio'} ({Math.round(s.last_ping_distance_m)} m, precisão {Math.round(s.last_ping_accuracy_m)} m)</div>;
+            })()}
+            {s.alerts?.map((a: any) => (
+              <div key={a.id} className={`row ${a.acknowledged_at ? 'muted' : 'error'}`}>
+                Saída do raio às {fmtTime(a.at)} · {Math.round(a.distance_m)} m da loja (precisão {Math.round(a.accuracy_m)} m)
+                {a.acknowledged_at ? ' · ciente' : <button onClick={() => ack(a.id)}>Ciente</button>}
+              </div>
+            ))}
 
             {pendingExc && (
               <div className="card stack">

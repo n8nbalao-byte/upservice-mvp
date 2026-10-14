@@ -58,7 +58,7 @@ export const LABEL: Record<string, string> = {
   REGRA_OPERACIONAL: 'Descumprimento de regra operacional', CONFIRMADA: 'Confirmada', MANTIDA: 'Mantida', AJUSTADA: 'Ajustada',
   BLOQUEIO_TEMPORARIO: 'Bloqueio temporário', BLOQUEIO_PERMANENTE: 'Bloqueio permanente', APP: 'App', EMAIL: 'E-mail',
   EXCECAO: 'Exceção', CHECKOUT_PENDENTE: 'Checkout pendente', CANDIDATURA: 'Candidaturas', DOCUMENTO: 'Documentos',
-  OCORRENCIA: 'Ocorrências', CONTESTACAO: 'Contestações',
+  OCORRENCIA: 'Ocorrências', CONTESTACAO: 'Contestações', SAIDA_DO_RAIO: 'Saídas do raio',
 };
 export const isBlocked = (status: string) => status === 'BLOQUEADO_TEMPORARIAMENTE' || status === 'BLOQUEADO_PERMANENTEMENTE';
 export const fmtDate = (s: string) => new Date(s).toLocaleDateString('pt-BR', { timeZone: TZ });

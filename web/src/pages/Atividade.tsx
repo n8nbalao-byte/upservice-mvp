@@ -38,6 +38,28 @@ export default function Atividade() {
   const s = data?.session;
   const breakLeft = s?.break_ends_at ? new Date(s.break_ends_at).getTime() - now : null;
   const onBreak = s?.status === 'EM_PAUSA' || s?.status === 'PAUSA_EXCEDIDA';
+  const [lastPing, setLastPing] = useState<string | null>(null);
+
+  // Em atividade e com a tela visível: confere a localização a cada 10 min e ao voltar para a aba (v4.0 §9).
+  // Com a tela fechada nada é lido; o gestor vê "localização não atualizada".
+  useEffect(() => {
+    if (s?.status !== 'EM_ATIVIDADE') return;
+    let stopped = false;
+    const ping = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const p = await getPosition();
+        if (stopped) return;
+        const r = await api(`/sessions/${id}/ping`, { body: { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy } });
+        if (!r.ignored) setLastPing(new Date().toISOString());
+      } catch { /* sem GPS agora: tenta na próxima */ }
+    };
+    ping();
+    const timer = setInterval(ping, 10 * 60e3);
+    const onVisible = () => { if (document.visibilityState === 'visible') ping(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { stopped = true; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [s?.status, id]);
 
   useEffect(() => {
     if (!onBreak) alerted.current = false;
@@ -151,6 +173,9 @@ export default function Atividade() {
         <div className="row"><span className="badge">{label(s.status)}</span>{s.break_count > 0 && <span className="muted">Pausas: {s.breaks_used} de {s.break_count} ({s.break_minutes} min cada)</span>}</div>
       </div>
 
+      {s.status === 'EM_ATIVIDADE' && (lastPing ?? s.last_ping_at) && (
+        <p className="muted">📍 Localização verificada às {fmtTime(lastPing ?? s.last_ping_at)}. Durante a atividade, o app confere a cada 10 minutos enquanto esta tela estiver aberta.</p>
+      )}
       {error && <p className="error">{error}</p>}
       {busy && <p className="notice">{busy}</p>}
       {failure && !busy && (

@@ -84,6 +84,17 @@ export const STRIKES_TO_BLOCK = 3;
 /** Conta para o bloqueio de 15 dias: só falta confirmada que ainda não gerou bloqueio (contagem recomeça após cada bloqueio). */
 export const isStrike = (o) => o.type === 'FALTA' && o.status === 'CONFIRMADA' && !o.penalty_id;
 
+export const PING_INTERVAL_MS = 10 * 60 * 1000;
+export const PING_MIN_GAP_MS = 60 * 1000;
+export const ALERT_COOLDOWN_MS = 30 * 60 * 1000;
+
+/** Célula CSV segura para planilhas: sempre entre aspas e sem execução de fórmula (=, +, -, @, tab, CR). */
+export function csvCell(value) {
+  let s = value == null ? '' : String(value);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return `"${s.replaceAll('"', '""')}"`;
+}
+
 export function isValidCpf(value) {
   const d = String(value ?? '').replace(/\D/g, '');
   if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
