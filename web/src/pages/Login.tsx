@@ -49,6 +49,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
           <button className="primary">Entrar</button>
         </form>
       )}
+      <p className="muted"><a href="/privacidade.html">Política de Privacidade</a> · <a href="/termos.html">Termos de Uso</a></p>
     </div>
   );
 }

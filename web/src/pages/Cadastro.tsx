@@ -99,7 +99,9 @@ export default function Cadastro() {
             <li>Selfies e documentos são vistos apenas por gestores da loja e administradores da UpService, e todo acesso fica registrado.</li>
             <li>Os dados são mantidos por 5 anos. Você pode consultar e atualizar seus próprios dados a qualquer momento.</li>
           </ul>
-          <p className="muted">Versão provisória. O texto final da política de privacidade e dos termos de uso será publicado pela UpService.</p>
+          <p className="muted">
+            Leia a <a href="/privacidade.html" target="_blank">Política de Privacidade</a> e os <a href="/termos.html" target="_blank">Termos de Uso</a> completos.
+          </p>
           {me.profile?.terms_accepted_at ? (
             <p className="notice">Termos aceitos.</p>
           ) : (
