@@ -18,6 +18,7 @@ function groupsFor(me: Me, inboxCount: number): Group[] {
   if (role === 'PROFISSIONAL') {
     if (isBlocked(me.user.status)) return [{ items: [{ to: '/ocorrencias', text: 'Ocorrências', icon: 'alert' }] }];
     return [{ items: [
+      { to: '/inicio', text: 'Início', icon: 'home' },
       { to: '/vagas', text: 'Vagas', icon: 'briefcase' },
       { to: '/minhas', text: 'Minhas diárias', icon: 'wallet' },
       { to: '/cadastro', text: 'Cadastro', icon: 'user' },
