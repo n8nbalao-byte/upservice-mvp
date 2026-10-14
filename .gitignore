@@ -6,3 +6,4 @@ storage/
 .env.*
 !.env.example
 storage-load/
+appUpservice/
