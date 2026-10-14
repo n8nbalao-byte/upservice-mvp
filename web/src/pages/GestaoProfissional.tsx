@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { useInbox } from '../App';
+import { Icon } from '../components/icons';
+import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
 import { api, fmtDateTime, label, type Me, type Unit } from '../lib/api';
 
 const DOC_NAME: Record<string, string> = { CPF: 'CPF', RG: 'RG', COMPROVANTE: 'Comprovante de residência' };
@@ -9,8 +11,10 @@ const MANUAL_TYPES = ['ABANDONO', 'FRAUDE', 'REGRA_OPERACIONAL'];
 type History = { occurrences: any[]; penalties: any[]; contestations: any[]; strikes: number; strikesToBlock: number };
 
 /** Ocorrências, bloqueios e contestações do profissional, com as ações do gestor/admin. */
-function Disciplina({ workerId, onChange }: { workerId: string; onChange: () => void }) {
+function Disciplina({ workerId, workerName, onChange }: { workerId: string; workerName: string; onChange: () => void }) {
   const { refresh: refreshInbox } = useInbox();
+  const { ask } = useDialog();
+  const { busy, run } = useAction();
   const [h, setH] = useState<History>();
   const [units, setUnits] = useState<Unit[]>([]);
   const [form, setForm] = useState<'' | 'occurrence' | 'email'>('');
@@ -19,45 +23,44 @@ function Disciplina({ workerId, onChange }: { workerId: string; onChange: () => 
   const load = () => api<History>(`/manage/workers/${workerId}/penalties`).then(setH, (e) => setError(e.message));
   useEffect(() => { load(); api<Unit[]>('/units').then(setUnits); }, [workerId]);
 
-  async function act(path: string, body: object) {
-    setError('');
-    try {
-      await api(path, { body });
+  async function act(key: string, path: string, body: object, done: string) {
+    if (await run(key, () => api(path, { body }), done)) {
       setForm('');
       await load();
       onChange();
       refreshInbox();
-    } catch (e: any) {
-      setError(e.message);
     }
   }
 
-  function blockForever() {
-    const reason = prompt('Motivo do bloqueio permanente (10 a 500 caracteres). O profissional verá este motivo:');
+  async function blockForever() {
+    const reason = await ask(reasonOpts(`Bloquear ${workerName} permanentemente?`, {
+      message: 'O profissional verá este motivo. Vagas aprovadas futuras são canceladas e liberadas.', confirmText: 'Continuar', tone: 'danger',
+    }));
     if (!reason) return;
-    const confirm = prompt('Esta ação bloqueia o profissional por tempo indeterminado e cancela as vagas aprovadas futuras. Para confirmar, digite BLOQUEAR:');
-    if (confirm) act(`/manage/workers/${workerId}/block`, { reason, confirm });
+    const confirm = await ask({
+      title: 'Confirme o bloqueio permanente', label: 'Digite BLOQUEAR para confirmar', requireText: 'BLOQUEAR',
+      message: 'O bloqueio vale por tempo indeterminado até que um gestor ou administrador reative.', confirmText: 'Bloquear permanentemente', tone: 'danger',
+    });
+    if (confirm) act('block', `/manage/workers/${workerId}/block`, { reason, confirm }, 'Profissional bloqueado.');
   }
 
-  function endPenalty(id: string) {
-    const reason = prompt('Justificativa da reativação (10 a 500 caracteres):');
-    if (reason) act(`/manage/penalties/${id}/end`, { reason });
+  async function endPenalty(id: string) {
+    const reason = await ask(reasonOpts(`Reativar ${workerName}?`, { message: 'O profissional recebe um aviso e volta a poder se candidatar.', confirmText: 'Reativar' }));
+    if (reason) act(id, `/manage/penalties/${id}/end`, { reason }, 'Profissional reativado.');
   }
 
   const submitOccurrence = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.currentTarget));
-    act('/manage/occurrences', { userId: workerId, ...f });
+    act('occurrence', '/manage/occurrences', { userId: workerId, ...Object.fromEntries(new FormData(e.currentTarget)) }, 'Ocorrência registrada.');
   };
-
   const submitEmail = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
     const [kind, id] = f.target.split(':');
-    act('/manage/contestations', { userId: workerId, message: f.message, ...(kind === 'p' ? { penaltyId: id } : { occurrenceId: id }) });
+    act('email', '/manage/contestations', { userId: workerId, message: f.message, ...(kind === 'p' ? { penaltyId: id } : { occurrenceId: id }) }, 'Contestação registrada.');
   };
 
-  if (!h) return <p>{error || 'Carregando histórico…'}</p>;
+  if (!h) return error ? <Alert kind="danger">{error}</Alert> : <Loading text="Carregando histórico…" />;
   const activePenalties = h.penalties.filter((p) => p.status === 'ATIVA');
   const contestable = [
     ...activePenalties.map((p) => ({ value: `p:${p.id}`, text: `${label(p.type)} — ${p.reason}` })),
@@ -66,55 +69,61 @@ function Disciplina({ workerId, onChange }: { workerId: string; onChange: () => 
 
   return (
     <div className="card stack">
-      <h2>Ocorrências e bloqueios</h2>
-      {error && <p className="error">{error}</p>}
-      <p>Faltas confirmadas desde o último bloqueio: <b>{h.strikes} de {h.strikesToBlock}</b></p>
+      <div className="card-header" style={{ marginBottom: 0 }}>
+        <h2>Ocorrências e bloqueios</h2>
+        <StatusBadge tone={h.strikes >= h.strikesToBlock - 1 ? 'danger' : h.strikes ? 'warning' : 'neutral'}>Faltas desde o último bloqueio: {h.strikes} de {h.strikesToBlock}</StatusBadge>
+      </div>
       <div className="row">
-        <button onClick={() => setForm(form === 'occurrence' ? '' : 'occurrence')}>Registrar ocorrência</button>
-        <button onClick={() => setForm(form === 'email' ? '' : 'email')} disabled={!contestable.length}>Registrar contestação recebida por e-mail</button>
-        {!activePenalties.some((p) => p.type === 'BLOQUEIO_PERMANENTE') && <button className="danger" onClick={blockForever}>Bloquear permanentemente</button>}
+        <button className="sm" onClick={() => setForm(form === 'occurrence' ? '' : 'occurrence')}>Registrar ocorrência</button>
+        <button className="sm" onClick={() => setForm(form === 'email' ? '' : 'email')} disabled={!contestable.length}>Registrar contestação recebida por e-mail</button>
+        {!activePenalties.some((p) => p.type === 'BLOQUEIO_PERMANENTE') && <button className="sm ghost text-danger" disabled={busy === 'block'} onClick={blockForever}>Bloquear permanentemente</button>}
       </div>
 
       {form === 'occurrence' && (
-        <form className="card stack" onSubmit={submitOccurrence}>
+        <form className="subpanel form" onSubmit={submitOccurrence}>
           <p className="muted">Falta é registrada pela confirmação da diária ("Registrar falta" em Atividades).</p>
           <div className="cols">
             <label>Tipo<select name="type">{MANUAL_TYPES.map((t) => <option key={t} value={t}>{label(t)}</option>)}</select></label>
             <label>Unidade<select name="unitId">{units.map((u) => <option key={u.id} value={u.id}>{u.code} · {u.name}</option>)}</select></label>
           </div>
           <label>Descrição e evidências<textarea name="description" rows={3} minLength={10} maxLength={500} required /></label>
-          <button className="primary">Registrar (o profissional será avisado)</button>
+          <div className="row"><button type="button" onClick={() => setForm('')}>Cancelar</button><button className="primary" disabled={busy === 'occurrence'}>Registrar (o profissional será avisado)</button></div>
         </form>
       )}
-
       {form === 'email' && (
-        <form className="card stack" onSubmit={submitEmail}>
+        <form className="subpanel form" onSubmit={submitEmail}>
           <label>Contestação sobre<select name="target">{contestable.map((c) => <option key={c.value} value={c.value}>{c.text}</option>)}</select></label>
           <label>Conteúdo do e-mail recebido<textarea name="message" rows={4} minLength={10} maxLength={1000} required /></label>
-          <button className="primary">Registrar contestação</button>
+          <div className="row"><button type="button" onClick={() => setForm('')}>Cancelar</button><button className="primary" disabled={busy === 'email'}>Registrar contestação</button></div>
         </form>
       )}
 
-      {h.penalties.map((p) => (
-        <div key={p.id} className="row between">
-          <span><b>{label(p.type)}</b> <span className="badge">{label(p.status)}</span>
-            <div className="muted">{p.reason} · {fmtDateTime(p.starts_at)} {p.ends_at ? `até ${fmtDateTime(p.ends_at)}` : '(sem prazo)'}{p.end_reason && ` · ${p.end_reason}`}</div>
-          </span>
-          {p.status === 'ATIVA' && <button onClick={() => endPenalty(p.id)}>Reativar</button>}
+      {h.penalties.length > 0 && (
+        <div className="stack">
+          <h3>Bloqueios</h3>
+          {h.penalties.map((p) => (
+            <div key={p.id} className="subpanel row between">
+              <span><StatusBadge status={p.type} /> <StatusBadge status={p.status} />
+                <span className="muted" style={{ display: 'block', marginTop: 4 }}>{p.reason} · {fmtDateTime(p.starts_at)} {p.ends_at ? `até ${fmtDateTime(p.ends_at)}` : '(sem prazo)'}{p.end_reason && ` · ${p.end_reason}`}</span>
+              </span>
+              {p.status === 'ATIVA' && <button className="sm" disabled={busy === p.id} onClick={() => endPenalty(p.id)}>Reativar</button>}
+            </div>
+          ))}
         </div>
-      ))}
-      {h.occurrences.length === 0 && <p className="muted">Nenhuma ocorrência.</p>}
-      {h.occurrences.length > 0 && (
-        <div className="scroll">
-          <table>
+      )}
+
+      <h3>Histórico de ocorrências</h3>
+      {h.occurrences.length === 0 ? <p className="muted">Nenhuma ocorrência.</p> : (
+        <div className="table-wrap">
+          <table className="responsive">
             <thead><tr><th>Ocorrência</th><th>Loja</th><th>Data</th><th>Status</th></tr></thead>
             <tbody>
               {h.occurrences.map((o) => (
                 <tr key={o.id}>
-                  <td>{label(o.type)}{o.description && <div className="muted">{o.description}</div>}</td>
-                  <td>{o.unit_name}</td>
-                  <td>{fmtDateTime(o.created_at)}</td>
-                  <td>{label(o.status)}{o.penalty_id && <div className="muted">usada em bloqueio</div>}</td>
+                  <td data-label="Ocorrência"><span className="strong">{label(o.type)}</span>{o.description && <span className="muted">{o.description}</span>}</td>
+                  <td data-label="Loja">{o.unit_name}</td>
+                  <td data-label="Data" className="nowrap">{fmtDateTime(o.created_at)}</td>
+                  <td data-label="Status"><StatusBadge status={o.status === 'CONFIRMADA' ? 'CONFIRMADA' : o.status} tone={o.status === 'PENDENTE' ? 'warning' : undefined} />{o.penalty_id && <span className="muted">usada em bloqueio</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -131,6 +140,8 @@ function Disciplina({ workerId, onChange }: { workerId: string; onChange: () => 
 export default function GestaoProfissional() {
   const { id } = useParams();
   const { refresh: refreshInbox } = useInbox();
+  const { ask } = useDialog();
+  const { busy, run } = useAction();
   const [data, setData] = useState<Me>();
   const [error, setError] = useState('');
 
@@ -138,55 +149,67 @@ export default function GestaoProfissional() {
   useEffect(() => { load(); }, [id]);
 
   async function review(docId: string, status: 'APROVADO' | 'REJEITADO') {
-    const reason = status === 'REJEITADO' ? prompt('Motivo da rejeição (o profissional verá):') : null;
-    if (status === 'REJEITADO' && !reason) return;
-    await api(`/manage/documents/${docId}/review`, { body: { status, reason } }).then(() => { load(); refreshInbox(); }, (e) => setError(e.message));
+    let reason: string | null = null;
+    if (status === 'REJEITADO') {
+      reason = await ask({ title: 'Rejeitar documento?', label: 'Motivo (o profissional verá e poderá reenviar)', multiline: true, minLength: 5, maxLength: 500, confirmText: 'Rejeitar', tone: 'danger' });
+      if (!reason) return;
+    }
+    if (await run(docId, () => api(`/manage/documents/${docId}/review`, { body: { status, reason } }), status === 'APROVADO' ? 'Documento aprovado.' : 'Documento rejeitado.')) {
+      load();
+      refreshInbox();
+    }
   }
 
-  if (!data) return <p>{error || 'Carregando…'}</p>;
+  if (!data) return error ? <Alert kind="danger">{error}</Alert> : <Loading />;
   const p = data.profile;
   return (
-    <div className="stack">
-      <h1>{data.user.name}</h1>
-      {error && <p className="error">{error}</p>}
-      <p className="notice">Dados pessoais e documentos: todo acesso fica registrado na auditoria.</p>
-      <div className="card">
-        <div><span className="badge">{label(data.user.status)}</span> {data.user.email}</div>
-        {p ? (
-          <table>
-            <tbody>
-              <tr><th>CPF</th><td>{p.cpf}</td></tr>
-              <tr><th>RG</th><td>{p.rg}</td></tr>
-              <tr><th>Telefone</th><td>{p.phone}</td></tr>
-              <tr><th>Endereço</th><td>{p.address} · {p.city}/{p.uf}</td></tr>
-              <tr><th>Emergência</th><td>{p.emergency_name} · {p.emergency_phone}</td></tr>
-              <tr><th>Termos</th><td>{p.terms_accepted_at ? fmtDateTime(p.terms_accepted_at) : 'não aceitos'}</td></tr>
-            </tbody>
-          </table>
-        ) : <p className="muted">Cadastro não preenchido.</p>}
+    <div className="page">
+      <PageHeader
+        back={{ to: '/gestao/documentos', label: 'Documentos' }}
+        title={data.user.name}
+        description={data.user.email}
+        actions={<StatusBadge status={data.user.status} />}
+      />
+      <Alert kind="info">Dados pessoais e documentos: todo acesso fica registrado na auditoria.</Alert>
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-header"><h2>Cadastro</h2></div>
+          {p ? (
+            <table>
+              <tbody>
+                <tr><th>CPF</th><td className="tabular">{p.cpf}</td></tr>
+                <tr><th>RG</th><td>{p.rg}</td></tr>
+                <tr><th>Telefone</th><td className="tabular">{p.phone}</td></tr>
+                <tr><th>Endereço</th><td>{p.address} · {p.city}/{p.uf}</td></tr>
+                <tr><th>Emergência</th><td>{p.emergency_name} · {p.emergency_phone}</td></tr>
+                <tr><th>Termos</th><td>{p.terms_accepted_at ? `Aceitos em ${fmtDateTime(p.terms_accepted_at)}` : 'Não aceitos'}</td></tr>
+              </tbody>
+            </table>
+          ) : <EmptyState icon="user" title="Cadastro não preenchido" />}
+        </div>
+        <div className="card">
+          <div className="card-header"><h2>Documentos</h2><span className="sub">{data.documents.filter((d) => d.status === 'APROVADO').length}/3 aprovados</span></div>
+          {data.documents.length === 0 ? <EmptyState icon="file" title="Nenhum documento enviado" /> : (
+            <div className="stack">
+              {data.documents.map((d) => (
+                <div key={d.id} className="subpanel row between">
+                  <span><b>{DOC_NAME[d.type]}</b> <StatusBadge status={d.status} />{d.rejection_reason && <span className="muted" style={{ display: 'block' }}>{d.rejection_reason}</span>}</span>
+                  <span className="row">
+                    <a className="btn sm" href={`/api/files/doc/${d.id}`} target="_blank" rel="noreferrer"><Icon name="file" size={16} />Ver</a>
+                    {d.status === 'PENDENTE' && (
+                      <>
+                        <button className="primary sm" disabled={busy === d.id} onClick={() => review(d.id, 'APROVADO')}>Aprovar</button>
+                        <button className="danger sm" disabled={busy === d.id} onClick={() => review(d.id, 'REJEITADO')}>Rejeitar</button>
+                      </>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-      <div className="card stack">
-        <h2>Documentos</h2>
-        {data.documents.length === 0 && <p className="muted">Nenhum documento enviado.</p>}
-        {data.documents.map((d) => (
-          <div key={d.id} className="row between">
-            <span>
-              <b>{DOC_NAME[d.type]}</b> <span className="badge">{label(d.status)}</span>
-              {d.rejection_reason && <span className="muted"> · {d.rejection_reason}</span>}
-            </span>
-            <span className="row">
-              <a className="button" href={`/api/files/doc/${d.id}`} target="_blank" rel="noreferrer">Ver</a>
-              {d.status === 'PENDENTE' && (
-                <>
-                  <button className="primary" onClick={() => review(d.id, 'APROVADO')}>Aprovar</button>
-                  <button className="danger" onClick={() => review(d.id, 'REJEITADO')}>Rejeitar</button>
-                </>
-              )}
-            </span>
-          </div>
-        ))}
-      </div>
-      {id && <Disciplina workerId={id} onChange={load} />}
+      {id && <Disciplina workerId={id} workerName={data.user.name} onChange={load} />}
     </div>
   );
 }
