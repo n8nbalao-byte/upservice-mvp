@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useInbox, useMe } from '../App';
 import { Icon, type IconName } from '../components/icons';
@@ -17,14 +17,20 @@ type Dash = {
 
 const REFRESH_MS = 60000;
 const RECENT = 4;
+const JOBS = 6;
+/** Tela larga e alta o bastante: o painel ocupa exatamente a altura da janela, sem rolagem. */
+const FIT = '(min-width: 1100px) and (min-height: 600px)';
+const RECENT_ROW = 57;
+const JOB_ROW = 43;
+const JOB_HEAD = 35;
 const PRIORITY = ['Alta', 'Média', 'Baixa'];
 /** Situação das diárias de hoje, na ordem do dia; a cor de cada fatia é a mesma da legenda. */
 const DAY: { label: string; statuses: string[]; color: string }[] = [
-  { label: 'Aguardando check-in', statuses: ['AGUARDANDO_CHECKIN'], color: '#9aa9b2' },
+  { label: 'Aguardando', statuses: ['AGUARDANDO_CHECKIN'], color: '#9aa9b2' },
   { label: 'Em atividade', statuses: ['EM_ATIVIDADE'], color: '#2563a8' },
   { label: 'Em pausa', statuses: ['EM_PAUSA', 'PAUSA_EXCEDIDA'], color: '#e0a106' },
-  { label: 'Exceção pendente', statuses: ['PENDENTE_DE_EXCECAO'], color: '#e5484d' },
-  { label: 'Checkout pendente', statuses: ['PENDENTE_DE_FECHAMENTO'], color: '#6d4fc4' },
+  { label: 'Exceção', statuses: ['PENDENTE_DE_EXCECAO'], color: '#e5484d' },
+  { label: 'Sem checkout', statuses: ['PENDENTE_DE_FECHAMENTO'], color: '#6d4fc4' },
   { label: 'Finalizadas', statuses: ['FINALIZADA'], color: '#12a07a' },
 ];
 
@@ -32,6 +38,30 @@ const today = (now: Date) => {
   const s = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' });
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
+
+function useMedia(query: string) {
+  const [match, setMatch] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setMatch(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, [query]);
+  return match;
+}
+
+/** Quantas linhas de altura fixa cabem no elemento (a altura vem da grade, não do conteúdo). */
+function useFit(rowHeight: number, reserved = 0) {
+  const [n, setN] = useState(0);
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLElement | null) => {
+    observer.current?.disconnect();
+    if (!el) return;
+    observer.current = new ResizeObserver(([e]) => setN(Math.max(1, Math.floor((e.contentRect.height - reserved) / rowHeight))));
+    observer.current.observe(el);
+  }, [rowHeight, reserved]);
+  return [ref, n] as const;
+}
 
 function Kpi({ to, icon, tone, title, value, sub, hot }: { to: string; icon: IconName; tone: string; title: string; value: number; sub: string; hot?: boolean }) {
   return (
@@ -73,6 +103,9 @@ export default function Dashboard() {
   const { items, refresh: refreshInbox } = useInbox();
   const [data, setData] = useState<Dash>();
   const [error, setError] = useState('');
+  const fit = useMedia(FIT);
+  const [recentRef, recentFit] = useFit(RECENT_ROW);
+  const [jobsRef, jobsFit] = useFit(JOB_ROW, JOB_HEAD);
   const load = () => api<Dash>('/manage/dashboard').then((d) => { setData(d); setError(''); }, (e) => setError(e.message));
   useEffect(() => {
     load();
@@ -84,19 +117,20 @@ export default function Dashboard() {
 
   const rank = (kind: string) => GROUPS.findIndex((g) => g.kinds.some((k) => k.kind === kind));
   const iconOf = (kind: string) => GROUPS.flatMap((g) => g.kinds).find((k) => k.kind === kind)?.icon ?? 'info';
-  const recent = [...items].sort((a, b) => rank(a.kind) - rank(b.kind) || +new Date(b.at) - +new Date(a.at)).slice(0, RECENT);
+  const recent = [...items].sort((a, b) => rank(a.kind) - rank(b.kind) || +new Date(b.at) - +new Date(a.at)).slice(0, fit ? recentFit || RECENT : RECENT);
   const urgent = items.filter((i) => rank(i.kind) === 0).length;
   const count = (statuses: string[]) => statuses.reduce((t, s) => t + (data.today[s] ?? 0), 0);
   const parts = DAY.map((d) => ({ ...d, value: count(d.statuses) }));
   const dayTotal = parts.reduce((t, p) => t + p.value, 0);
   const done = count(['FINALIZADA']);
   const working = count(['EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA']);
-  const quick: { to: string; icon: IconName; text: string }[] = [
-    { to: '/gestao/vagas', icon: 'briefcase', text: 'Publicar vaga' },
-    { to: '/gestao/atividades', icon: 'calendar', text: 'Acompanhar atividades' },
-    { to: '/gestao/documentos', icon: 'file', text: 'Revisar documentos' },
-    { to: '/gestao/relatorios', icon: 'chart', text: 'Gerar relatório' },
-    ...(me.user.role === 'ADMINISTRADOR' ? [{ to: '/admin/unidades', icon: 'store' as const, text: 'Cadastrar unidade' }] : []),
+  const jobs = data.latestJobs.slice(0, fit ? jobsFit || JOBS : JOBS);
+  const quick: { to: string; icon: IconName; text: string; short: string }[] = [
+    { to: '/gestao/vagas', icon: 'briefcase', text: 'Publicar vaga', short: 'Vagas' },
+    { to: '/gestao/atividades', icon: 'calendar', text: 'Acompanhar atividades', short: 'Atividades' },
+    { to: '/gestao/documentos', icon: 'file', text: 'Revisar documentos', short: 'Documentos' },
+    { to: '/gestao/relatorios', icon: 'chart', text: 'Gerar relatório', short: 'Relatório' },
+    ...(me.user.role === 'ADMINISTRADOR' ? [{ to: '/admin/unidades', icon: 'store' as const, text: 'Cadastrar unidade', short: 'Unidades' }] : []),
   ];
 
   return (
@@ -130,7 +164,7 @@ export default function Dashboard() {
             <Link className="see-all" to="/gestao/pendencias">Ver todas</Link>
           </div>
           {recent.length === 0 ? <EmptyState title="Tudo em dia" text="Nenhuma pendência no momento." /> : (
-            <div className="recent">
+            <div className="recent" ref={recentRef}>
               {recent.map((i) => {
                 const tone: Tone = GROUPS[rank(i.kind)]?.tone ?? 'info';
                 return (
@@ -148,18 +182,17 @@ export default function Dashboard() {
 
         <section className="card dash-card">
           <div className="card-header">
-            <h2>Atividades do dia</h2>
+            <h2>Atividades do dia {data.today.exceptions > 0 && <Link to="/gestao/pendencias" className="badge tone-danger plain">{data.today.exceptions} exceção(ões) a decidir</Link>}</h2>
             <Link className="see-all" to="/gestao/atividades">Ver todas</Link>
           </div>
           {dayTotal === 0 ? <EmptyState icon="calendar" title="Nenhuma diária hoje" text="As diárias aprovadas para hoje aparecem aqui." /> : (
-            <div className="donut-wrap">
+            <div className="fill"><div className="donut-wrap">
               <Donut parts={parts} center={`${Math.round((done / dayTotal) * 100)}%`} caption="Concluídas" />
               <div className="legend">
-                {parts.map((p) => <div key={p.label}><i style={{ background: p.color }} />{p.label}<b>{p.value}</b></div>)}
+                {parts.map((p) => <div key={p.label}><i style={{ background: p.color }} /><span>{p.label}</span><b>{p.value}</b></div>)}
               </div>
-            </div>
+            </div></div>
           )}
-          {data.today.exceptions > 0 && <Alert kind="warning">{data.today.exceptions} exceção(ões) aguardando sua decisão.</Alert>}
         </section>
       </div>
 
@@ -170,17 +203,17 @@ export default function Dashboard() {
             <Link className="see-all" to="/gestao/vagas">Ver todas</Link>
           </div>
           {data.latestJobs.length === 0 ? <EmptyState icon="briefcase" title="Nenhuma vaga ainda" /> : (
-            <div className="table-wrap">
+            <div className="table-wrap" ref={jobsRef}>
               <table className="responsive">
-                <thead><tr><th>Cargo</th><th>Unidade</th><th>Data e horário</th><th className="num">Valor (R$)</th><th className="num">Candidaturas</th><th>Status</th><th>Ações</th></tr></thead>
+                <thead><tr><th>Cargo</th><th className="opt2">Unidade</th><th>Data e horário</th><th className="num">Valor (R$)</th><th className="num opt">Candidaturas</th><th>Status</th><th>Ações</th></tr></thead>
                 <tbody>
-                  {data.latestJobs.map((j) => (
+                  {jobs.map((j) => (
                     <tr key={j.id}>
                       <td data-label="Cargo" className="strong">{j.title}</td>
-                      <td data-label="Unidade" className="nowrap">{j.unit_name}</td>
+                      <td data-label="Unidade" className="nowrap opt2">{j.unit_name}</td>
                       <td data-label="Data e horário" className="nowrap">{fmtDate(j.starts_at).slice(0, 5)} · {fmtTime(j.starts_at)} - {fmtTime(j.ends_at)}</td>
                       <td data-label="Valor (R$)" className="num">{fmtMoney(Number(j.daily_value)).replace('R$', '').trim()}</td>
-                      <td data-label="Candidaturas" className="num">{j.applications}</td>
+                      <td data-label="Candidaturas" className="num opt">{j.applications}</td>
                       <td data-label="Status"><StatusBadge status={j.status} /></td>
                       <td data-label="Ações"><Link className="icon-btn" to={`/gestao/vagas/${j.id}`} aria-label={`Ver candidaturas de ${j.title}`} title="Ver candidaturas"><Icon name="eye" size={18} /></Link></td>
                     </tr>
@@ -191,18 +224,14 @@ export default function Dashboard() {
           )}
         </section>
 
-        <div className="side-stack">
-          <section className="card dash-card">
-            <div className="card-header"><h2>Acesso rápido</h2></div>
+        <section className="card dash-card">
+          <div className="card-header"><h2>Acesso rápido</h2></div>
+          <div className="fill">
             <nav className="quick" aria-label="Acesso rápido">
-              {quick.map((q) => <Link key={q.to} to={q.to}><Icon name={q.icon} />{q.text}<span className="go"><Icon name="chevronRight" size={18} /></span></Link>)}
+              {quick.map((q) => <Link key={q.to} to={q.to} title={q.text}><Icon name={q.icon} /><span className="long">{q.text}</span><span className="short">{q.short}</span><span className="go"><Icon name="chevronRight" size={18} /></span></Link>)}
             </nav>
-          </section>
-          <div className="promo">
-            <img src="/logo-dark.png" alt="" />
-            <p>Conectando talentos<br />a grandes resultados.</p>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );
