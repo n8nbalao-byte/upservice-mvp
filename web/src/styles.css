@@ -204,6 +204,9 @@ button.sm, .btn.sm { min-height: 32px; padding: 5px 10px; font-size: 0.82rem; }
 button.big, .btn.big { width: 100%; min-height: 56px; font-size: 1.05rem; border-radius: var(--radius-lg); }
 button.link { min-height: 0; padding: 0; border: 0; background: none; color: var(--gold-dark); font-weight: 600; }
 button:disabled, .btn[aria-disabled='true'] { opacity: 0.5; cursor: not-allowed; }
+button.ghost.text-danger, .btn.ghost.text-danger { color: var(--danger); }
+button.ghost.text-danger:hover, .btn.ghost.text-danger:hover { background: var(--danger-soft); }
+td select { max-width: 220px; }
 
 /* ---------- Formulários ---------- */
 form.stack, .form { display: grid; gap: 14px; }

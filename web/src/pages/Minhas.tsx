@@ -1,48 +1,67 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Alert, EmptyState, Loading, PageHeader, Stat, StatusBadge, useAction, useDialog } from '../components/ui';
 import { api, fmtDateTime, fmtMoney, label } from '../lib/api';
 
+const ACTIVE = ['AGUARDANDO_CHECKIN', 'EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA', 'PENDENTE_DE_EXCECAO', 'PENDENTE_DE_FECHAMENTO'];
+
 export default function Minhas() {
+  const { confirm } = useDialog();
+  const { busy, run } = useAction();
   const [summary, setSummary] = useState<Record<string, number>>();
-  const [apps, setApps] = useState<any[]>([]);
+  const [apps, setApps] = useState<any[]>();
   const [error, setError] = useState('');
 
   const load = () => Promise.all([api('/me/summary').then(setSummary), api('/me/applications').then(setApps)]).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
 
-  async function cancel(id: string) {
-    if (!confirm('Cancelar esta candidatura?')) return;
-    await api(`/me/applications/${id}/cancel`, { body: {} }).then(load, (e) => setError(e.message));
+  async function cancel(a: any) {
+    if (!(await confirm({ title: 'Cancelar esta candidatura?', message: `${a.title} · ${a.unit_name}`, confirmText: 'Cancelar candidatura', tone: 'danger' }))) return;
+    if (await run(a.id, () => api(`/me/applications/${a.id}/cancel`, { body: {} }), 'Candidatura cancelada.')) load();
   }
 
+  const upcoming = (apps ?? []).filter((a) => a.status === 'APROVADA' && ACTIVE.includes(a.session_status) && !a.confirmation);
+  const others = (apps ?? []).filter((a) => !upcoming.includes(a));
+
+  const card = (a: any) => {
+    const st = a.confirmation ?? a.session_status ?? a.status;
+    return (
+      <article key={a.id} className="card stack">
+        <div className="row between"><h2>{a.title}</h2><StatusBadge status={st} /></div>
+        <div className="muted">{a.unit_name} · {fmtDateTime(a.starts_at)}</div>
+        <div className="row between">
+          <span className="money">{fmtMoney(a.daily_value)}</span>
+          <div className="row">
+            {a.status === 'APROVADA' && a.session_id && <Link className={`btn${upcoming.includes(a) ? ' primary' : ''}`} to={`/atividade/${a.session_id}`}>{upcoming.includes(a) ? 'Abrir atividade' : 'Ver registros'}</Link>}
+            {a.status === 'PENDENTE' && <button className="sm ghost text-danger" disabled={busy === a.id} onClick={() => cancel(a)}>Cancelar candidatura</button>}
+          </div>
+        </div>
+        {a.cancel_reason && <Alert kind="warning">Motivo do cancelamento: {a.cancel_reason}</Alert>}
+      </article>
+    );
+  };
+
   return (
-    <div>
-      <h1>Minhas diárias</h1>
-      {error && <p className="error">{error}</p>}
+    <div className="page">
+      <PageHeader title="Minhas diárias" description="Suas candidaturas, atividades e o valor das diárias concluídas." />
+      {error && <Alert kind="danger">{error}</Alert>}
       {summary && (
-        <div className="grid">
-          <div className="card stat"><b>{summary.aprovadas}</b>cadastradas</div>
-          <div className="card stat"><b>{summary.comparecidas}</b>comparecidas</div>
-          <div className="card stat"><b>{summary.concluidas}</b>concluídas</div>
-          <div className="card stat"><b>{fmtMoney(summary.valor)}</b>a receber</div>
+        <div className="stats">
+          <Stat label="Aprovadas" value={summary.aprovadas} tone="gold" />
+          <Stat label="Comparecidas" value={summary.comparecidas} tone="info" />
+          <Stat label="Concluídas" value={summary.concluidas} tone="success" />
+          <Stat label="A receber" value={fmtMoney(summary.valor)} tone="gold" hint="Diárias concluídas e confirmadas" />
         </div>
       )}
-      <h2>Candidaturas</h2>
-      {apps.length === 0 && <p className="muted">Você ainda não se candidatou a nenhuma vaga.</p>}
-      {apps.map((a) => (
-        <div key={a.id} className="card stack">
-          <div className="row between">
-            <b>{a.title}</b>
-            <span className="badge">{label(a.confirmation ?? a.session_status ?? a.status)}</span>
-          </div>
-          <div>{a.unit_name} · {fmtDateTime(a.starts_at)} · {fmtMoney(a.daily_value)}</div>
-          {a.cancel_reason && <div className="muted">Motivo do cancelamento: {a.cancel_reason}</div>}
-          <div className="row">
-            {a.status === 'APROVADA' && a.session_id && <Link className="button" to={`/atividade/${a.session_id}`}>Abrir atividade</Link>}
-            {a.status === 'PENDENTE' && <button onClick={() => cancel(a.id)}>Cancelar candidatura</button>}
-          </div>
-        </div>
-      ))}
+      {!apps ? <Loading /> : apps.length === 0 ? (
+        <div className="card"><EmptyState icon="briefcase" title="Você ainda não se candidatou" text="Veja as vagas disponíveis e candidate-se." action={<Link className="btn primary" to="/vagas">Ver vagas</Link>} /></div>
+      ) : (
+        <>
+          {upcoming.length > 0 && <section className="stack"><h2 className="section-title">Próximas e em andamento</h2><div className="grid-2">{upcoming.map(card)}</div></section>}
+          {others.length > 0 && <section className="stack"><h2 className="section-title">Histórico e candidaturas</h2><div className="grid-2">{others.map(card)}</div></section>}
+        </>
+      )}
+      <p className="muted">{label('CONCLUIDA')} = diária confirmada pelo gestor da loja. O app não faz pagamentos.</p>
     </div>
   );
 }

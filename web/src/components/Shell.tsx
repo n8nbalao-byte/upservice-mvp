@@ -102,7 +102,7 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
         <main className="content">{children}</main>
       </div>
 
-      {worker && (
+      {worker && groups[0].items.length > 1 && (
         <nav className="bottom-nav" aria-label="Navegação">
           {groups[0].items.map((it) => (
             <NavLink key={it.to} to={it.to}><Icon name={it.icon} size={22} />{it.text.replace('Minhas diárias', 'Diárias')}</NavLink>

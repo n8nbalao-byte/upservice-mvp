@@ -13,11 +13,12 @@ type Level = 'urgent' | 'attention' | null;
 function attentionOf(s: any, now: number): { level: Level; reasons: string[] } {
   const urgent: string[] = [];
   const attention: string[] = [];
-  if (s.exceptions.some((x: any) => x.status === 'PENDENTE')) urgent.push('Exceção aguardando decisão');
-  if (s.alerts?.some((a: any) => !a.acknowledged_at)) urgent.push('Saída do raio não vista');
-  if (s.status === 'PAUSA_EXCEDIDA') urgent.push('Pausa excedida');
-  if (s.status === 'PENDENTE_DE_FECHAMENTO') attention.push('Checkout pendente: encerrar a atividade');
-  if (s.status === 'AGUARDANDO_CHECKIN' && !s.confirmation && now > new Date(s.starts_at).getTime() + 15 * 60e3) attention.push('Sem check-in após a tolerância de 15 min');
+  // Frases de ação (o status já aparece no selo ao lado).
+  if (s.exceptions.some((x: any) => x.status === 'PENDENTE')) urgent.push('Decidir a exceção abaixo');
+  if (s.alerts?.some((a: any) => !a.acknowledged_at)) urgent.push('Verificar saída do raio');
+  if (s.status === 'PAUSA_EXCEDIDA') urgent.push('Pausa passou do tempo: cobrar o retorno');
+  if (s.status === 'PENDENTE_DE_FECHAMENTO') attention.push('Encerrar a atividade abaixo');
+  if (s.status === 'AGUARDANDO_CHECKIN' && !s.confirmation && now > new Date(s.starts_at).getTime() + 15 * 60e3) attention.push('Sem check-in após 15 min: registrar falta ou aguardar exceção');
   return { level: urgent.length ? 'urgent' : attention.length ? 'attention' : null, reasons: [...urgent, ...attention] };
 }
 
@@ -193,7 +194,7 @@ export default function GestaoAtividades() {
                   )}
                   {s.alerts?.map((a: any) => (
                     <div key={a.id} className={`row${a.acknowledged_at ? ' muted' : ''}`}>
-                      <span className={a.acknowledged_at ? '' : 'text-danger strong'}>Saída do raio às {fmtTime(a.at)} · {Math.round(a.distance_m)} m da loja (precisão {Math.round(a.accuracy_m)} m)</span>
+                      <span className={a.acknowledged_at ? '' : 'text-danger'}>Saída do raio às {fmtTime(a.at)} · {Math.round(a.distance_m)} m da loja (precisão {Math.round(a.accuracy_m)} m)</span>
                       {a.acknowledged_at ? <span>· ciente</span> : <button className="sm" disabled={busy === `ack:${a.id}`} onClick={() => ack(a.id)}>Ciente</button>}
                     </div>
                   ))}

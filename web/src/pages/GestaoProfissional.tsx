@@ -103,7 +103,7 @@ function Disciplina({ workerId, workerName, onChange }: { workerId: string; work
           <h3>Bloqueios</h3>
           {h.penalties.map((p) => (
             <div key={p.id} className="subpanel row between">
-              <span><StatusBadge status={p.type} /> <StatusBadge status={p.status} />
+              <span><StatusBadge status={p.type} /> <StatusBadge status={p.status} tone={p.status === 'ATIVA' ? 'danger' : 'neutral'}>{p.status === 'ATIVA' ? 'Em vigor' : label(p.status)}</StatusBadge>
                 <span className="muted" style={{ display: 'block', marginTop: 4 }}>{p.reason} · {fmtDateTime(p.starts_at)} {p.ends_at ? `até ${fmtDateTime(p.ends_at)}` : '(sem prazo)'}{p.end_reason && ` · ${p.end_reason}`}</span>
               </span>
               {p.status === 'ATIVA' && <button className="sm" disabled={busy === p.id} onClick={() => endPenalty(p.id)}>Reativar</button>}

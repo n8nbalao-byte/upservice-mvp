@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
+import { Icon } from '../components/icons';
+import { Alert, Loading, PageHeader, Stat, StatusBadge } from '../components/ui';
 import { ApiError, api, fmtDateTime, fmtMinutes, fmtTime, label, toLocalInput } from '../lib/api';
 import { GeoError, Selfie, alertBreakOver, distanceMeters, getPosition } from '../lib/device';
 
@@ -152,51 +154,54 @@ export default function Atividade() {
     });
   }
 
-  if (!data) return <p>{error || 'Carregando…'}</p>;
+  if (!data) return error ? <Alert kind="danger">{error}</Alert> : <Loading />;
 
   const opensAt = new Date(s.starts_at).getTime() - 2 * 3600e3;
   const closesAt = new Date(s.starts_at).getTime() + 15 * 60e3;
   const endsAt = new Date(s.ends_at).getTime();
   const pendingExc = data.exceptions.find((x) => x.status === 'PENDENTE');
   const lastExc = data.exceptions.at(-1);
+  const clock = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
 
   const action = (type: EventType, text: string, primary = true) => (
     <button className={`big ${primary ? 'primary' : ''}`} disabled={!!busy} onClick={() => start(type)}>{text}</button>
   );
 
   return (
-    <div className="stack">
-      <h1>{s.title}</h1>
-      <div className="card">
-        <div>{s.unit_name} · <span className="muted">{s.unit_address}</span></div>
-        <div>{fmtDateTime(s.starts_at)} até {fmtTime(s.ends_at)}</div>
-        <div className="row"><span className="badge">{label(s.status)}</span>{s.break_count > 0 && <span className="muted">Pausas: {s.breaks_used} de {s.break_count} ({s.break_minutes} min cada)</span>}</div>
-      </div>
+    <div className="page" style={{ maxWidth: 720 }}>
+      <PageHeader back={{ to: '/minhas', label: 'Minhas diárias' }} title={s.title} description={<>{s.unit_name} · {s.unit_address}</>} />
 
-      {s.status === 'EM_ATIVIDADE' && (lastPing ?? s.last_ping_at) && (
-        <p className="muted">📍 Localização verificada às {fmtTime(lastPing ?? s.last_ping_at)}. Durante a atividade, o app confere a cada 10 minutos enquanto esta tela estiver aberta.</p>
-      )}
-      {error && <p className="error">{error}</p>}
-      {busy && <p className="notice">{busy}</p>}
+      <section className="status-hero" aria-live="polite">
+        <span className="muted">{fmtDateTime(s.starts_at)} até {fmtTime(s.ends_at)}{s.break_count > 0 && ` · pausas: ${s.breaks_used} de ${s.break_count} (${s.break_minutes} min)`}</span>
+        <span className="state">{label(s.status)}</span>
+        {onBreak && breakLeft != null && (
+          <div className="timer" style={{ color: breakLeft <= 0 ? '#f5b74a' : '#fff' }}>{breakLeft > 0 ? clock(breakLeft) : 'Pausa encerrada!'}</div>
+        )}
+        {s.status === 'EM_ATIVIDADE' && (lastPing ?? s.last_ping_at) && (
+          <span className="muted"><Icon name="pin" size={14} /> Localização verificada às {fmtTime(lastPing ?? s.last_ping_at)} · conferida a cada 10 min com esta tela aberta</span>
+        )}
+      </section>
+
+      {error && <Alert kind="danger">{error}</Alert>}
+      {busy && <div className="loading"><span className="spinner" />{busy}</div>}
       {failure && !busy && (
-        <div className="card stack">
-          <p>Está na loja e mesmo assim não conseguiu registrar? Peça ao gestor para aprovar este registro como exceção.</p>
-          <button onClick={() => openException(failure)}>Solicitar exceção ao gestor</button>
-        </div>
+        <Alert kind="warning" action={<button className="sm" onClick={() => openException(failure)}>Solicitar exceção</button>}>
+          Está na loja e mesmo assim não conseguiu registrar? Peça ao gestor para aprovar este registro como exceção.
+        </Alert>
       )}
       {lastExc?.status === 'RECUSADA' && s.status !== 'PENDENTE_DE_EXCECAO' && (
-        <p className="error">Sua última solicitação de exceção ({label(lastExc.type)}) foi recusada: {lastExc.decision_reason}</p>
+        <Alert kind="danger">Sua última solicitação de exceção ({label(lastExc.type)}) foi recusada: {lastExc.decision_reason}</Alert>
       )}
 
       {pending ? (
         <div className="card stack">
-          <p>Tire uma selfie para registrar: <b>{label(pending.type)}</b></p>
+          <h2>Selfie para registrar: {label(pending.type)}</h2>
           <Selfie onCapture={send} onCancel={() => setPending(null)} />
         </div>
       ) : excepting ? (
         <div className="card stack">
-          <p>Solicitação de exceção: <b>{label(excepting.type)}</b> · {label(excepting.reason)}</p>
-          <p className="muted">O registro fica com o horário de agora e só vale depois que o gestor aprovar. Ele aparece como exceção, não como GPS validado.</p>
+          <h2>Solicitar exceção: {label(excepting.type)}</h2>
+          <p className="muted">Motivo: {label(excepting.reason)}. O registro fica com o horário de agora e só vale depois que o gestor aprovar; ele aparece como exceção, não como GPS validado.</p>
           <label>Mensagem para o gestor<textarea rows={2} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Ex.: estou no estoque, o GPS não pega aqui dentro" /></label>
           <Selfie onCapture={sendException} onCancel={() => setExcepting(null)} />
         </div>
@@ -208,59 +213,52 @@ export default function Atividade() {
               : now > closesAt ? (
                 now <= endsAt ? (
                   <div className="card stack">
-                    <p className="warn">Prazo de check-in encerrado às {fmtTime(new Date(closesAt).toISOString())}.</p>
+                    <Alert kind="warning">Prazo de check-in encerrado às {fmtTime(new Date(closesAt).toISOString())}.</Alert>
                     <button className="big primary" disabled={!!busy} onClick={() => openException({ type: 'CHECK_IN', reason: 'FORA_DO_HORARIO', error: 'Check-in depois da tolerância de 15 minutos' })}>Pedir check-in com atraso</button>
                   </div>
-                ) : <p className="error">O horário desta vaga terminou.</p>
+                ) : <Alert kind="danger">O horário desta vaga terminou.</Alert>
               )
                 : action('CHECK_IN', 'Fazer check-in')
           )}
-          {s.status === 'EM_ATIVIDADE' && s.breaks_used < s.break_count && action('PAUSE_START', 'Iniciar pausa', false)}
           {s.status === 'EM_ATIVIDADE' && action('CHECK_OUT', 'Fazer checkout')}
-          {onBreak && (
-            <>
-              <div className={`card timer ${breakLeft! <= 0 ? 'warn' : ''}`}>
-                {breakLeft! > 0 ? `${Math.floor(breakLeft! / 60000)}:${String(Math.floor((breakLeft! % 60000) / 1000)).padStart(2, '0')}` : 'Pausa encerrada!'}
-              </div>
-              {action('PAUSE_END', 'Retornar da pausa')}
-            </>
-          )}
+          {s.status === 'EM_ATIVIDADE' && s.breaks_used < s.break_count && action('PAUSE_START', 'Iniciar pausa', false)}
+          {onBreak && action('PAUSE_END', 'Retornar da pausa')}
           {ACTIVE.includes(s.status) && now > endsAt && (
-            <p className="warn">Checkout pendente: o horário da vaga terminou. Após 30 minutos sem checkout, a atividade fica pendente para o gestor encerrar.</p>
+            <Alert kind="warning">Checkout pendente: o horário da vaga terminou. Após 30 minutos sem checkout, a atividade fica pendente para o gestor encerrar.</Alert>
           )}
           {s.status === 'PENDENTE_DE_EXCECAO' && pendingExc && (
-            <p className="notice">Solicitação de exceção ({label(pendingExc.type)}) enviada às {fmtTime(pendingExc.requested_at)}. Aguarde o gestor analisar.</p>
+            <Alert kind="info">Solicitação de exceção ({label(pendingExc.type)}) enviada às {fmtTime(pendingExc.requested_at)}. Aguarde o gestor analisar.</Alert>
           )}
           {s.status === 'PENDENTE_DE_FECHAMENTO' && (
-            <form className="card stack" onSubmit={reportEnd}>
-              <p><b>Checkout pendente.</b> Informe o horário em que você saiu; o gestor vai encerrar a atividade.</p>
-              {s.reported_end_at && <p className="notice">Você informou saída às {fmtDateTime(s.reported_end_at)}.</p>}
+            <form className="card form" onSubmit={reportEnd}>
+              <div><h2>Checkout pendente</h2><p className="muted">Informe o horário em que você saiu; o gestor vai encerrar a atividade.</p></div>
+              {s.reported_end_at && <Alert kind="info">Você informou saída às {fmtDateTime(s.reported_end_at)}.</Alert>}
               <label>Horário de saída<input name="time" type="datetime-local" required defaultValue={toLocalInput(s.reported_end_at ?? s.ends_at)} /></label>
-              <label>Observação<input name="note" maxLength={500} /></label>
-              <button className="primary" disabled={!!busy}>{s.reported_end_at ? 'Atualizar horário' : 'Enviar horário'}</button>
+              <label>Observação <span className="hint">(opcional)</span><input name="note" maxLength={500} /></label>
+              <button className="primary big" disabled={!!busy}>{s.reported_end_at ? 'Atualizar horário' : 'Enviar horário'}</button>
             </form>
           )}
-          {s.status === 'AGUARDANDO_CHECKIN' && <p className="muted">Check-in liberado de 2 horas antes até 15 minutos depois do início, a até {s.radius_m} m da loja.</p>}
+          {s.status === 'AGUARDANDO_CHECKIN' && <p className="muted">Check-in liberado de 2 horas antes até 15 minutos depois do início, a até {s.radius_m} m da loja. Cada registro pede localização e uma selfie.</p>}
         </div>
       )}
 
       {data.worked && (
-        <div className="card">
-          Tempo trabalhado: <b>{fmtMinutes(data.worked.workedMin)}</b> · pausas: {fmtMinutes(data.worked.breakMin)}
-          <div className="muted">Origem: {data.worked.sources.map(label).join(', ')}</div>
+        <div className="stats">
+          <Stat label="Tempo trabalhado" value={fmtMinutes(data.worked.workedMin)} tone="success" hint={`Origem: ${data.worked.sources.map(label).join(', ')}`} />
+          <Stat label="Pausas" value={fmtMinutes(data.worked.breakMin)} tone="info" />
         </div>
       )}
 
       {data.events.length > 0 && (
-        <div className="card">
-          <h2>Registros</h2>
+        <div className="card tight">
+          <div className="card-header"><h2>Registros</h2><span className="sub">Horário oficial do servidor</span></div>
           <table>
             <tbody>
               {data.events.map((e) => (
                 <tr key={e.id}>
-                  <td>{label(e.type)}</td>
-                  <td>{fmtTime(e.occurred_at)}</td>
-                  <td className="muted">{label(e.validation)}{e.distance_m != null && ` · ${Math.round(e.distance_m)} m da loja`}</td>
+                  <td className="strong">{label(e.type)}</td>
+                  <td className="tabular">{fmtTime(e.occurred_at)}</td>
+                  <td className="num"><StatusBadge status={e.validation} />{e.distance_m != null && <span className="muted">{Math.round(e.distance_m)} m da loja</span>}</td>
                 </tr>
               ))}
             </tbody>
