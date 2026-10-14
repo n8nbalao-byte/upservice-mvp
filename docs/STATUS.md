@@ -22,15 +22,15 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 
 | # | Item | Status | Observação |
 |---|---|---|---|
-| 1 | Governança do repositório | 🟡 | README, `.gitignore`, `.env.example`. Faltam templates de PR/issue, CODEOWNERS e SECURITY.md |
+| 1 | Governança do repositório | ✅ | README, `docs/STATUS.md`, `SECURITY.md`, `CODEOWNERS`, modelo de PR com checklist |
 | 2 | Bootstrap da aplicação | ✅ | Express 5 + React/Vite/TS |
-| 3 | CI/CD e ambientes | 🟡 | Deploy automático na Hostinger a cada push no `main`. Sem GitHub Actions e sem ambiente de homologação separado |
+| 3 | CI/CD e ambientes | 🟡 | GitHub Actions (typecheck, 30 testes contra MariaDB, build) em todo PR; deploy automático no `main`. Sem ambiente de homologação separado |
 | 4 | Google Auth | ✅ | Projeto Google Cloud `upservice-511606`, app publicado |
 | 5 | Banco e migrations | ✅ | MariaDB 11.8 na Hostinger; migrations 001 a 005 aplicadas |
 | 6 | Storage privado de documentos e selfies | ✅ | `~/upservice-storage` (fora do deploy, permissão 700); acesso só por `/api/files/*` |
 | 7 | Matriz de autorização | ✅ | Ver README → Perfis e permissões; testes de escopo em `test/api.test.js` |
 | 8 | Auditoria e logs | 🟡 | `audit_events` append-only (login, cadastro, vagas, decisões, presença recusada, exceções, checkout ausente, fechamentos, ocorrências, bloqueios, contestações, visualização de documentos e selfies). Sem tela de consulta |
-| 9 | Backup e restauração | ⬜ | Depende do backup da Hostinger; restauração não testada |
+| 9 | Backup e restauração | 🟡 | Backup lógico diário automático (dentro do app) em `~/upservice-backups`, 14 dias, verificado (gzip íntegro, 19 tabelas). Restauração: `scripts/restore-check.mjs` pronto; falta rodar num banco temporário |
 | 10 | Política de privacidade e consentimentos | 🟡 | `/privacidade.html` e `/termos.html` publicados; aceite registrado no cadastro. Falta revisão jurídica |
 
 ### Cadastro e operação
@@ -167,12 +167,12 @@ O teste mostrou o CSV levando 6–10 s por causa da formatação de datas; com f
 
 ## Próximo
 
-Pendências de validação, sem marco de desenvolvimento aberto: teste em Android real numa loja (item 49), teste de restauração de backup (9), revisão jurídica da política de privacidade e dos termos (10), templates de governança do repositório (1) e CI no GitHub Actions (3).
+Pendências de validação, sem marco de desenvolvimento aberto: teste em Android real numa loja (item 49), rodar o teste de restauração num banco temporário (9), revisão jurídica da política de privacidade e dos termos (10) e ambiente de homologação separado (3).
 
 ## Pendências de operação
 
 - Revisão jurídica da política de privacidade e dos termos (LGPD e trabalhista)
 - Chave `GOOGLE_MAPS_API_KEY` para coordenadas precisas no cadastro de unidades (opcional)
-- Teste de restauração de backup da Hostinger
+- Rodar `scripts/restore-check.mjs` num banco temporário (criar no hPanel e apagar depois)
 - Teste em celular Android real numa loja (GPS, câmera, rede móvel)
 - Trocar a senha SSH e a do e-mail `contato@`, que passaram pelo chat
