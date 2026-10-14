@@ -24,7 +24,7 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 |---|---|---|---|
 | 1 | Governança do repositório | ✅ | README, `docs/STATUS.md`, `SECURITY.md`, `CODEOWNERS`, modelo de PR com checklist |
 | 2 | Bootstrap da aplicação | ✅ | Express 5 + React/Vite/TS |
-| 3 | CI/CD e ambientes | 🟡 | GitHub Actions (typecheck, 30 testes contra MariaDB, build) em todo PR; deploy automático no `main`. Sem ambiente de homologação separado |
+| 3 | CI/CD e ambientes | 🟡 | GitHub Actions configurado (typecheck, 30 testes contra MariaDB, build), mas **não inicia** na conta `n8nbalao-byte` desde 12/10/2026 (`startup_failure` também no tioboy-label; provável cota ou cobrança de Actions); deploy automático no `main`. Sem ambiente de homologação separado |
 | 4 | Google Auth | ✅ | Projeto Google Cloud `upservice-511606`, app publicado |
 | 5 | Banco e migrations | ✅ | MariaDB 11.8 na Hostinger; migrations 001 a 005 aplicadas |
 | 6 | Storage privado de documentos e selfies | ✅ | `~/upservice-storage` (fora do deploy, permissão 700); acesso só por `/api/files/*` |
