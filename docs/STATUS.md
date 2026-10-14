@@ -84,7 +84,7 @@ Legenda: ✅ feito · 🟡 parcial · ⬜ pendente
 
 | # | Item | Status | Observação |
 |---|---|---|---|
-| 43 | Testes E2E | 🟡 | Integração da API contra MariaDB (25 testes no total); sem E2E de navegador |
+| 43 | Testes E2E | 🟡 | Integração da API contra MariaDB (26 testes no total); sem E2E de navegador |
 | 44 | Testes de autorização | ✅ | Papel via payload, escopo de unidade, selfies e documentos alheios |
 | 45 | Testes de documentos e storage privado | ✅ | |
 | 46 | Testes de GPS, câmera e permissões | ⬜ | Precisa de celular real na loja |
@@ -139,6 +139,7 @@ Decisões tomadas em 14/10/2026: as 3 faltas contam **desde o último bloqueio**
 - **Bloqueios:** temporário de 15 dias na 3ª falta, com reativação automática; permanente só manual, com justificativa e "BLOQUEAR" digitado. O bloqueio pelo menu Usuários segue o mesmo fluxo.
 - **Contestação:** pelo app (protocolo) ou registrada pelo gestor a partir de e-mail; decisão Mantida, Cancelada (anula a punição) ou Ajustada (novo prazo); não suspende o bloqueio.
 - **Central de pendências:** o sino do menu do gestor/admin mostra exceções, checkouts pendentes, contestações, ocorrências, candidaturas e documentos. Atualiza a cada 20 s, toca um aviso e mostra notificação do navegador quando surge algo novo. Exceção pedida também gera e-mail aos gestores da loja.
+- **Segurança (revisão automática pós-merge):** gestor só reverte bloqueio que ele mesmo aplicou ou bloqueio automático com falta de loja dele (o do admin, só o admin reverte); contestação de ocorrência só é decidida por gestor da loja da ocorrência. Teste de regressão incluído (26 testes).
 - **Correção:** a rota de pedido de exceção aceitava só 100 KB; selfies reais de celular falhavam. Agora aceita até 1 MB, como o registro normal, com teste usando uma selfie de 400 KB.
 
 ## Próximo: Marco 5 — Monitoramento, relatórios e escala

@@ -403,6 +403,30 @@ test('pausa excedida e checkout ausente viram ocorrência pendente, que o gestor
   assert.equal((await call(s.gestor, 'POST', '/api/manage/occurrences', { userId: pause.user_id, unitId: s.unitA, type: 'FALTA', description: 'Falta só pela confirmação da diária' })).status, 400);
 });
 
+test('gestor não reverte bloqueio do admin nem decide contestação de ocorrência de outra loja', { skip }, async () => {
+  const w1 = await userByEmail('w1@test.dev');
+  const g2 = await login('gestor2@test.dev');
+  // gestor da loja B passa a ter relação com w1 (candidatura numa vaga da loja B)
+  const starts = new Date(Date.now() + 3600e3);
+  const job = (await call(g2, 'POST', '/api/manage/jobs', {
+    unitId: s.unitB, title: 'Loja B', startsAt: starts, endsAt: new Date(starts.getTime() + 8 * 3600e3), positions: 1, dailyValue: 100, breakCount: 0, breakMinutes: 15, publish: true,
+  })).body.id;
+  assert.equal((await call(s.w1, 'POST', `/api/jobs/${job}/apply`, {})).status, 201);
+
+  assert.equal((await call(s.gestor, 'POST', '/api/manage/occurrences', { userId: w1.id, unitId: s.unitA, type: 'REGRA_OPERACIONAL', description: 'Uso de celular na área de vendas' })).status, 201);
+  const [occ] = await q("SELECT id FROM occurrences WHERE user_id = ? AND type = 'REGRA_OPERACIONAL'", [w1.id]);
+  assert.equal((await call(s.w1, 'POST', '/api/me/contestations', { occurrenceId: occ.id, message: 'Estava falando com o encarregado da loja' })).status, 201);
+  const [ct] = await q('SELECT id FROM contestations WHERE occurrence_id = ?', [occ.id]);
+  assert.equal((await call(g2, 'POST', `/api/manage/contestations/${ct.id}/decide`, { decision: 'CANCELADA', reason: 'Decidindo ocorrência de outra loja' })).status, 404, 'gestor da loja B não decide ocorrência da loja A');
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/contestations/${ct.id}/decide`, { decision: 'MANTIDA', reason: 'Regra informada no treinamento' })).status, 200);
+
+  assert.equal((await call(s.admin, 'POST', `/api/manage/workers/${w1.id}/block`, { reason: 'Fraude confirmada pela auditoria', confirm: 'BLOQUEAR' })).status, 200);
+  const [p] = await q("SELECT id FROM penalties WHERE user_id = ? AND status = 'ATIVA'", [w1.id]);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/penalties/${p.id}/end`, { reason: 'Tentando reverter bloqueio do admin' })).status, 403, 'gestor não reverte bloqueio aplicado pelo admin');
+  assert.equal((await call(s.admin, 'POST', `/api/manage/penalties/${p.id}/end`, { reason: 'Revisado pela diretoria' })).status, 200);
+  assert.equal((await userByEmail('w1@test.dev')).status, 'ATIVO');
+});
+
 test('unidade bloqueada não recebe vagas; profissional bloqueado entra só em modo restrito', { skip }, async () => {
   assert.equal((await call(s.admin, 'POST', `/api/units/${s.unitA}/status`, { status: 'BLOQUEADA_FINANCEIRA', reason: 'Pagamento em atraso desde setembro' })).status, 200);
   const starts = new Date(Date.now() + 3600e3);
