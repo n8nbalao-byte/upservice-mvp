@@ -1,15 +1,34 @@
-# UpService — MVP (Marcos 1 e 2)
+# UpService
 
-PWA para a UpService: cadastro aberto de profissionais (Google), documentos, unidades, vagas, candidaturas e registro de presença (check-in, pausas, retorno e checkout com GPS a até 300 m + selfie) com cálculo de horas.
+PWA para a UpService: cadastro aberto de profissionais (Google), documentos, unidades, vagas, candidaturas e registro de presença (check-in, pausas, retorno e checkout com GPS a até 300 m + selfie), com cálculo de horas e confirmação da diária.
 
-Fonte das regras: `C:\Foundlab\appUpservice\UpService — Decisões fechadas para o primeiro lançamento.md` (v4.0).
+- **Produção:** https://app.upserviceintermed.com
+- **Andamento:** [docs/STATUS.md](docs/STATUS.md) (marcos, os 52 itens da linha de base e critérios de aceite)
+- **Regras de negócio:** "UpService — Decisões fechadas para o primeiro lançamento" v4.0 (pasta `C:\Foundlab\appUpservice`)
 
 ## Stack
 
-- Node 22.9+ / Express 5: API em `/api` e o build do front (`web/dist`) no mesmo processo
-- MySQL 8 ou MariaDB 10.6+ (Hostinger)
+- Node 22.9+ / Express 5: API em `/api` e o build do front (`web/dist`) no mesmo processo; entry `server.js`
+- MySQL 8 ou MariaDB 10.6+ (produção: MariaDB 11.8 na Hostinger)
 - React + Vite + TypeScript (`web/`)
 - Documentos e selfies em pasta privada (`STORAGE_DIR`), só acessíveis por `/api/files/*`, com checagem de acesso e auditoria
+- CEP pelo ViaCEP; coordenadas pelo Google Geocoding (com `GOOGLE_MAPS_API_KEY`) ou OpenStreetMap
+
+## Perfis e permissões
+
+| Ação | Profissional | Gestor | Admin |
+|---|:---:|:---:|:---:|
+| Cadastro próprio, documentos, vagas, candidatura, presença, resumo de diárias | ✅ | | |
+| Criar, publicar, encerrar e cancelar vagas | | suas lojas | todas |
+| Aprovar ou recusar candidaturas | | suas lojas | todas |
+| Cancelar candidatura já aprovada (antes do check-in) | | suas lojas | ❌ |
+| Reabrir vaga encerrada | | ❌ | ✅ |
+| Atividades do dia, selfies, horas, confirmar diária ou falta | | suas lojas | todas |
+| Ver e aprovar documentos (aba Documentos) | | quem se candidatou nas suas lojas | todos |
+| Unidades: cadastrar, editar, bloquear ou inativar | | ❌ | ✅ |
+| Usuários: papel, status e vínculo gestor↔unidade | | ❌ | ✅ |
+
+Ninguém altera o próprio papel. O cadastro aberto sempre cria `PROFISSIONAL`; gestores e administradores são promovidos em **Usuários** depois do primeiro login. Toda ação administrativa fica em `audit_events`.
 
 ## Rodar localmente
 
@@ -23,37 +42,43 @@ npm run api      # terminal 1: API em :3000
 npm run web      # terminal 2: front em http://localhost:5173
 ```
 
-Com `DEV_LOGIN=1` a tela de login aceita só o e-mail (sem Google). Para testar GPS no desktop: Chrome DevTools → ⋮ → More tools → Sensors → Location.
+Com `DEV_LOGIN=1` a tela de login aceita só o e-mail (sem Google; o servidor recusa em produção). Para simular GPS no desktop: Chrome DevTools → ⋮ → More tools → Sensors → Location.
 
 ## Testes
 
 ```bash
-npm test          # regras puras + integração (precisa de TEST_DATABASE_URL; o banco de teste é apagado e recriado)
+npm test          # regras puras + integração da API (precisa de TEST_DATABASE_URL; o banco de teste é apagado e recriado)
 npm run typecheck
 ```
 
-## Perfis
+## Produção (Hostinger)
 
-| Perfil | Como é criado | O que faz |
-|---|---|---|
-| Profissional | Cadastro aberto (login Google) | Cadastro + documentos, vagas por proximidade, candidatura, presença, resumo de diárias |
-| Gestor | Admin promove em Usuários e vincula unidades | Vagas e candidaturas das suas unidades, atividades do dia, confirmação da diária, documentos dos seus candidatos |
-| Administrador | `npm run make-admin` (o primeiro) ou promoção | Unidades, raio, bloqueio financeiro, usuários e vínculos |
+| Item | Valor |
+|---|---|
+| Site | `app.upserviceintermed.com` (Node.js app, Node 22, conta `u770915504`) |
+| Deploy | Automático a cada push no `main` (`npm install && npm run build`, entry `server.js`) |
+| Variáveis de ambiente | **Somente pelo painel** (Node.js → Variáveis de ambiente). Editar o `.env` do servidor por SSH não vale: a Hostinger injeta as variáveis no deploy |
+| Banco | `u770915504_upservice` (MariaDB 11.8, host `127.0.0.1`) |
+| Arquivos privados | `/home/u770915504/upservice-storage` (fora do deploy) |
+| E-mail | SMTP `smtp.hostinger.com:465`, remetente `contato@upserviceintermed.com` |
+| Google OAuth | Projeto `upservice-511606`, app publicado |
 
-## Deploy na Hostinger (Node.js app)
+Variáveis: `NODE_ENV=production`, `DATABASE_URL`, `STORAGE_DIR`, `GOOGLE_CLIENT_ID`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` e, opcional, `GOOGLE_MAPS_API_KEY`. Nunca definir `DEV_LOGIN` nem `PORT` (a Hostinger define a porta).
 
-1. Banco MySQL no hPanel → `DATABASE_URL=mysql://usuario:senha@host:3306/banco`.
-2. Variáveis do app: `NODE_ENV=production`, `DATABASE_URL`, `STORAGE_DIR` (pasta **fora** do diretório do deploy, para um redeploy não apagar documentos e selfies), `GOOGLE_CLIENT_ID`, `SMTP_*`, `MAIL_FROM`. **Não** definir `DEV_LOGIN`.
-3. Build: `npm install && npm run build`. Start: `npm start`. Rodar `npm run migrate` a cada versão com migration nova.
-4. HTTPS é obrigatório: câmera e GPS do navegador não funcionam sem ele.
-5. Google Cloud → OAuth Client ID (Web) com origem `https://app.upserviceintermed.com`.
+### Migrations em produção
 
-## Fora deste ciclo (Marcos 3–5)
+Rodar por SSH depois do deploy. Migrations que só **adicionam** colunas podem rodar antes, para não haver janela com código novo e banco antigo:
 
-Exceção de GPS aprovada pelo gestor, checkout esquecido/fechamento administrativo, punições (3 faltas → 15 dias), contestação, painel consolidado, CSV, alerta de saída do raio com a página aberta, rate limit.
+```bash
+H=~/domains/app.upserviceintermed.com/hbuilds
+cd $H/current/nodejs && /opt/alt/alt-nodejs22/root/bin/node --env-file=$H/config/.env server/migrate.js
+```
+
+Logs da aplicação: `$H/current/nodejs/console.log`. Logs de deploy: `$H/logs/<id>/*.log`.
 
 ## Limites conhecidos
 
-- PWA não lê GPS com a página fechada; o painel mostra o status do último registro, não presença contínua.
-- GPS do navegador pode ser falsificado; selfie + token único + auditoria reduzem, não eliminam.
-- Aviso de fim de pausa por e-mail roda num `setInterval` do processo; se a Hostinger hibernar o app, mover para cron.
+- A PWA não lê GPS com a página fechada; o painel mostra o status do último registro, não presença contínua.
+- O GPS do navegador pode ser falsificado; selfie, token único e auditoria reduzem, mas não eliminam.
+- O aviso de fim de pausa por e-mail roda num `setInterval` do processo; se a Hostinger hibernar o app, mover para cron.
+- As coordenadas automáticas pelo OpenStreetMap erram centenas de metros a km em avenidas longas; conferir o pino no mapa ou usar `GOOGLE_MAPS_API_KEY`.
