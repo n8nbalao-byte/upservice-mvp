@@ -85,6 +85,18 @@ cd $H/current/nodejs && /opt/alt/alt-nodejs22/root/bin/node --env-file=$H/config
 
 Logs da aplicação: `$H/current/nodejs/console.log`. Logs de deploy: `$H/logs/<id>/*.log`.
 
+### Backup e restauração
+
+- **Automático:** em produção, o app faz `mysqldump` + gzip a cada 24 h em `~/upservice-backups` (pasta 700, arquivos 600), mantendo 14 dias. Manual: `node --env-file=$H/config/.env server/backup.js`.
+- **Documentos e selfies** (`~/upservice-storage`) não entram no dump: dependem do backup da hospedagem.
+- **Teste de restauração:** criar um banco vazio temporário no hPanel e rodar
+  `RESTORE_DATABASE_URL=mysql://usuario:senha@127.0.0.1:3306/banco_temp node --env-file=$H/config/.env scripts/restore-check.mjs ~/upservice-backups/<arquivo>.sql.gz`.
+  O script compara as contagens por tabela. Apagar o banco temporário depois.
+
+## CI
+
+GitHub Actions em todo PR e push no `main`: `npm ci`, typecheck, testes contra MariaDB 11 e build. O deploy na Hostinger continua automático no push do `main`.
+
 ## Limites conhecidos
 
 - A PWA não lê GPS com a página fechada: com a tela da atividade aberta, confere a cada 10 min; fechada, o painel mostra "localização não atualizada". Nunca afirma presença contínua.
