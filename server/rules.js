@@ -78,6 +78,12 @@ export const EXCEPTION_REASONS = ['GPS_INDISPONIVEL', 'PRECISAO_INSUFICIENTE', '
 export const CLOSURE_SOURCES = ['INFORMADO_PROFISSIONAL', 'PREVISTO', 'CONFIRMADO_GESTOR'];
 export const CHECKOUT_TOLERANCE_MS = 30 * 60 * 1000;
 
+export const BLOCK_DAYS = 15;
+export const STRIKES_TO_BLOCK = 3;
+
+/** Conta para o bloqueio de 15 dias: só falta confirmada que ainda não gerou bloqueio (contagem recomeça após cada bloqueio). */
+export const isStrike = (o) => o.type === 'FALTA' && o.status === 'CONFIRMADA' && !o.penalty_id;
+
 export function isValidCpf(value) {
   const d = String(value ?? '').replace(/\D/g, '');
   if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;

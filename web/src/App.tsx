@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
-import { api, type Me } from './lib/api';
+import { api, isBlocked, type Me } from './lib/api';
+import { beep } from './lib/device';
 import AdminUnidades from './pages/AdminUnidades';
 import AdminUsuarios from './pages/AdminUsuarios';
 import Atividade from './pages/Atividade';
@@ -8,72 +9,136 @@ import Cadastro from './pages/Cadastro';
 import GestaoAtividades from './pages/GestaoAtividades';
 import GestaoCandidaturas from './pages/GestaoCandidaturas';
 import GestaoDocumentos from './pages/GestaoDocumentos';
+import GestaoOcorrencias from './pages/GestaoOcorrencias';
 import GestaoProfissional from './pages/GestaoProfissional';
 import GestaoVagas from './pages/GestaoVagas';
 import Login from './pages/Login';
 import Minhas from './pages/Minhas';
+import Ocorrencias from './pages/Ocorrencias';
+import Pendencias from './pages/Pendencias';
 import Vagas from './pages/Vagas';
 
 const MeContext = createContext<{ me: Me; reload: () => Promise<void> }>(null!);
 export const useMe = () => useContext(MeContext);
+
+export type InboxItem = { key: string; kind: string; at: string; title: string; detail: string; link: string };
+const InboxContext = createContext<{ items: InboxItem[]; updatedAt: string | null; refresh: () => void }>({ items: [], updatedAt: null, refresh: () => {} });
+export const useInbox = () => useContext(InboxContext);
+
+const INBOX_POLL_MS = 20000;
+
+/** Central de pendências do gestor/admin: consulta periódica; avisa (som + notificação do navegador) quando surge item novo. */
+function useInboxPolling(enabled: boolean) {
+  const [items, setItems] = useState<InboxItem[]>([]);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const known = useRef<Set<string> | null>(null);
+
+  const refresh = () => {
+    api<{ items: InboxItem[]; serverNow: string }>('/manage/inbox').then(({ items: next, serverNow }) => {
+      const fresh = known.current ? next.filter((i) => !known.current!.has(i.key)) : [];
+      known.current = new Set(next.map((i) => i.key));
+      setItems(next);
+      setUpdatedAt(serverNow);
+      if (fresh.length) {
+        beep();
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(`UpService: ${fresh.length} nova(s) pendência(s)`, { body: fresh.map((i) => i.title).slice(0, 3).join('\n'), tag: 'upservice-inbox' });
+        }
+      }
+    }, () => {});
+  };
+
+  useEffect(() => {
+    if (!enabled) return;
+    refresh();
+    const t = setInterval(refresh, INBOX_POLL_MS);
+    return () => clearInterval(t);
+  }, [enabled]);
+
+  useEffect(() => {
+    document.title = items.length ? `(${items.length}) UpService` : 'UpService';
+  }, [items.length]);
+
+  return { items, updatedAt, refresh };
+}
 
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const reload = () => api<Me>('/me').then(setMe, () => setMe(null));
   useEffect(() => { reload(); }, []);
 
+  const role = me?.user.role;
+  const inbox = useInboxPolling(role === 'GESTOR' || role === 'ADMINISTRADOR');
+
   if (me === undefined) return <p className="page">Carregando…</p>;
   if (!me) return <Login onLogin={reload} />;
 
-  const role = me.user.role;
+  const blocked = role === 'PROFISSIONAL' && isBlocked(me.user.status);
   const logout = () => api('/auth/logout', { body: {} }).then(() => setMe(null));
   return (
     <MeContext.Provider value={{ me, reload }}>
-      <BrowserRouter>
-        <header className="top">
-          <strong>UpService</strong>
-          <nav>
+      <InboxContext.Provider value={inbox}>
+        <BrowserRouter>
+          <header className="top">
+            <strong>UpService</strong>
+            <nav>
+              {role === 'PROFISSIONAL' ? (
+                <>
+                  {!blocked && <NavLink to="/vagas">Vagas</NavLink>}
+                  {!blocked && <NavLink to="/minhas">Minhas diárias</NavLink>}
+                  {!blocked && <NavLink to="/cadastro">Cadastro</NavLink>}
+                  <NavLink to="/ocorrencias">Ocorrências</NavLink>
+                </>
+              ) : (
+                <>
+                  <NavLink to="/gestao/pendencias" className="bell" title="Pendências">
+                    🔔 Pendências{inbox.items.length > 0 && <span className="count">{inbox.items.length}</span>}
+                  </NavLink>
+                  <NavLink to="/gestao/vagas">Vagas</NavLink>
+                  <NavLink to="/gestao/atividades">Atividades</NavLink>
+                  <NavLink to="/gestao/documentos">Documentos</NavLink>
+                  <NavLink to="/gestao/ocorrencias">Ocorrências</NavLink>
+                  {role === 'ADMINISTRADOR' && <NavLink to="/admin/unidades">Unidades</NavLink>}
+                  {role === 'ADMINISTRADOR' && <NavLink to="/admin/usuarios">Usuários</NavLink>}
+                </>
+              )}
+              <button className="link" onClick={logout}>Sair</button>
+            </nav>
+          </header>
+          <main className="page">
             {role === 'PROFISSIONAL' ? (
-              <>
-                <NavLink to="/vagas">Vagas</NavLink>
-                <NavLink to="/minhas">Minhas diárias</NavLink>
-                <NavLink to="/cadastro">Cadastro</NavLink>
-              </>
+              blocked ? (
+                <Routes>
+                  <Route path="/ocorrencias" element={<Ocorrencias />} />
+                  <Route path="*" element={<Navigate to="/ocorrencias" />} />
+                </Routes>
+              ) : (
+                <Routes>
+                  <Route path="/cadastro" element={<Cadastro />} />
+                  <Route path="/vagas" element={me.complete ? <Vagas /> : <Navigate to="/cadastro" />} />
+                  <Route path="/minhas" element={<Minhas />} />
+                  <Route path="/atividade/:id" element={<Atividade />} />
+                  <Route path="/ocorrencias" element={<Ocorrencias />} />
+                  <Route path="*" element={<Navigate to={me.complete ? '/vagas' : '/cadastro'} />} />
+                </Routes>
+              )
             ) : (
-              <>
-                <NavLink to="/gestao/vagas">Vagas</NavLink>
-                <NavLink to="/gestao/atividades">Atividades</NavLink>
-                <NavLink to="/gestao/documentos">Documentos</NavLink>
-                {role === 'ADMINISTRADOR' && <NavLink to="/admin/unidades">Unidades</NavLink>}
-                {role === 'ADMINISTRADOR' && <NavLink to="/admin/usuarios">Usuários</NavLink>}
-              </>
+              <Routes>
+                <Route path="/gestao/pendencias" element={<Pendencias />} />
+                <Route path="/gestao/vagas" element={<GestaoVagas />} />
+                <Route path="/gestao/vagas/:id" element={<GestaoCandidaturas />} />
+                <Route path="/gestao/atividades" element={<GestaoAtividades />} />
+                <Route path="/gestao/profissionais/:id" element={<GestaoProfissional />} />
+                <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
+                <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />
+                {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
+                {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
+                <Route path="*" element={<Navigate to="/gestao/pendencias" />} />
+              </Routes>
             )}
-            <button className="link" onClick={logout}>Sair</button>
-          </nav>
-        </header>
-        <main className="page">
-          {role === 'PROFISSIONAL' ? (
-            <Routes>
-              <Route path="/cadastro" element={<Cadastro />} />
-              <Route path="/vagas" element={me.complete ? <Vagas /> : <Navigate to="/cadastro" />} />
-              <Route path="/minhas" element={<Minhas />} />
-              <Route path="/atividade/:id" element={<Atividade />} />
-              <Route path="*" element={<Navigate to={me.complete ? '/vagas' : '/cadastro'} />} />
-            </Routes>
-          ) : (
-            <Routes>
-              <Route path="/gestao/vagas" element={<GestaoVagas />} />
-              <Route path="/gestao/vagas/:id" element={<GestaoCandidaturas />} />
-              <Route path="/gestao/atividades" element={<GestaoAtividades />} />
-              <Route path="/gestao/profissionais/:id" element={<GestaoProfissional />} />
-              <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
-              {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
-              {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
-              <Route path="*" element={<Navigate to="/gestao/vagas" />} />
-            </Routes>
-          )}
-        </main>
-      </BrowserRouter>
+          </main>
+        </BrowserRouter>
+      </InboxContext.Provider>
     </MeContext.Provider>
   );
 }

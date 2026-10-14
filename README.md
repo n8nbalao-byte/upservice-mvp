@@ -1,6 +1,6 @@
 # UpService
 
-PWA para a UpService: cadastro aberto de profissionais (Google), documentos, unidades, vagas, candidaturas e registro de presença (check-in, pausas, retorno e checkout com GPS a até 300 m + selfie), com exceções aprovadas pelo gestor, fechamento de checkout esquecido, cálculo de horas e confirmação da diária.
+PWA para a UpService: cadastro aberto de profissionais (Google), documentos, unidades, vagas, candidaturas e registro de presença (check-in, pausas, retorno e checkout com GPS a até 300 m + selfie), com exceções aprovadas pelo gestor, fechamento de checkout esquecido, cálculo de horas, confirmação da diária, ocorrências, bloqueios (3 faltas → 15 dias) e contestação.
 
 - **Produção:** https://app.upserviceintermed.com
 - **Andamento:** [docs/STATUS.md](docs/STATUS.md) (marcos, os 52 itens da linha de base e critérios de aceite)
@@ -25,6 +25,10 @@ PWA para a UpService: cadastro aberto de profissionais (Google), documentos, uni
 | Reabrir vaga encerrada | | ❌ | ✅ |
 | Atividades do dia, selfies, horas, confirmar diária ou falta | | suas lojas | todas |
 | Aprovar ou recusar exceções de presença | | suas lojas | todas |
+| Central de pendências (sino, som e notificação do navegador) | | suas lojas | todas |
+| Confirmar ou cancelar ocorrências; registrar ocorrência manual | | suas lojas | todas |
+| Bloquear permanentemente, reativar, decidir contestações | | quem se candidatou nas suas lojas | todos |
+| Ver as próprias ocorrências e bloqueios e contestar | ✅ (inclusive bloqueado) | | |
 | Encerrar checkout esquecido (fechamento administrativo) | | suas lojas | todas |
 | Ver e aprovar documentos (aba Documentos) | | quem se candidatou nas suas lojas | todos |
 | Unidades: cadastrar, editar, bloquear ou inativar | | ❌ | ✅ |
@@ -82,5 +86,6 @@ Logs da aplicação: `$H/current/nodejs/console.log`. Logs de deploy: `$H/logs/<
 
 - A PWA não lê GPS com a página fechada; o painel mostra o status do último registro, não presença contínua.
 - O GPS do navegador pode ser falsificado; selfie, token único e auditoria reduzem, mas não eliminam.
-- Os avisos por e-mail (fim de pausa, checkout pendente) e a passagem para `PENDENTE_DE_FECHAMENTO` rodam num `setInterval` do processo; se a Hostinger hibernar o app, mover para cron.
+- A varredura (avisos de pausa e checkout, `PENDENTE_DE_FECHAMENTO`, ocorrências automáticas e fim de bloqueios temporários) roda num `setInterval` do processo; se a Hostinger hibernar o app, mover para cron.
+- As notificações do painel funcionam com a página aberta (em qualquer aba). Com o navegador fechado, o aviso chega só por e-mail; push com o app fechado exigiria Web Push (service worker + chaves VAPID).
 - As coordenadas automáticas pelo OpenStreetMap erram centenas de metros a km em avenidas longas; conferir o pino no mapa ou usar `GOOGLE_MAPS_API_KEY`.

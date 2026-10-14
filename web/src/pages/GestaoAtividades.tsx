@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useInbox } from '../App';
 import { api, fmtDateTime, fmtMinutes, fmtTime, label, toLocalInput, todayBR } from '../lib/api';
 import { useUnitPicker } from './GestaoVagas';
 
@@ -36,12 +37,15 @@ function CloseForm({ s, onDone, onError }: { s: any; onDone: () => void; onError
 }
 
 export default function GestaoAtividades() {
-  const { unitId, picker } = useUnitPicker();
-  const [date, setDate] = useState(todayBR());
+  const [params] = useSearchParams();
+  const { refresh: refreshInbox } = useInbox();
+  const { unitId, picker } = useUnitPicker(params.get('unit'));
+  const [date, setDate] = useState(params.get('date') || todayBR());
   const [data, setData] = useState<{ serverNow: string; sessions: any[] }>();
   const [error, setError] = useState('');
 
   const load = async () => { if (unitId) await api(`/manage/sessions?unitId=${unitId}&date=${date}`).then(setData, (e) => setError(e.message)); };
+  const afterAction = () => { load(); refreshInbox(); };
   useEffect(() => {
     load();
     const t = setInterval(load, 30000); // painel atualiza enquanto estiver aberto
@@ -51,12 +55,12 @@ export default function GestaoAtividades() {
   async function confirmDaily(applicationId: string, result: string) {
     const note = prompt(result === 'CONCLUIDA' ? 'Observação (opcional):' : 'Confirmar falta. Observação (opcional):');
     if (note === null) return;
-    await api(`/manage/applications/${applicationId}/confirm`, { body: { result, note } }).then(load, (e) => setError(e.message));
+    await api(`/manage/applications/${applicationId}/confirm`, { body: { result, note } }).then(afterAction, (e) => setError(e.message));
   }
 
   async function decide(excId: string, decision: 'APROVADA' | 'RECUSADA') {
     const reason = prompt(`Justificativa para ${decision === 'APROVADA' ? 'aprovar' : 'recusar'} a exceção (10 a 500 caracteres):`);
-    if (reason) await api(`/manage/exceptions/${excId}/decide`, { body: { decision, reason } }).then(load, (e) => setError(e.message));
+    if (reason) await api(`/manage/exceptions/${excId}/decide`, { body: { decision, reason } }).then(afterAction, (e) => setError(e.message));
   }
 
   const sessions = data?.sessions ?? [];
@@ -119,7 +123,7 @@ export default function GestaoAtividades() {
               </div>
             )}
 
-            {s.status === 'PENDENTE_DE_FECHAMENTO' && <CloseForm s={s} onDone={load} onError={setError} />}
+            {s.status === 'PENDENTE_DE_FECHAMENTO' && <CloseForm s={s} onDone={afterAction} onError={setError} />}
 
             {s.worked && (
               <div>Trabalhado: <b>{fmtMinutes(s.worked.workedMin)}</b> · pausas {fmtMinutes(s.worked.breakMin)} · {s.worked.sources.map(label).join(', ')}</div>

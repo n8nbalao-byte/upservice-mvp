@@ -90,6 +90,19 @@ export async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+/** Bipe curto + vibração; usado no fim da pausa e nas novas pendências do painel. */
+export function beep() {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    osc.frequency.value = 880;
+    osc.connect(ctx.destination);
+    osc.start();
+    setTimeout(() => { osc.stop(); ctx.close(); }, 500);
+  } catch { /* sem áudio: segue o alerta visual */ }
+  navigator.vibrate?.([200, 100, 200]);
+}
+
 export function alertBreakOver() {
   try {
     const ctx = new AudioContext();

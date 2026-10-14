@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { loadUser } from './auth.js';
-import { HttpError } from './http.js';
+import { isBlocked, loadUser } from './auth.js';
+import { HttpError, fail } from './http.js';
 import admin from './routes/admin.js';
 import auth from './routes/auth.js';
 import files from './routes/files.js';
 import jobs from './routes/jobs.js';
+import penalties from './routes/penalties.js';
 import presence from './routes/presence.js';
 import worker from './routes/worker.js';
 
@@ -30,9 +31,17 @@ app.use((req, res, next) => {
 // Limites de corpo por rota: documentos (até 5 MB em base64), selfies (até 500 KB), resto pequeno.
 app.post('/api/me/documents', express.json({ limit: '8mb' }));
 app.post('/api/sessions/:id/events', express.json({ limit: '1mb' }));
+app.post('/api/sessions/:id/exceptions', express.json({ limit: '1mb' }));
 app.use(express.json({ limit: '100kb' }));
 
-app.use('/api', loadUser, auth, worker, jobs, presence, admin, files);
+// Bloqueado só vê o próprio histórico, contesta e sai; todo o resto é recusado.
+const BLOCKED_ALLOWED = new Set(['/me', '/me/occurrences', '/me/contestations', '/auth/logout', '/config']);
+const restrictBlocked = (req, res, next) => {
+  if (req.user && isBlocked(req.user) && !BLOCKED_ALLOWED.has(req.path)) fail(403, 'Conta bloqueada. Veja o motivo e conteste no menu Ocorrências.');
+  next();
+};
+
+app.use('/api', loadUser, restrictBlocked, auth, worker, jobs, presence, penalties, admin, files);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Não encontrado.' }));
 
 app.use(express.static(dist));

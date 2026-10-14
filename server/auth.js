@@ -4,7 +4,9 @@ import { q } from './db.js';
 import { fail } from './http.js';
 
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
-const CAN_LOGIN = new Set(['ATIVO', 'EM_ANALISE']);
+// Profissional bloqueado entra em modo restrito (ver motivo e contestar, v4.0 §6); gestor/admin bloqueado não entra.
+export const isBlocked = (u) => u.status === 'BLOQUEADO_TEMPORARIAMENTE' || u.status === 'BLOQUEADO_PERMANENTEMENTE';
+export const canLogin = (u) => u.status === 'ATIVO' || u.status === 'EM_ANALISE' || (u.role === 'PROFISSIONAL' && isBlocked(u));
 const hash = (t) => createHash('sha256').update(t).digest('hex');
 
 export const devLoginEnabled = () => process.env.DEV_LOGIN === '1' && process.env.NODE_ENV !== 'production';
@@ -28,7 +30,7 @@ export async function findOrCreateUser(sub, rawEmail, name) {
 }
 
 export async function startSession(req, res, user) {
-  if (!CAN_LOGIN.has(user.status)) fail(403, 'Conta bloqueada ou inativa. Fale com a UpService.');
+  if (!canLogin(user)) fail(403, 'Conta bloqueada ou inativa. Fale com a UpService.');
   const token = randomBytes(32).toString('base64url');
   await q('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?,?,?)', [hash(token), user.id, new Date(Date.now() + SESSION_MS)]);
   await audit(q, { ...req, user }, 'LOGIN', 'user', user.id);
@@ -48,7 +50,7 @@ export async function loadUser(req, res, next) {
   if (token) {
     const [user] = await q('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?', [hash(token), new Date()]);
     // Bloqueio vale na hora, inclusive para sessões já abertas.
-    if (user && CAN_LOGIN.has(user.status)) req.user = user;
+    if (user && canLogin(user)) req.user = user;
   }
   next();
 }
