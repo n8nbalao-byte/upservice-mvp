@@ -92,6 +92,47 @@ await q(`INSERT INTO daily_confirmations (application_id, result, confirmed_by)
 console.timeEnd('semente');
 console.log(`${UNITS} lojas, ${WORKERS} profissionais, ${jobs.length} vagas, ${apps.length} candidaturas, ${sessions.length} jornadas, ${events.length} registros`);
 
+// ---------- --seed-only: banco de demonstração para revisão visual (um caso de cada estado da interface) ----------
+if (process.argv.includes('--seed-only')) {
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  // JPEG 1x1 válido: placeholder das selfies de demonstração.
+  const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
+  await mkdir(`${process.env.STORAGE_DIR}/demo`, { recursive: true });
+  await writeFile(`${process.env.STORAGE_DIR}/demo/selfie.jpg`, jpeg);
+  await q("UPDATE presence_events SET selfie_key = 'demo/selfie.jpg', selfie_sha256 = REPEAT('0', 64)");
+  const [unit0] = await q('SELECT unit_id FROM unit_managers WHERE user_id = ? ORDER BY unit_id LIMIT 1', [managers[0].id]);
+  const today5 = await q(
+    `SELECT ws.id, a.id AS app_id, a.user_id, j.unit_id FROM work_sessions ws JOIN applications a ON a.id = ws.application_id JOIN jobs j ON j.id = a.job_id
+     WHERE ws.status = 'EM_ATIVIDADE' AND j.unit_id = ? ORDER BY j.starts_at LIMIT 6`, [unit0.unit_id]);
+  const [exc, pause, close, alert, fresh] = today5;
+  const now = new Date();
+  // Exceção pendente
+  await q("UPDATE work_sessions SET status = 'PENDENTE_DE_EXCECAO' WHERE id = ?", [exc.id]);
+  await q(`INSERT INTO presence_exceptions (id, work_session_id, type, reason, error_message, message, requested_by, requested_at, distance_m, selfie_key, selfie_sha256, prev_status)
+           VALUES (?, ?, 'PAUSE_START', 'GPS_INDISPONIVEL', 'Localização indisponível', 'Estou no estoque, o GPS não pega aqui dentro', ?, ?, NULL, 'demo/selfie.jpg', REPEAT('0', 64), 'EM_ATIVIDADE')`,
+  [randomUUID(), exc.id, exc.user_id, now]);
+  // Pausa excedida + ocorrência pendente
+  await q("UPDATE work_sessions SET status = 'PAUSA_EXCEDIDA', breaks_used = 1, break_ends_at = ? WHERE id = ?", [new Date(now - 10 * 60e3), pause.id]);
+  await q("INSERT INTO occurrences (id, user_id, unit_id, work_session_id, application_id, type, description) VALUES (?, ?, ?, ?, ?, 'PAUSA_EXCEDIDA', 'Pausa passou do tempo configurado na vaga')", [randomUUID(), pause.user_id, pause.unit_id, pause.id, pause.app_id]);
+  // Checkout pendente (fechamento administrativo)
+  await q("UPDATE work_sessions SET status = 'PENDENTE_DE_FECHAMENTO', reported_end_at = ?, reported_end_note = 'Saí às pressas' WHERE id = ?", [new Date(now - 60 * 60e3), close.id]);
+  // Saída do raio não vista + leitura de localização recente
+  await q('UPDATE work_sessions SET last_ping_at = ?, last_ping_distance_m = 840, last_ping_accuracy_m = 18, last_ping_inside = 0 WHERE id = ?', [now, alert.id]);
+  await q('INSERT INTO location_alerts (id, work_session_id, at, lat, lng, accuracy_m, distance_m) VALUES (?, ?, ?, -23.56, -46.63, 18, 840)', [randomUUID(), alert.id, now]);
+  await q('UPDATE work_sessions SET last_ping_at = ?, last_ping_distance_m = 42, last_ping_accuracy_m = 12, last_ping_inside = 1 WHERE id = ?', [now, fresh.id]);
+  // Profissional bloqueado com contestação aberta
+  const blocked = workers[WORKERS - 1];
+  const pid = randomUUID();
+  await q("INSERT INTO penalties (id, user_id, type, reason, starts_at, ends_at) VALUES (?, ?, 'BLOQUEIO_TEMPORARIO', '3 faltas confirmadas', ?, ?)", [pid, blocked.id, now, new Date(now.getTime() + 15 * 86400e3)]);
+  await q("UPDATE users SET status = 'BLOQUEADO_TEMPORARIAMENTE' WHERE id = ?", [blocked.id]);
+  await q("INSERT INTO contestations (id, protocol, user_id, penalty_id, channel, message, created_by) VALUES (?, 'CT-20261014-A1B2', ?, ?, 'APP', 'Estive doente, tenho atestado médico das três datas.', ?)", [randomUUID(), blocked.id, pid, blocked.id]);
+  await q('INSERT INTO applications (id, job_id, user_id, status) SELECT UUID(), a.job_id, ?, \'APROVADA\' FROM applications a JOIN jobs j ON j.id = a.job_id WHERE j.unit_id = ? LIMIT 1', [blocked.id, unit0.unit_id]).catch(() => {});
+  const [worker] = await q('SELECT u.email FROM users u JOIN applications a ON a.user_id = u.id WHERE a.id = ?', [fresh.app_id]);
+  console.log(JSON.stringify({ admin: admin.email, manager: managers[0].email, worker: worker.email, workerSession: fresh.id, blocked: blocked.email, unit: unit0.unit_id }));
+  await closeDb();
+  process.exit(0);
+}
+
 // ---------- app + logins ----------
 const { app } = await import('../server/app.js');
 const http = app.listen(0);
