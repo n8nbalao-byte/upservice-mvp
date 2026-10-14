@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMe } from '../App';
 import { api, label, type Unit } from '../lib/api';
 
@@ -36,7 +37,13 @@ export default function AdminUsuarios() {
       {error && <p className="error">{error}</p>}
       {users.map((u) => (
         <div key={u.id} className="card stack">
-          <div className="row between"><b>{u.name}</b><span className="muted">{u.email}</span></div>
+          <div className="row between">
+            <b>{u.name}</b>
+            <span className="row">
+              <span className="muted">{u.email}</span>
+              {u.role === 'PROFISSIONAL' && <Link className="button" to={`/gestao/profissionais/${u.id}`}>Ver perfil</Link>}
+            </span>
+          </div>
           {u.id === me.user.id ? (
             <p className="muted">Sua conta ({label(u.role)}). Ninguém altera o próprio papel.</p>
           ) : (

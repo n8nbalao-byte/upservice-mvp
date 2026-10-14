@@ -146,6 +146,21 @@ r.get('/manage/workers/:id', MANAGERS, async (req, res) => {
   res.json({ user: publicUser(user), ...(await profileState(user.id)) });
 });
 
+// Fila de análise: mesmo escopo de workerAllowed (admin vê todos; gestor, quem se candidatou nas suas lojas).
+r.get('/manage/documents/pending', MANAGERS, async (req, res) => {
+  const isAdmin = req.user.role === 'ADMINISTRADOR';
+  res.json(await q(
+    `SELECT u.id, u.name, u.email, COUNT(*) AS pending, MIN(d.created_at) AS oldest
+     FROM worker_documents d JOIN users u ON u.id = d.user_id
+     WHERE d.status = 'PENDENTE' ${isAdmin ? '' : `AND EXISTS (
+       SELECT 1 FROM applications a JOIN jobs j ON j.id = a.job_id
+       JOIN unit_managers m ON m.unit_id = j.unit_id AND m.active = 1
+       WHERE a.user_id = u.id AND m.user_id = ?)`}
+     GROUP BY u.id, u.name, u.email ORDER BY oldest LIMIT 200`,
+    isAdmin ? [] : [req.user.id],
+  ));
+});
+
 r.post('/manage/documents/:id/review', MANAGERS, async (req, res) => {
   const status = req.body.status;
   if (status !== 'APROVADO' && status !== 'REJEITADO') fail(400, 'Status inválido.');

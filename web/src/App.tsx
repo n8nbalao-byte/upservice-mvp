@@ -7,6 +7,7 @@ import Atividade from './pages/Atividade';
 import Cadastro from './pages/Cadastro';
 import GestaoAtividades from './pages/GestaoAtividades';
 import GestaoCandidaturas from './pages/GestaoCandidaturas';
+import GestaoDocumentos from './pages/GestaoDocumentos';
 import GestaoProfissional from './pages/GestaoProfissional';
 import GestaoVagas from './pages/GestaoVagas';
 import Login from './pages/Login';
@@ -42,6 +43,7 @@ export default function App() {
               <>
                 <NavLink to="/gestao/vagas">Vagas</NavLink>
                 <NavLink to="/gestao/atividades">Atividades</NavLink>
+                <NavLink to="/gestao/documentos">Documentos</NavLink>
                 {role === 'ADMINISTRADOR' && <NavLink to="/admin/unidades">Unidades</NavLink>}
                 {role === 'ADMINISTRADOR' && <NavLink to="/admin/usuarios">Usuários</NavLink>}
               </>
@@ -64,6 +66,7 @@ export default function App() {
               <Route path="/gestao/vagas/:id" element={<GestaoCandidaturas />} />
               <Route path="/gestao/atividades" element={<GestaoAtividades />} />
               <Route path="/gestao/profissionais/:id" element={<GestaoProfissional />} />
+              <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
               {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
               {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
               <Route path="*" element={<Navigate to="/gestao/vagas" />} />

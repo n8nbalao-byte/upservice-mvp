@@ -197,6 +197,18 @@ test('confirmação da diária soma no valor a receber', { skip }, async () => {
   assert.equal(summary.valor, 150.5);
 });
 
+test('fila de documentos pendentes respeita o escopo do gestor', { skip }, async () => {
+  const w4 = await login('w4@test.dev');
+  await completeWorker(w4, '935.411.347-80'); // documentos enviados, sem candidatura
+  const ids = async (who) => (await call(who, 'GET', '/api/manage/documents/pending')).body.map((r) => r.email);
+  const admin = await ids(s.admin);
+  const gestor = await ids(s.gestor);
+  assert.ok(admin.includes('w4@test.dev') && admin.includes('w1@test.dev'));
+  assert.ok(!gestor.includes('w4@test.dev'), 'gestor não vê quem não se candidatou nas suas lojas');
+  assert.ok(gestor.includes('w1@test.dev'));
+  assert.equal((await call(s.w1, 'GET', '/api/manage/documents/pending')).status, 403);
+});
+
 test('unidade bloqueada não recebe vagas; usuário bloqueado perde a sessão', { skip }, async () => {
   assert.equal((await call(s.admin, 'POST', `/api/units/${s.unitA}/status`, { status: 'BLOQUEADA_FINANCEIRA', reason: 'Pagamento em atraso desde setembro' })).status, 200);
   const starts = new Date(Date.now() + 3600e3);
