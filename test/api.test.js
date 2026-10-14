@@ -9,6 +9,7 @@ import mysql from 'mysql2/promise';
 const url = process.env.TEST_DATABASE_URL;
 const skip = url ? false : 'TEST_DATABASE_URL não definido';
 const UNIT = { lat: -23.55, lng: -46.63 };
+const ADDR = { cep: '03653-000', street: 'Av. Amador Bueno da Veiga', number: '2521', district: 'Penha de França', city: 'São Paulo', uf: 'SP' };
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200)]).toString('base64');
 
 let server, base, q, closeDb, sweepBreaks;
@@ -65,8 +66,10 @@ before(async () => {
 
   s.admin = await login('admin@test.dev');
   await q("UPDATE users SET role = 'ADMINISTRADOR' WHERE email = 'admin@test.dev'");
-  s.unitA = (await call(s.admin, 'POST', '/api/units', { code: 'ATC-001', name: 'Loja A', address: 'Av. A, 100', ...UNIT })).body.id;
-  s.unitB = (await call(s.admin, 'POST', '/api/units', { code: 'ATC-002', name: 'Loja B', address: 'Av. B, 200', lat: -22.9, lng: -43.2 })).body.id;
+  s.unitA = (await call(s.admin, 'POST', '/api/units', { name: 'Loja A', ...ADDR, ...UNIT })).body.id;
+  s.unitB = (await call(s.admin, 'POST', '/api/units', { name: 'Loja B', ...ADDR, lat: -22.9, lng: -43.2 })).body.id;
+  const codes = (await q('SELECT code FROM units ORDER BY code')).map((u) => u.code);
+  assert.deepEqual(codes, ['ATC-001', 'ATC-002'], 'código gerado em sequência');
 
   s.gestor = await login('gestor@test.dev');
   const [g] = await q("SELECT id FROM users WHERE email = 'gestor@test.dev'");

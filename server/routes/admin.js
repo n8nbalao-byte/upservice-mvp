@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { audit } from '../audit.js';
 import { publicUser, requireRole, workerAllowed } from '../auth.js';
 import { q, tx } from '../db.js';
+import { geocode, lookupCep } from '../geo.js';
 import { fail, int, num, requireReason, text } from '../http.js';
 import { profileState } from './worker.js';
 
@@ -22,40 +23,66 @@ r.get('/units', MANAGERS, async (req, res) => {
     : await q('SELECT u.* FROM units u JOIN unit_managers m ON m.unit_id = u.id AND m.active = 1 WHERE m.user_id = ? ORDER BY u.code', [req.user.id]));
 });
 
+const cepDigits = (v) => {
+  const cep = String(v ?? '').replace(/\D/g, '');
+  if (cep.length !== 8) fail(400, 'CEP inválido.');
+  return cep;
+};
+
 function unitFields(b) {
-  const code = String(b.code ?? '').trim().toUpperCase();
-  if (!/^[A-Z0-9-]{2,20}$/.test(code)) fail(400, 'Código da unidade: 2 a 20 letras, números ou hífen.');
-  return {
-    code,
+  const uf = String(b.uf ?? '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(uf)) fail(400, 'UF inválida.');
+  const f = {
     name: text(b.name, 'nome', { min: 2 }),
     region: text(b.region, 'região', { max: 100, optional: true }),
-    address: text(b.address, 'endereço', { min: 5, max: 300 }),
+    cep: cepDigits(b.cep),
+    street: text(b.street, 'logradouro', { min: 3 }),
+    number: text(b.number, 'número', { max: 20 }),
+    district: text(b.district, 'bairro', { max: 100 }),
+    city: text(b.city, 'cidade', { max: 100 }),
+    uf,
     lat: num(b.lat, 'latitude', -90, 90),
     lng: num(b.lng, 'longitude', -180, 180),
     radius_m: int(b.radiusM ?? 300, 'raio', 100, 500),
     max_accuracy_m: int(b.maxAccuracyM ?? 100, 'precisão máxima', 10, 500),
   };
+  f.address = `${f.street}, ${f.number} - ${f.district}, ${f.city}/${f.uf}, CEP ${f.cep.slice(0, 5)}-${f.cep.slice(5)}`;
+  return f;
 }
 
-const dup = (e, msg) => {
-  if (e.code === 'ER_DUP_ENTRY') fail(409, msg);
-  throw e;
-};
+/** Código sequencial ATC-001, ATC-002…; a trava evita dois cadastros simultâneos com o mesmo número. */
+export async function createUnit(req, body) {
+  const fields = unitFields(body);
+  return tx(async (tq) => {
+    const [last] = await tq("SELECT code FROM units WHERE code LIKE 'ATC-%' ORDER BY CAST(SUBSTRING(code, 5) AS UNSIGNED) DESC LIMIT 1 FOR UPDATE");
+    const code = `ATC-${String(Number(last?.code.slice(4) ?? 0) + 1).padStart(3, '0')}`;
+    const unit = { id: randomUUID(), code, ...fields };
+    await tq('INSERT INTO units SET ?', [unit]);
+    await audit(tq, req, 'UNIT_CREATE', 'unit', unit.id, { after: unit });
+    return unit;
+  });
+}
 
 r.post('/units', ADMIN, async (req, res) => {
-  const unit = { id: randomUUID(), ...unitFields(req.body) };
-  await q('INSERT INTO units SET ?', [unit]).catch((e) => dup(e, 'Já existe unidade com este código.'));
-  await audit(q, req, 'UNIT_CREATE', 'unit', unit.id, { after: unit });
-  res.status(201).json({ id: unit.id });
+  const unit = await createUnit(req, req.body);
+  res.status(201).json({ id: unit.id, code: unit.code });
 });
 
 r.put('/units/:id', ADMIN, async (req, res) => {
   const [before] = await q('SELECT * FROM units WHERE id = ?', [req.params.id]);
   if (!before) fail(404, 'Não encontrado.');
-  const after = unitFields(req.body);
-  await q('UPDATE units SET ? WHERE id = ?', [after, before.id]).catch((e) => dup(e, 'Já existe unidade com este código.'));
+  const after = unitFields(req.body); // o código não muda depois de criado
+  await q('UPDATE units SET ? WHERE id = ?', [after, before.id]);
   await audit(q, req, 'UNIT_UPDATE', 'unit', before.id, { before, after });
   res.json({ ok: true });
+});
+
+// CEP → endereço; com número → também coordenadas. Só administrador cadastra unidade.
+r.get('/geo/address', ADMIN, async (req, res) => {
+  const cep = cepDigits(req.query.cep);
+  const address = await lookupCep(cep);
+  const number = String(req.query.number ?? '').trim().slice(0, 20);
+  res.json({ ...address, ...(number ? await geocode({ ...address, number, cep }) : {}) });
 });
 
 // Bloqueio não cancela atividades já aprovadas nem apaga histórico; só impede novas vagas e candidaturas.
