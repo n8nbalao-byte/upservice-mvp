@@ -8,7 +8,7 @@ export function getPosition(): Promise<GeolocationPosition> {
       err(new Error(
         e.code === e.PERMISSION_DENIED ? 'Permita o acesso à localização nas configurações do navegador.'
           : e.code === e.TIMEOUT ? 'O GPS demorou para responder. Vá para uma área aberta e tente de novo.'
-            : 'Não foi possível obter sua localização.',
+            : 'Localização indisponível. Ative a Localização/GPS do aparelho (no celular, na barra de atalhos; no Windows, em Configurações → Privacidade → Localização) e tente de novo.',
       ));
     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   });

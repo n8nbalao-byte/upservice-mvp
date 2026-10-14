@@ -78,6 +78,9 @@ export default function Atividade() {
 
   if (!data) return <p>{error || 'Carregando…'}</p>;
 
+  const opensAt = new Date(s.starts_at).getTime() - 2 * 3600e3;
+  const closesAt = new Date(s.starts_at).getTime() + 15 * 60e3;
+
   const action = (type: EventType, text: string, primary = true) => (
     <button className={`big ${primary ? 'primary' : ''}`} disabled={!!busy} onClick={() => start(type)}>{text}</button>
   );
@@ -101,7 +104,12 @@ export default function Atividade() {
         </div>
       ) : (
         <div className="stack">
-          {s.status === 'AGUARDANDO_CHECKIN' && action('CHECK_IN', 'Fazer check-in')}
+          {/* Mesma janela do servidor (2 h antes até 15 min depois), mostrada antes de pedir GPS e selfie à toa. */}
+          {s.status === 'AGUARDANDO_CHECKIN' && (
+            now < opensAt ? <button className="big" disabled>Check-in liberado às {fmtTime(new Date(opensAt).toISOString())}</button>
+              : now > closesAt ? <p className="error">Prazo de check-in encerrado às {fmtTime(new Date(closesAt).toISOString())}. Fale com o gestor da loja.</p>
+                : action('CHECK_IN', 'Fazer check-in')
+          )}
           {s.status === 'EM_ATIVIDADE' && s.breaks_used < s.break_count && action('PAUSE_START', 'Iniciar pausa', false)}
           {s.status === 'EM_ATIVIDADE' && action('CHECK_OUT', 'Fazer checkout')}
           {onBreak && (
