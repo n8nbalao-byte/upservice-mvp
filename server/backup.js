@@ -65,4 +65,7 @@ export async function backupIfDue() {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) console.log(await backupDatabase());
+// Sem await no topo: a Hostinger carrega o app com require(), que não aceita módulo com top-level await.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  backupDatabase().then(console.log, (e) => { console.error(e.message); process.exitCode = 1; });
+}
