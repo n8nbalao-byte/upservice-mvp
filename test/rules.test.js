@@ -83,3 +83,12 @@ test('CPF', () => {
   assert.ok(!isValidCpf('111.111.111-11'));
   assert.ok(!isValidCpf('123'));
 });
+
+test('diária automática só quando as horas cobrem a jornada (30 min de folga)', async () => {
+  const { coversShift } = await import('../server/rules.js');
+  const job = { starts_at: '2026-10-20T11:00:00Z', ends_at: '2026-10-20T19:00:00Z', break_count: 1, break_minutes: 15 };
+  assert.equal(coversShift(465, job), true, 'jornada inteira');
+  assert.equal(coversShift(436, job), true, 'dentro da folga');
+  assert.equal(coversShift(434, job), false, 'saiu mais cedo');
+  assert.equal(coversShift(2, job), false, 'check-in e checkout em seguida');
+});

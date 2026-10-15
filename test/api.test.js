@@ -232,10 +232,10 @@ test('selfies e documentos: só dono, gestor da unidade e admin', { skip }, asyn
   assert.ok(views.n >= 3);
 });
 
-test('checkout com GPS confirma a diária sozinho e soma no valor a receber', { skip }, async () => {
-  const [dc] = await q('SELECT result, confirmed_by FROM daily_confirmations WHERE application_id = ?', [s.application]);
-  assert.equal(dc.result, 'CONCLUIDA');
-  assert.equal(dc.confirmed_by, null, 'confirmada automaticamente');
+test('saída antecipada não confirma sozinha; o gestor confirma e soma no valor a receber', { skip }, async () => {
+  const [auto] = await q('SELECT 1 FROM daily_confirmations WHERE application_id = ?', [s.application]);
+  assert.equal(auto, undefined, 'checkout logo depois do check-in não vira diária paga sozinho');
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${s.application}/confirm`, { result: 'CONCLUIDA' })).status, 200);
   assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${s.application}/confirm`, { result: 'CONCLUIDA' })).status, 409, 'já confirmada');
   const summary = (await call(s.winner, 'GET', '/api/me/summary')).body;
   assert.equal(summary.concluidas, 1);
@@ -661,4 +661,38 @@ test('loja: nº da filial único e telefone', { skip }, async () => {
   assert.match(again.body.error, /Filial 937 já cadastrada em ATC-/);
   assert.equal((await call(s.admin, 'PUT', `/api/units/${created.body.id}`, { ...base, filial: '937' })).status, 200, 'a própria loja pode manter a filial');
   assert.equal((await call(s.gestor, 'POST', '/api/units', { ...base, filial: '1' })).status, 403);
+});
+
+test('checkout que cobre a jornada confirma a diária sozinho', { skip }, async () => {
+  const c = await login('jornada@test.dev');
+  await completeWorker(c, '248.135.790-60');
+  const { job, session, application } = await approvedSession(c, 'Jornada completa');
+  assert.equal((await event(c, session, 'CHECK_IN')).status, 200);
+  // Simula as 8 h trabalhadas: vaga e check-in deslocados para o passado.
+  await q('UPDATE jobs SET starts_at = ?, ends_at = ? WHERE id = ?', [new Date(Date.now() - 8 * 3600e3), new Date(Date.now() - 60e3), job]);
+  await q("UPDATE presence_events SET occurred_at = ? WHERE work_session_id = ? AND type = 'CHECK_IN'", [new Date(Date.now() - 8 * 3600e3), session]);
+  assert.equal((await event(c, session, 'CHECK_OUT')).status, 200);
+  const [dc] = await q('SELECT result, confirmed_by FROM daily_confirmations WHERE application_id = ?', [application]);
+  assert.equal(dc.result, 'CONCLUIDA');
+  assert.equal(dc.confirmed_by, null, 'confirmada automaticamente');
+  assert.equal((await call(c, 'GET', '/api/me/summary')).body.concluidas, 1);
+});
+
+test('gestor não aprova à mão da reserva quem perdeu a habilitação', { skip }, async () => {
+  const a = await login('habil-a@test.dev');
+  const b = await login('habil-b@test.dev');
+  await completeWorker(a, '369.258.147-55');
+  await completeWorker(b, '581.470.369-57');
+  const starts = new Date(Date.now() + 5 * 86400e3);
+  const job = (await call(s.gestor, 'POST', '/api/manage/jobs', {
+    unitId: s.unitA, title: 'Habilitação', startsAt: starts, endsAt: new Date(starts.getTime() + 4 * 3600e3), positions: 1, dailyValue: 100, breakCount: 0, breakMinutes: 15, publish: true,
+  })).body.id;
+  assert.equal((await call(a, 'POST', `/api/jobs/${job}/apply`, {})).body.status, 'APROVADA');
+  const reserve = (await call(b, 'POST', `/api/jobs/${job}/apply`, {})).body;
+  assert.equal(reserve.status, 'RESERVA');
+  const bId = (await call(b, 'GET', '/api/me')).body.user.id;
+  await q("UPDATE worker_documents SET status = 'REJEITADO' WHERE user_id = ? AND type = 'RG'", [bId]);
+  const manual = await call(s.gestor, 'POST', `/api/manage/applications/${reserve.id}/decide`, { decision: 'APROVADA' });
+  assert.equal(manual.status, 409);
+  assert.match(manual.body.error, /documentos/);
 });

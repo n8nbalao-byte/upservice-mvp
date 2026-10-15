@@ -8,12 +8,15 @@ import { DOC_TYPES } from './routes/worker.js';
 
 const fmt = (d) => new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
 
-/** Motivo pelo qual o profissional ainda não pode ser aprovado; null = habilitado. */
+/**
+ * Motivo pelo qual o profissional ainda não pode ser aprovado; null = habilitado. Trava a linha do usuário (FOR UPDATE):
+ * um bloqueio simultâneo (applyBlock atualiza users antes de liberar as vagas) espera ou é esperado, nunca os dois passam.
+ */
 export async function notEligible(tq, userId) {
   const [u] = await tq(
     `SELECT u.status, p.terms_accepted_at,
             (SELECT COUNT(DISTINCT d.type) FROM worker_documents d WHERE d.user_id = u.id AND d.status = 'APROVADO' AND d.type IN (?)) AS docs_ok
-     FROM users u LEFT JOIN worker_profiles p ON p.user_id = u.id WHERE u.id = ?`,
+     FROM users u LEFT JOIN worker_profiles p ON p.user_id = u.id WHERE u.id = ? FOR UPDATE`,
     [DOC_TYPES, userId],
   );
   if (!u || u.status !== 'ATIVO') return 'Sua conta não está liberada para candidaturas.';
@@ -41,6 +44,13 @@ async function approve(c, appId, action) {
   await c.tq("UPDATE applications SET status = 'APROVADA', decided_by = NULL, decided_at = ? WHERE id = ?", [new Date(), appId]);
   await c.tq('INSERT INTO work_sessions (id, application_id) VALUES (?,?)', [randomUUID(), appId]);
   await audit(c.tq, c.req, action, 'application', appId, { before: { status: 'PENDENTE' }, after: { status: 'APROVADA' } });
+}
+
+/** Bloqueia a aprovação (automática, promoção ou do gestor) de quem não está habilitado ou tem conflito de horário. */
+export async function assertCanApprove(tq, userId, job) {
+  const reason = await notEligible(tq, userId);
+  if (reason) fail(409, reason);
+  if (await hasOverlap(tq, userId, job)) fail(409, 'Já existe uma diária aprovada nesse horário para este profissional.');
 }
 
 /** Candidatura: aprovada na hora se houver posição; senão entra na reserva. A vaga já deve estar travada (FOR UPDATE). */
@@ -71,10 +81,11 @@ export async function reservePosition(tq, jobId, appId) {
 /** Posição liberada: chama a reserva por ordem de chegada (pula quem não está mais habilitado ou ficou com conflito de horário). */
 export async function promoteFromWaitlist(c, jobId) {
   const [job] = await c.tq(
-    'SELECT j.id, j.title, j.status, j.positions, j.starts_at, j.ends_at, un.name AS unit_name FROM jobs j JOIN units un ON un.id = j.unit_id WHERE j.id = ? FOR UPDATE',
+    'SELECT j.id, j.title, j.status, j.positions, j.starts_at, j.ends_at, un.name AS unit_name, un.status AS unit_status FROM jobs j JOIN units un ON un.id = j.unit_id WHERE j.id = ? FOR UPDATE',
     [jobId],
   );
-  if (!job || job.status !== 'ABERTA' || new Date(job.starts_at) <= new Date()) return [];
+  // Mesmas condições da candidatura: vaga aberta, loja ativa, ainda não começou.
+  if (!job || job.status !== 'ABERTA' || job.unit_status !== 'ATIVA' || new Date(job.starts_at) <= new Date()) return [];
   let free = job.positions - await approvedCount(c.tq, job.id);
   const promoted = [];
   if (free <= 0) return promoted;

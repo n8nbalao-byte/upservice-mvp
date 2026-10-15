@@ -8,7 +8,7 @@ import { HttpError, fail, requireReason, text } from '../http.js';
 import { sendMailSafe } from '../mail.js';
 import { createOccurrence, ctx as penaltyCtx, endBlock, flush, managerEmails } from '../penalties.js';
 import {
-  ALERT_COOLDOWN_MS, CHECKOUT_TOLERANCE_MS, CLOSURE_SOURCES, EVENT_TYPES, EXCEPTION_REASONS, PING_MIN_GAP_MS,
+  ALERT_COOLDOWN_MS, CHECKOUT_TOLERANCE_MS, coversShift, CLOSURE_SOURCES, EVENT_TYPES, EXCEPTION_REASONS, PING_MIN_GAP_MS,
   checkinWindowError, distanceMeters, exceptionWindowError, nextState, transitionError, workedTime,
 } from '../rules.js';
 import { decodeBase64, removeFile, saveFile, sniff } from '../storage.js';
@@ -77,10 +77,10 @@ async function applyEvent(tq, s, next, e) {
     next, pauseStart ? 1 : 0, pauseStart ? new Date(new Date(e.at).getTime() + s.break_minutes * 60000) : null, s.id,
   ]);
   if (next === 'FINALIZADA') {
-    await storeWorkedTime(tq, s.id);
-    // Checkout por GPS ou por exceção aprovada já confirma a diária (confirmed_by NULL = automático). O fechamento
-    // administrativo (checkout esquecido) continua dependendo do gestor.
-    if (e.validation !== 'FECHAMENTO_ADMINISTRATIVO') {
+    const worked = await storeWorkedTime(tq, s.id);
+    // Checkout por GPS ou por exceção aprovada confirma a diária (confirmed_by NULL = automático) só se as horas
+    // cobrem a jornada: saída antecipada e fechamento administrativo (checkout esquecido) ficam com o gestor.
+    if (e.validation !== 'FECHAMENTO_ADMINISTRATIVO' && worked && coversShift(worked.workedMin, s)) {
       const done = await tq("INSERT IGNORE INTO daily_confirmations (application_id, result, note, confirmed_by) VALUES (?, 'CONCLUIDA', 'Confirmada automaticamente no checkout', NULL)", [s.application_id]);
       if (done.affectedRows) await audit(tq, null, 'DAILY_AUTO_CONFIRM', 'application', s.application_id, { after: { result: 'CONCLUIDA' } });
     }

@@ -7,7 +7,7 @@ import { q, tx } from '../db.js';
 import { fail, int, num, requireReason, text } from '../http.js';
 import { ctx, flush } from '../penalties.js';
 import { distanceMeters } from '../rules.js';
-import { applyToJob, promoteFromWaitlist } from '../staffing.js';
+import { applyToJob, assertCanApprove, promoteFromWaitlist } from '../staffing.js';
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
@@ -190,11 +190,13 @@ r.post('/manage/applications/:id/decide', MANAGERS, async (req, res) => {
   const { id, job_id } = await loadApplication(req);
   await tx(async (tq) => {
     // Trava a vaga primeiro: aprovações concorrentes da mesma vaga ficam em fila e o limite de posições é respeitado.
-    const [job] = await tq('SELECT status, positions FROM jobs WHERE id = ? FOR UPDATE', [job_id]);
-    const [app] = await tq('SELECT status FROM applications WHERE id = ? FOR UPDATE', [id]);
+    const [job] = await tq('SELECT j.id, j.status, j.positions, j.starts_at, j.ends_at, u.status AS unit_status FROM jobs j JOIN units u ON u.id = j.unit_id WHERE j.id = ? FOR UPDATE', [job_id]);
+    const [app] = await tq('SELECT status, user_id FROM applications WHERE id = ? FOR UPDATE', [id]);
     if (app.status !== 'PENDENTE') fail(409, 'Esta candidatura já foi decidida.');
     if (decision === 'APROVADA') {
       if (job.status !== 'ABERTA') fail(409, 'A vaga não está aberta.');
+      if (job.unit_status !== 'ATIVA') fail(409, 'Unidade bloqueada ou inativa.');
+      await assertCanApprove(tq, app.user_id, job);
       const [{ n }] = await tq("SELECT COUNT(*) AS n FROM applications WHERE job_id = ? AND status = 'APROVADA'", [job_id]);
       if (n >= job.positions) fail(409, 'Todas as posições desta vaga já foram preenchidas.');
       await tq('INSERT INTO work_sessions (id, application_id) VALUES (?,?)', [randomUUID(), id]);
