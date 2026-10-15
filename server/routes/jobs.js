@@ -109,17 +109,16 @@ r.get('/manage/jobs', MANAGERS, async (req, res) => {
   ));
 });
 
-r.post('/manage/jobs', MANAGERS, async (req, res) => {
-  const b = req.body;
-  await assertUnit(req.user, b.unitId);
+/** Validação única de uma vaga (cadastro manual e importação da escala). */
+function buildJob(req, b, unitId) {
   const startsAt = new Date(b.startsAt);
   const endsAt = new Date(b.endsAt);
   if (Number.isNaN(+startsAt) || Number.isNaN(+endsAt)) fail(400, 'Informe início e término.');
   if (startsAt < new Date()) fail(400, 'O início da vaga já passou.');
   if (endsAt <= startsAt || endsAt - startsAt > 24 * 3600e3) fail(400, 'Término deve ser depois do início, em até 24 horas.');
-  const job = {
+  return {
     id: randomUUID(),
-    unit_id: b.unitId,
+    unit_id: unitId,
     title: text(b.title, 'título', { min: 3, max: 120 }),
     description: text(b.description, 'descrição', { max: 1000, optional: true }),
     starts_at: startsAt,
@@ -131,11 +130,104 @@ r.post('/manage/jobs', MANAGERS, async (req, res) => {
     status: b.publish ? 'ABERTA' : 'RASCUNHO',
     created_by: req.user.id,
   };
+}
+
+r.post('/manage/jobs', MANAGERS, async (req, res) => {
+  const b = req.body;
+  await assertUnit(req.user, b.unitId);
+  const job = buildJob(req, b, b.unitId);
   const [unit] = await q('SELECT status FROM units WHERE id = ?', [b.unitId]);
   if (unit?.status !== 'ATIVA') fail(409,'Unidade bloqueada ou inativa: não recebe novas vagas.');
   await q('INSERT INTO jobs SET ?', [job]);
   await audit(q, req, 'JOB_CREATE', 'job', job.id, { after: job });
   res.status(201).json({ id: job.id });
+});
+
+const IMPORT_MAX = 5000;
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const ISSUE = {
+  FILIAL_DESCONHECIDA: 'Filial não cadastrada', SEM_ACESSO: 'Loja fora do seu acesso', LOJA_INATIVA: 'Loja bloqueada ou inativa',
+  DATA_INVALIDA: 'Data inválida', QUANTIDADE_INVALIDA: 'Quantidade inválida', DATA_PASSADA: 'Dia que já passou',
+  JA_EXISTE: 'Vaga já existe', REPETIDA: 'Repetida na planilha',
+};
+
+/**
+ * Importação da escala mensal: uma vaga por loja (nº da filial) e dia, com a quantidade da planilha e os padrões
+ * informados (função, horário, valor, pausas). dryRun = prévia sem gravar; senão cria tudo numa transação.
+ */
+r.post('/manage/jobs/import', MANAGERS, async (req, res) => {
+  const d = req.body.defaults ?? {};
+  const items = Array.isArray(req.body.items) ? req.body.items : fail(400, 'Planilha sem linhas.');
+  if (!items.length || items.length > IMPORT_MAX) fail(400, `A importação aceita de 1 a ${IMPORT_MAX} linhas.`);
+  if (!HHMM.test(d.startTime ?? '') || !HHMM.test(d.endTime ?? '')) fail(400, 'Informe o horário de início e de término.');
+  const title = text(d.title, 'função', { min: 3, max: 120 });
+  const digits = (v) => String(v ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+
+  const filiais = [...new Set(items.map((i) => digits(i.filial)).filter(Boolean))];
+  const units = filiais.length ? await q('SELECT id, code, name, status, filial FROM units WHERE filial IN (?)', [filiais]) : [];
+  const byFilial = new Map(units.map((u) => [u.filial, u]));
+  const allowed = req.user.role === 'ADMINISTRADOR' ? null
+    : new Set((await q('SELECT unit_id FROM unit_managers WHERE user_id = ? AND active = 1', [req.user.id])).map((x) => x.unit_id));
+
+  const now = new Date();
+  const seen = new Set();
+  const lines = items.map((i) => {
+    const filial = digits(i.filial);
+    const unit = byFilial.get(filial);
+    const line = { filial, name: String(i.name ?? '').slice(0, 120), date: String(i.date ?? ''), positions: Number(i.positions), unit };
+    if (!unit) return { ...line, issue: 'FILIAL_DESCONHECIDA' };
+    if (allowed && !allowed.has(unit.id)) return { ...line, issue: 'SEM_ACESSO' };
+    if (unit.status !== 'ATIVA') return { ...line, issue: 'LOJA_INATIVA' };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(line.date)) return { ...line, issue: 'DATA_INVALIDA' };
+    if (!Number.isInteger(line.positions) || line.positions < 1 || line.positions > 500) return { ...line, issue: 'QUANTIDADE_INVALIDA' };
+    const startsAt = new Date(`${line.date}T${d.startTime}:00-03:00`);
+    let endsAt = new Date(`${line.date}T${d.endTime}:00-03:00`);
+    if (Number.isNaN(+startsAt)) return { ...line, issue: 'DATA_INVALIDA' };
+    if (endsAt <= startsAt) endsAt = new Date(endsAt.getTime() + 86400e3); // turno que vira a noite
+    if (startsAt <= now) return { ...line, issue: 'DATA_PASSADA' };
+    const key = `${unit.id}|${+startsAt}`;
+    if (seen.has(key)) return { ...line, issue: 'REPETIDA' };
+    seen.add(key);
+    return { ...line, key, startsAt, endsAt };
+  });
+
+  // Mesma loja, mesmo início e mesma função já cadastrada (e não cancelada): não duplica.
+  const ok = lines.filter((l) => !l.issue);
+  if (ok.length) {
+    const times = ok.map((l) => +l.startsAt);
+    const existing = await q(
+      "SELECT unit_id, starts_at FROM jobs WHERE unit_id IN (?) AND title = ? AND status <> 'CANCELADA' AND starts_at BETWEEN ? AND ?",
+      [[...new Set(ok.map((l) => l.unit.id))], title, new Date(Math.min(...times)), new Date(Math.max(...times))],
+    );
+    const taken = new Set(existing.map((j) => `${j.unit_id}|${+new Date(j.starts_at)}`));
+    for (const l of ok) if (taken.has(l.key)) l.issue = 'JA_EXISTE';
+  }
+  const jobs = lines.filter((l) => !l.issue).map((l) => buildJob(req, {
+    title, description: d.description, startsAt: l.startsAt, endsAt: l.endsAt, positions: l.positions,
+    dailyValue: d.dailyValue, breakCount: d.breakCount, breakMinutes: d.breakMinutes, publish: d.publish,
+  }, l.unit.id));
+
+  const stores = new Map();
+  for (const l of lines) {
+    const st = stores.get(l.filial) ?? { filial: l.filial, name: l.name, unit: l.unit ? { code: l.unit.code, name: l.unit.name } : null, days: 0, positions: 0, issues: {} };
+    if (l.issue) st.issues[l.issue] = (st.issues[l.issue] ?? 0) + 1;
+    else { st.days += 1; st.positions += l.positions; }
+    stores.set(l.filial, st);
+  }
+  const issues = {};
+  for (const l of lines) if (l.issue) issues[l.issue] = (issues[l.issue] ?? 0) + 1;
+  const summary = { lines: lines.length, jobs: jobs.length, positions: jobs.reduce((t, j) => t + j.positions, 0), issues };
+
+  if (!req.body.dryRun && jobs.length) {
+    const cols = Object.keys(jobs[0]);
+    await tx(async (tq) => {
+      for (let i = 0; i < jobs.length; i += 500) {
+        await tq(`INSERT INTO jobs (${cols.join(',')}) VALUES ?`, [jobs.slice(i, i + 500).map((j) => cols.map((c) => j[c]))]);
+      }
+      await audit(tq, req, 'JOBS_IMPORT', 'job', null, { after: { title, defaults: d, ...summary, from: lines[0]?.date } });
+    });
+  }
+  res.json({ dryRun: !!req.body.dryRun, created: req.body.dryRun ? 0 : jobs.length, summary, labels: ISSUE, stores: [...stores.values()] });
 });
 
 const JOB_TRANSITIONS = {

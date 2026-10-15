@@ -696,3 +696,40 @@ test('gestor não aprova à mão da reserva quem perdeu a habilitação', { skip
   assert.equal(manual.status, 409);
   assert.match(manual.body.error, /documentos/);
 });
+
+test('importar escala: prévia sem gravar, filial desconhecida, escopo do gestor, repetida, dia passado e vaga existente', { skip }, async () => {
+  await q("UPDATE units SET filial = '9001' WHERE id = ?", [s.unitA]);
+  await q("UPDATE units SET filial = '9002' WHERE id = ?", [s.unitB]);
+  const day = (n) => new Date(Date.now() + n * 86400e3).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const defaults = { title: 'Repositor escala', startTime: '08:00', endTime: '16:00', dailyValue: 130, breakCount: 1, breakMinutes: 15, publish: true };
+  const items = [
+    { filial: '9001', name: 'LOJA A', date: day(10), positions: 15 },
+    { filial: '9001', name: 'LOJA A', date: day(11), positions: 20 },
+    { filial: '9001', name: 'LOJA A', date: day(11), positions: 20 }, // repetida
+    { filial: '9001', name: 'LOJA A', date: day(-2), positions: 10 }, // já passou
+    { filial: '09002', name: 'LOJA B', date: day(10), positions: 5 }, // fora do acesso do gestor
+    { filial: '777', name: 'DESCONHECIDA', date: day(10), positions: 5 },
+  ];
+  const before = (await q('SELECT COUNT(*) AS n FROM jobs'))[0].n;
+  const preview = await call(s.gestor, 'POST', '/api/manage/jobs/import', { defaults, items, dryRun: true });
+  assert.equal(preview.status, 200);
+  assert.equal((await q('SELECT COUNT(*) AS n FROM jobs'))[0].n, before, 'prévia não grava');
+  assert.deepEqual(preview.body.summary, { lines: 6, jobs: 2, positions: 35, issues: { REPETIDA: 1, DATA_PASSADA: 1, SEM_ACESSO: 1, FILIAL_DESCONHECIDA: 1 } });
+  assert.equal(preview.body.stores.find((x) => x.filial === '777').unit, null);
+
+  const done = await call(s.gestor, 'POST', '/api/manage/jobs/import', { defaults, items });
+  assert.equal(done.body.created, 2);
+  const created = await q("SELECT positions, status, daily_value, starts_at, ends_at FROM jobs WHERE title = 'Repositor escala' ORDER BY starts_at");
+  assert.deepEqual(created.map((j) => [j.positions, j.status, Number(j.daily_value)]), [[15, 'ABERTA', 130], [20, 'ABERTA', 130]]);
+  assert.equal((new Date(created[0].ends_at) - new Date(created[0].starts_at)) / 3600e3, 8);
+  assert.equal(new Date(created[0].starts_at).toISOString().slice(11, 16), '11:00', '08:00 em São Paulo');
+  const [audited] = await q("SELECT COUNT(*) AS n FROM audit_events WHERE action = 'JOBS_IMPORT'");
+  assert.equal(Number(audited.n), 1);
+
+  const again = await call(s.gestor, 'POST', '/api/manage/jobs/import', { defaults, items: items.slice(0, 2), dryRun: true });
+  assert.deepEqual(again.body.summary.issues, { JA_EXISTE: 2 }, 'importar de novo não duplica');
+  const admin = await call(s.admin, 'POST', '/api/manage/jobs/import', { defaults: { ...defaults, startTime: '22:00', endTime: '06:00' }, items: [items[4]], dryRun: true });
+  assert.equal(admin.body.summary.jobs, 1, 'admin alcança a loja B; turno da noite termina no dia seguinte');
+  assert.equal((await call(s.w1, 'POST', '/api/manage/jobs/import', { defaults, items, dryRun: true })).status, 403);
+  assert.equal((await call(s.gestor, 'POST', '/api/manage/jobs/import', { defaults: { ...defaults, startTime: '8h' }, items })).status, 400);
+});

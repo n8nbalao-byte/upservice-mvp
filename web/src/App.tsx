@@ -16,6 +16,7 @@ import GestaoDocumentos from './pages/GestaoDocumentos';
 import GestaoOcorrencias from './pages/GestaoOcorrencias';
 import GestaoProfissional from './pages/GestaoProfissional';
 import GestaoVagas from './pages/GestaoVagas';
+import ImportarEscala from './pages/ImportarEscala';
 import Inicio from './pages/Inicio';
 import Login from './pages/Login';
 import Minhas from './pages/Minhas';
@@ -110,6 +111,7 @@ export default function App() {
                 <Route path="/gestao/inicio" element={<Dashboard />} />
                 <Route path="/gestao/pendencias" element={<Pendencias />} />
                 <Route path="/gestao/vagas" element={<GestaoVagas />} />
+                <Route path="/gestao/vagas/importar" element={<ImportarEscala />} />
                 <Route path="/gestao/vagas/:id" element={<GestaoCandidaturas />} />
                 <Route path="/gestao/atividades" element={<GestaoAtividades />} />
                 <Route path="/gestao/profissionais/:id" element={<GestaoProfissional />} />
