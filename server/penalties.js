@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { audit } from './audit.js';
 import { sendMailSafe } from './mail.js';
 import { BLOCK_DAYS, STRIKES_TO_BLOCK } from './rules.js';
+import { promoteFromWaitlist } from './staffing.js';
 
 export const ctx = (tq, req) => ({ tq, req, outbox: [] });
 
@@ -45,7 +46,7 @@ export async function applyBlock(c, { userId, type, reason, days = null }) {
 
   // Libera as vagas aprovadas que ainda não começaram (decisão de 14/10/2026).
   const future = await c.tq(
-    `SELECT a.id, ws.id AS session_id, j.title, j.starts_at, j.unit_id, un.name AS unit_name
+    `SELECT a.id, a.job_id, ws.id AS session_id, j.title, j.starts_at, j.unit_id, un.name AS unit_name
      FROM applications a JOIN work_sessions ws ON ws.application_id = a.id JOIN jobs j ON j.id = a.job_id JOIN units un ON un.id = j.unit_id
      WHERE a.user_id = ? AND a.status = 'APROVADA' AND ws.status = 'AGUARDANDO_CHECKIN' AND j.starts_at > ? FOR UPDATE`,
     [userId, now],
@@ -56,8 +57,9 @@ export async function applyBlock(c, { userId, type, reason, days = null }) {
     await c.tq("UPDATE work_sessions SET status = 'CANCELADA_ADMINISTRATIVAMENTE' WHERE id = ?", [f.session_id]);
     await audit(c.tq, c.req, 'APPLICATION_CANCEL', 'application', f.id, { before: { status: 'APROVADA' }, after: { status: 'CANCELADA' }, reason: 'Profissional bloqueado' });
     for (const to of await managerEmails(c.tq, f.unit_id)) {
-      c.outbox.push([to, `UpService: posição liberada em ${f.unit_name}`, `${w.name} foi bloqueado(a) e a aprovação na vaga "${f.title}" (${fmt(f.starts_at)}) foi cancelada. A posição está livre para outra pessoa.`]);
+      c.outbox.push([to, `UpService: posição liberada em ${f.unit_name}`, `${w.name} foi bloqueado(a) e a aprovação na vaga "${f.title}" (${fmt(f.starts_at)}) foi cancelada. Quem estava na reserva é chamado automaticamente.`]);
     }
+    await promoteFromWaitlist(c, f.job_id);
   }
 
   const period = penalty.ends_at ? `de ${fmt(now)} até ${fmt(penalty.ends_at)}` : 'por tempo indeterminado (bloqueio permanente)';

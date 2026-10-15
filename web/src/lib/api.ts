@@ -4,26 +4,32 @@ export class ApiError extends Error {
   }
 }
 
+/** Disparado depois de toda alteração salva com sucesso: quem mostra contadores recarrega na hora. */
+export const CHANGED = 'upservice:changed';
+
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+  const method = opts.method ?? (opts.body === undefined ? 'GET' : 'POST');
   const res = await fetch(`/api${path}`, {
-    method: opts.method ?? (opts.body === undefined ? 'GET' : 'POST'),
+    cache: 'no-store',
+    method,
     headers: opts.body === undefined ? {} : { 'Content-Type': 'application/json' },
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
   if (!res.ok) throw new ApiError(res.status, data?.error ?? 'Erro inesperado. Tente novamente.');
+  if (method !== 'GET') window.dispatchEvent(new Event(CHANGED));
   return data as T;
 }
 
 export type Role = 'PROFISSIONAL' | 'GESTOR' | 'ADMINISTRADOR';
-export type Doc = { id: string; type: 'CPF' | 'RG' | 'COMPROVANTE'; status: string; rejection_reason: string | null };
+export type Doc = { id: string; type: 'CPF' | 'RG' | 'COMPROVANTE' | 'SELFIE'; status: string; rejection_reason: string | null };
 export type Me = {
   user: { id: string; name: string; email: string; role: Role; status: string };
   profile: Record<string, any> | null;
   documents: Doc[];
   complete: boolean;
 };
-export type Unit = { id: string; code: string; name: string; region: string | null; address: string; cep: string | null; street: string | null; number: string | null; district: string | null; city: string | null; uf: string | null; lat: number; lng: number; radius_m: number; max_accuracy_m: number; status: string; status_reason: string | null };
+export type Unit = { id: string; code: string; filial: string | null; phone: string | null; name: string; region: string | null; address: string; cep: string | null; street: string | null; number: string | null; district: string | null; city: string | null; uf: string | null; lat: number; lng: number; radius_m: number; max_accuracy_m: number; status: string; status_reason: string | null };
 
 const TZ = 'America/Sao_Paulo';
 export const fmtDateTime = (s: string) => new Date(s).toLocaleString('pt-BR', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' });

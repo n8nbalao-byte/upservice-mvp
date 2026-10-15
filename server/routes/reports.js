@@ -40,7 +40,7 @@ async function reportRows(f, limit) {
     `SELECT a.id AS application_id, a.status AS application_status, j.title, j.starts_at, j.daily_value,
             un.id AS unit_id, un.code AS unit_code, un.name AS unit_name, w.name AS worker_name,
             ws.id AS session_id, ws.status AS session_status, ws.worked_min, ws.break_min, ws.sources,
-            dc.result, dc.confirmed_at, dc.note, cb.name AS confirmed_by,
+            dc.result, dc.confirmed_at, dc.note, CASE WHEN dc.result IS NULL THEN NULL ELSE COALESCE(cb.name, 'Automático') END AS confirmed_by,
             (SELECT MIN(e.occurred_at) FROM presence_events e WHERE e.work_session_id = ws.id AND e.type = 'CHECK_IN') AS checkin,
             (SELECT MAX(e.occurred_at) FROM presence_events e WHERE e.work_session_id = ws.id AND e.type = 'CHECK_OUT') AS checkout,
             (SELECT GROUP_CONCAT(o.type ORDER BY o.created_at) FROM occurrences o WHERE o.application_id = a.id AND o.status = 'CONFIRMADA') AS occurrences

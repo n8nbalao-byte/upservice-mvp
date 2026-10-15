@@ -78,6 +78,13 @@ export const EXCEPTION_REASONS = ['GPS_INDISPONIVEL', 'PRECISAO_INSUFICIENTE', '
 export const CLOSURE_SOURCES = ['INFORMADO_PROFISSIONAL', 'PREVISTO', 'CONFIRMADO_GESTOR'];
 export const CHECKOUT_TOLERANCE_MS = 30 * 60 * 1000;
 
+/** Diária confirmada sozinha só quando as horas cobrem a jornada prevista (início→fim menos pausas), com 30 min de folga. */
+export const AUTO_CONFIRM_TOLERANCE_MIN = 30;
+export function coversShift(workedMin, job) {
+  const planned = (new Date(job.ends_at) - new Date(job.starts_at)) / 60000 - job.break_count * job.break_minutes;
+  return workedMin >= planned - AUTO_CONFIRM_TOLERANCE_MIN;
+}
+
 export const BLOCK_DAYS = 15;
 export const STRIKES_TO_BLOCK = 3;
 

@@ -215,16 +215,14 @@ r.get('/manage/inbox', MANAGERS, async (req, res) => {
   const [oWhere, oArgs] = unitScope(req.user, 'o.unit_id');
   const [cWhere, cArgs] = workerScope(req.user, 'c.user_id');
   const day = (d) => new Date(d).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
-  const [exceptions, closures, applications, documents, occurrences, contestations, alerts] = await Promise.all([
+  // Candidaturas não entram: são aprovadas automaticamente (PENDENTE = reserva, sem ação do gestor).
+  const [exceptions, closures, documents, occurrences, contestations, alerts] = await Promise.all([
     q(`SELECT x.id, x.type, x.reason, x.requested_at AS at, w.name, j.unit_id, j.starts_at, un.name AS unit_name FROM presence_exceptions x
        JOIN work_sessions ws ON ws.id = x.work_session_id JOIN applications a ON a.id = ws.application_id JOIN users w ON w.id = a.user_id
        JOIN jobs j ON j.id = a.job_id JOIN units un ON un.id = j.unit_id WHERE x.status = 'PENDENTE' AND ${uWhere}`, uArgs),
     q(`SELECT ws.id, j.ends_at AS at, w.name, j.unit_id, j.starts_at, un.name AS unit_name FROM work_sessions ws
        JOIN applications a ON a.id = ws.application_id JOIN users w ON w.id = a.user_id JOIN jobs j ON j.id = a.job_id JOIN units un ON un.id = j.unit_id
        WHERE ws.status = 'PENDENTE_DE_FECHAMENTO' AND ${uWhere}`, uArgs),
-    q(`SELECT j.id, j.title, j.starts_at, un.name AS unit_name, COUNT(*) AS n, MIN(a.created_at) AS at FROM applications a
-       JOIN jobs j ON j.id = a.job_id JOIN units un ON un.id = j.unit_id
-       WHERE a.status = 'PENDENTE' AND j.status = 'ABERTA' AND j.starts_at > ? AND ${uWhere} GROUP BY j.id, j.title, j.starts_at, un.name`, [new Date(), ...uArgs]),
     q(`SELECT d.user_id AS id, u.name, COUNT(*) AS n, MIN(d.created_at) AS at FROM worker_documents d JOIN users u ON u.id = d.user_id
        WHERE d.status = 'PENDENTE' AND ${wWhere} GROUP BY d.user_id, u.name`, wArgs),
     q(`SELECT o.id, o.type, o.created_at AS at, u.name, un.name AS unit_name FROM occurrences o JOIN users u ON u.id = o.user_id JOIN units un ON un.id = o.unit_id
@@ -239,7 +237,6 @@ r.get('/manage/inbox', MANAGERS, async (req, res) => {
     ...alerts.map((x) => ({ key: `loc:${x.id}`, kind: 'SAIDA_DO_RAIO', at: x.at, title: `Saída do raio: ${x.name}`, detail: `${x.unit_name} · ${Math.round(x.distance_m)} m da loja`, link: activity(x) })),
     ...exceptions.map((x) => ({ key: `exc:${x.id}`, kind: 'EXCECAO', at: x.at, title: `Exceção: ${x.name}`, detail: `${x.unit_name} · ${x.type} · ${x.reason}`, link: activity(x) })),
     ...closures.map((x) => ({ key: `close:${x.id}`, kind: 'CHECKOUT_PENDENTE', at: x.at, title: `Checkout pendente: ${x.name}`, detail: x.unit_name, link: activity(x) })),
-    ...applications.map((x) => ({ key: `app:${x.id}:${x.n}`, kind: 'CANDIDATURA', at: x.at, title: `${x.n} candidatura(s): ${x.title}`, detail: `${x.unit_name} · ${day(x.starts_at)}`, link: `/gestao/vagas/${x.id}` })),
     ...documents.map((x) => ({ key: `doc:${x.id}:${x.n}`, kind: 'DOCUMENTO', at: x.at, title: `${x.n} documento(s): ${x.name}`, detail: 'Aguardando análise', link: `/gestao/profissionais/${x.id}` })),
     ...occurrences.map((x) => ({ key: `occ:${x.id}`, kind: 'OCORRENCIA', at: x.at, title: `Ocorrência a confirmar: ${x.name}`, detail: `${x.unit_name} · ${x.type}`, link: '/gestao/ocorrencias' })),
     ...contestations.map((x) => ({ key: `ct:${x.id}`, kind: 'CONTESTACAO', at: x.at, title: `Contestação ${x.protocol}: ${x.name}`, detail: 'Análise prioritária', link: '/gestao/ocorrencias' })),

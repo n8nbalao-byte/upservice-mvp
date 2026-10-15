@@ -4,14 +4,15 @@ import { useMe } from '../App';
 import { Icon } from '../components/icons';
 import { Alert, PageHeader, StatusBadge, useDialog } from '../components/ui';
 import { api, type Doc } from '../lib/api';
-import { fileToDataUrl } from '../lib/device';
+import { Selfie, fileToDataUrl } from '../lib/device';
 
 const DOCS: { type: Doc['type']; name: string; hint: string }[] = [
+  { type: 'SELFIE', name: 'Selfie', hint: 'Foto do seu rosto, de frente, em lugar claro, sem óculos escuros nem boné. Tirada na hora pela câmera.' },
   { type: 'CPF', name: 'CPF', hint: 'Foto nítida do documento' },
   { type: 'RG', name: 'RG', hint: 'Frente e verso na mesma foto ou PDF' },
   { type: 'COMPROVANTE', name: 'Comprovante de residência', hint: 'Conta de consumo ou similar, recente' },
 ];
-const STEPS = ['Dados pessoais', 'Documentos', 'Termos'];
+const STEPS = ['Dados pessoais', 'Selfie e documentos', 'Termos'];
 
 export default function Cadastro() {
   const { me, reload } = useMe();
@@ -19,6 +20,7 @@ export default function Cadastro() {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
+  const [camera, setCamera] = useState(false);
   const p = me.profile ?? {};
   const docsDone = DOCS.every((d) => me.documents.some((x) => x.type === d.type && x.status !== 'REJEITADO'));
   const step = !me.profile ? 1 : !docsDone ? 2 : !me.profile.terms_accepted_at ? 3 : 4;
@@ -40,6 +42,11 @@ export default function Cadastro() {
   function saveProfile(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     run('profile', () => api('/me/profile', { method: 'PUT', body: Object.fromEntries(new FormData(e.currentTarget)) }), 'Dados salvos.');
+  }
+
+  function sendSelfie(file: string) {
+    setCamera(false);
+    run('SELFIE', () => api('/me/documents', { body: { type: 'SELFIE', file } }), 'Selfie enviada.');
   }
 
   function upload(type: string, file: File | undefined) {
@@ -76,7 +83,7 @@ export default function Cadastro() {
 
       {step >= 2 && (
         <div className="card stack">
-          <div><h2>2. Documentos</h2><p className="muted">Fotos nítidas ou PDF, até 5 MB. Ficam em área privada; só a equipe autorizada da UP Service consulta, e todo acesso fica registrado.</p></div>
+          <div><h2>2. Selfie e documentos</h2><p className="muted">Fotos nítidas ou PDF, até 5 MB. Ficam em área privada; só a equipe autorizada da UP Service consulta, e todo acesso fica registrado.</p></div>
           {DOCS.map((d) => {
             const current = me.documents.find((x) => x.type === d.type);
             return (
@@ -86,7 +93,12 @@ export default function Cadastro() {
                   <span className="muted" style={{ display: 'block' }}>{d.hint}</span>
                   {current?.rejection_reason && <span className="text-danger" style={{ display: 'block' }}>Motivo da rejeição: {current.rejection_reason}</span>}
                 </div>
-                {current?.status !== 'APROVADO' && (
+                {d.type === 'SELFIE' && current && <img className="selfie-thumb" src={`/api/files/doc/${current.id}`} alt="Sua selfie" />}
+                {d.type === 'SELFIE' ? current?.status !== 'APROVADO' && (
+                  <button className={`sm${current ? '' : ' primary'}`} disabled={busy === 'SELFIE'} onClick={() => setCamera(true)}>
+                    <Icon name="user" size={16} />{busy === 'SELFIE' ? 'Enviando…' : current ? 'Tirar outra' : 'Tirar selfie'}
+                  </button>
+                ) : current?.status !== 'APROVADO' && (
                   <label className={`btn sm${current ? '' : ' primary'}`}>
                     <Icon name="file" size={16} />{busy === d.type ? 'Enviando…' : current ? 'Substituir' : 'Enviar'}
                     <input type="file" accept="image/*,application/pdf" hidden onChange={(e) => upload(d.type, e.target.files?.[0])} />
@@ -95,6 +107,7 @@ export default function Cadastro() {
               </div>
             );
           })}
+          {camera && <div className="subpanel"><Selfie onCapture={sendSelfie} onCancel={() => setCamera(false)} /></div>}
         </div>
       )}
 

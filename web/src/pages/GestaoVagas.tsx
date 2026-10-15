@@ -118,7 +118,10 @@ export default function GestaoVagas() {
       <PageHeader
         title="Vagas"
         description="Publique vagas e acompanhe o preenchimento de cada uma."
-        actions={<button className="primary" onClick={() => setCreating(true)} disabled={unit?.status !== 'ATIVA'}><Icon name="plus" size={18} />Nova vaga</button>}
+        actions={<>
+          <Link className="btn" to="/gestao/vagas/importar"><Icon name="download" size={18} />Importar escala</Link>
+          <button className="primary" onClick={() => setCreating(true)} disabled={unit?.status !== 'ATIVA'}><Icon name="plus" size={18} />Nova vaga</button>
+        </>}
       />
       <div className="filters">{picker}</div>
       {error && <Alert kind="danger">{error}</Alert>}

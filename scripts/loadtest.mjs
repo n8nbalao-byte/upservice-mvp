@@ -48,7 +48,7 @@ await bulk('unit_managers', ['user_id', 'unit_id'], units.map((u, i) => [pick(ma
 await bulk('worker_profiles', ['user_id', 'cpf', 'rg', 'phone', 'address', 'city', 'uf', 'emergency_name', 'emergency_phone', 'terms_accepted_at'],
   workers.map((w, i) => [w.id, String(10000000000 + i), '1234567', '11999990000', 'Rua X, 1', 'São Paulo', 'SP', 'Contato', '11988880000', new Date()]));
 await bulk('worker_documents', ['id', 'user_id', 'type', 'storage_key', 'sha256', 'size', 'mime', 'status'],
-  workers.flatMap((w, i) => ['CPF', 'RG', 'COMPROVANTE'].map((t) => [randomUUID(), w.id, t, `docs/${w.id}/${t}.jpg`, '0'.repeat(64), 1000, 'image/jpeg', i % 10 === 0 ? 'PENDENTE' : 'APROVADO'])));
+  workers.flatMap((w, i) => ['CPF', 'RG', 'COMPROVANTE', 'SELFIE'].map((t) => [randomUUID(), w.id, t, `docs/${w.id}/${t}.jpg`, '0'.repeat(64), 1000, 'image/jpeg', i % 10 === 0 ? 'PENDENTE' : 'APROVADO'])));
 
 const today = new Date(`${new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })}T08:00:00-03:00`);
 const jobs = [];
@@ -100,6 +100,7 @@ if (process.argv.includes('--seed-only')) {
   await mkdir(`${process.env.STORAGE_DIR}/demo`, { recursive: true });
   await writeFile(`${process.env.STORAGE_DIR}/demo/selfie.jpg`, jpeg);
   await q("UPDATE presence_events SET selfie_key = 'demo/selfie.jpg', selfie_sha256 = REPEAT('0', 64)");
+  await q("UPDATE worker_documents SET storage_key = 'demo/selfie.jpg' WHERE type = 'SELFIE'");
   const [unit0] = await q('SELECT unit_id FROM unit_managers WHERE user_id = ? ORDER BY unit_id LIMIT 1', [managers[0].id]);
   const today5 = await q(
     `SELECT ws.id, a.id AS app_id, a.user_id, j.unit_id FROM work_sessions ws JOIN applications a ON a.id = ws.application_id JOIN jobs j ON j.id = a.job_id

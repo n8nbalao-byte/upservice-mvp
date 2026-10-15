@@ -5,7 +5,7 @@ import { fail, text } from '../http.js';
 const r = Router();
 
 r.get('/config', (req, res) => {
-  res.json({ googleClientId: process.env.GOOGLE_CLIENT_ID || null, devLogin: devLoginEnabled() });
+  res.json({ googleClientId: process.env.GOOGLE_CLIENT_ID || null, devLogin: devLoginEnabled(), supportWhatsapp: (process.env.SUPPORT_WHATSAPP ?? '').replace(/\D/g, '') || null });
 });
 
 r.post('/auth/google', async (req, res) => {

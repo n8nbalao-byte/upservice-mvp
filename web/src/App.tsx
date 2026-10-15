@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { api, isBlocked, type Me } from './lib/api';
+import { CHANGED, api, isBlocked, type Me } from './lib/api';
 import { beep } from './lib/device';
 import { Shell } from './components/Shell';
 import { DialogProvider, Loading } from './components/ui';
 import AdminUnidades from './pages/AdminUnidades';
 import AdminUsuarios from './pages/AdminUsuarios';
+import Ajustes from './pages/Ajustes';
 import Atividade from './pages/Atividade';
 import Cadastro from './pages/Cadastro';
 import Dashboard from './pages/Dashboard';
@@ -15,6 +16,8 @@ import GestaoDocumentos from './pages/GestaoDocumentos';
 import GestaoOcorrencias from './pages/GestaoOcorrencias';
 import GestaoProfissional from './pages/GestaoProfissional';
 import GestaoVagas from './pages/GestaoVagas';
+import ImportarEscala from './pages/ImportarEscala';
+import Inicio from './pages/Inicio';
 import Login from './pages/Login';
 import Minhas from './pages/Minhas';
 import Ocorrencias from './pages/Ocorrencias';
@@ -56,7 +59,8 @@ function useInboxPolling(enabled: boolean) {
     if (!enabled) return;
     refresh();
     const t = setInterval(refresh, INBOX_POLL_MS);
-    return () => clearInterval(t);
+    window.addEventListener(CHANGED, refresh);
+    return () => { clearInterval(t); window.removeEventListener(CHANGED, refresh); };
   }, [enabled]);
 
   useEffect(() => {
@@ -93,12 +97,13 @@ export default function App() {
                 </Routes>
               ) : (
                 <Routes>
+                  <Route path="/inicio" element={<Inicio />} />
                   <Route path="/cadastro" element={<Cadastro />} />
                   <Route path="/vagas" element={me.complete ? <Vagas /> : <Navigate to="/cadastro" />} />
                   <Route path="/minhas" element={<Minhas />} />
                   <Route path="/atividade/:id" element={<Atividade />} />
                   <Route path="/ocorrencias" element={<Ocorrencias />} />
-                  <Route path="*" element={<Navigate to={me.complete ? '/vagas' : '/cadastro'} />} />
+                  <Route path="*" element={<Navigate to="/inicio" />} />
                 </Routes>
               )
             ) : (
@@ -106,12 +111,14 @@ export default function App() {
                 <Route path="/gestao/inicio" element={<Dashboard />} />
                 <Route path="/gestao/pendencias" element={<Pendencias />} />
                 <Route path="/gestao/vagas" element={<GestaoVagas />} />
+                <Route path="/gestao/vagas/importar" element={<ImportarEscala />} />
                 <Route path="/gestao/vagas/:id" element={<GestaoCandidaturas />} />
                 <Route path="/gestao/atividades" element={<GestaoAtividades />} />
                 <Route path="/gestao/profissionais/:id" element={<GestaoProfissional />} />
                 <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
                 <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />
                 <Route path="/gestao/relatorios" element={<Relatorios />} />
+                <Route path="/gestao/ajustes" element={<Ajustes />} />
                 {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
                 <Route path="*" element={<Navigate to="/gestao/inicio" />} />
