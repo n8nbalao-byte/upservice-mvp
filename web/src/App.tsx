@@ -17,7 +17,6 @@ import GestaoOcorrencias from './pages/GestaoOcorrencias';
 import GestaoProfissional from './pages/GestaoProfissional';
 import GestaoVagas from './pages/GestaoVagas';
 import ImportarEscala from './pages/ImportarEscala';
-import Inicio from './pages/Inicio';
 import Login from './pages/Login';
 import Minhas from './pages/Minhas';
 import Ocorrencias from './pages/Ocorrencias';
@@ -97,13 +96,13 @@ export default function App() {
                 </Routes>
               ) : (
                 <Routes>
-                  <Route path="/inicio" element={<Inicio />} />
+                  <Route path="/inicio" element={<Navigate to="/minhas" replace />} />
                   <Route path="/cadastro" element={<Cadastro />} />
                   <Route path="/vagas" element={me.complete ? <Vagas /> : <Navigate to="/cadastro" />} />
                   <Route path="/minhas" element={<Minhas />} />
                   <Route path="/atividade/:id" element={<Atividade />} />
                   <Route path="/ocorrencias" element={<Ocorrencias />} />
-                  <Route path="*" element={<Navigate to="/inicio" />} />
+                  <Route path="*" element={<Navigate to="/minhas" />} />
                 </Routes>
               )
             ) : (
