@@ -67,60 +67,6 @@ export function Alert({ kind = 'info', children, action }: { kind?: 'info' | 'wa
   return <div className={`alert ${kind}`} role={kind === 'danger' ? 'alert' : undefined}><Icon name={icon} size={18} /><div className="grow">{children}</div>{action}</div>;
 }
 
-const HOLD_MS = 1500;
-
-/**
- * Botão redondo de "segurar para confirmar" (check-in, pausa, retorno, checkout): o anel e o miolo enchem enquanto o
- * dedo fica pressionado e a ação só dispara ao completar. Toque rápido ou clique não fazem nada. Teclado: segurar Espaço/Enter.
- */
-export function HoldButton({ label: text, onConfirm, disabled, tone = 'primary' }: { label: string; onConfirm: () => void; disabled?: boolean; tone?: 'primary' | 'secondary' }) {
-  const [progress, setProgress] = useState(0);
-  const startedAt = useRef<number | null>(null);
-  const frame = useRef(0);
-  const stop = () => { startedAt.current = null; cancelAnimationFrame(frame.current); setProgress(0); };
-  const begin = () => {
-    if (disabled || startedAt.current != null) return;
-    startedAt.current = performance.now();
-    const step = (t: number) => {
-      if (startedAt.current == null) return;
-      const p = Math.min(1, (t - startedAt.current) / HOLD_MS);
-      setProgress(p);
-      if (p < 1) { frame.current = requestAnimationFrame(step); return; }
-      startedAt.current = null;
-      navigator.vibrate?.(60);
-      setProgress(0);
-      onConfirm();
-    };
-    frame.current = requestAnimationFrame(step);
-  };
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
-  const c = 2 * Math.PI * 74;
-  const isKey = (k: string) => k === ' ' || k === 'Enter';
-  return (
-    <button
-      type="button"
-      className={`hold tone-${tone}${progress > 0 ? ' holding' : ''}`}
-      disabled={disabled}
-      aria-label={`Segure para ${text.toLowerCase()}`}
-      onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); begin(); }}
-      onPointerUp={stop}
-      onPointerCancel={stop}
-      onLostPointerCapture={stop}
-      onKeyDown={(e) => { if (isKey(e.key)) { e.preventDefault(); if (!e.repeat) begin(); } }}
-      onKeyUp={(e) => { if (isKey(e.key)) stop(); }}
-      onClick={(e) => e.preventDefault()}
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      <span className="hold-fill" style={{ transform: `translateY(${(1 - progress) * 100}%)` }} />
-      <svg viewBox="0 0 160 160" aria-hidden="true">
-        <circle cx="80" cy="80" r="74" className="track" />
-        {progress > 0 && <circle cx="80" cy="80" r="74" className="ring" strokeDasharray={`${progress * c} ${c}`} />}
-      </svg>
-      <span className="hold-text"><b>{text}</b><small>{progress > 0 ? 'Continue segurando…' : 'Segure para confirmar'}</small></span>
-    </button>
-  );
-}
-
 export function Progress({ value, total }: { value: number; total: number }) {
   const pct = total ? Math.min(100, Math.round((value / total) * 100)) : 0;
   return (

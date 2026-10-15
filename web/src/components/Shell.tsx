@@ -18,8 +18,9 @@ function groupsFor(me: Me, inboxCount: number): Group[] {
   if (role === 'PROFISSIONAL') {
     if (isBlocked(me.user.status)) return [{ items: [{ to: '/ocorrencias', text: 'Ocorrências', icon: 'alert' }] }];
     return [{ items: [
-      { to: '/minhas', text: 'Minhas diárias', icon: 'home' },
+      { to: '/inicio', text: 'Início', icon: 'home' },
       { to: '/vagas', text: 'Vagas', icon: 'briefcase' },
+      { to: '/minhas', text: 'Minhas diárias', icon: 'wallet' },
       { to: '/cadastro', text: 'Cadastro', icon: 'user' },
       { to: '/ocorrencias', text: 'Ocorrências', icon: 'alert' },
     ] }];
@@ -29,8 +30,7 @@ function groupsFor(me: Me, inboxCount: number): Group[] {
       { to: '/gestao/inicio', text: 'Dashboard', icon: 'home' },
       { to: '/gestao/pendencias', text: 'Pendências', icon: 'inbox', count: inboxCount },
       { to: '/gestao/vagas', text: 'Vagas', icon: 'briefcase' },
-      { to: '/gestao/atividades', text: 'Atividades', icon: 'activity' },
-      { to: '/gestao/calendario', text: 'Calendário', icon: 'calendar' },
+      { to: '/gestao/atividades', text: 'Atividades', icon: 'calendar' },
       { to: '/gestao/relatorios', text: 'Relatórios', icon: 'chart' },
     ] },
     { items: [

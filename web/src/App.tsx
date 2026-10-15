@@ -9,7 +9,6 @@ import AdminUsuarios from './pages/AdminUsuarios';
 import Ajustes from './pages/Ajustes';
 import Atividade from './pages/Atividade';
 import Cadastro from './pages/Cadastro';
-import Calendario from './pages/Calendario';
 import Dashboard from './pages/Dashboard';
 import GestaoAtividades from './pages/GestaoAtividades';
 import GestaoCandidaturas from './pages/GestaoCandidaturas';
@@ -18,6 +17,7 @@ import GestaoOcorrencias from './pages/GestaoOcorrencias';
 import GestaoProfissional from './pages/GestaoProfissional';
 import GestaoVagas from './pages/GestaoVagas';
 import ImportarEscala from './pages/ImportarEscala';
+import Inicio from './pages/Inicio';
 import Login from './pages/Login';
 import Minhas from './pages/Minhas';
 import Ocorrencias from './pages/Ocorrencias';
@@ -97,13 +97,13 @@ export default function App() {
                 </Routes>
               ) : (
                 <Routes>
-                  <Route path="/inicio" element={<Navigate to="/minhas" replace />} />
+                  <Route path="/inicio" element={<Inicio />} />
                   <Route path="/cadastro" element={<Cadastro />} />
                   <Route path="/vagas" element={me.complete ? <Vagas /> : <Navigate to="/cadastro" />} />
                   <Route path="/minhas" element={<Minhas />} />
                   <Route path="/atividade/:id" element={<Atividade />} />
                   <Route path="/ocorrencias" element={<Ocorrencias />} />
-                  <Route path="*" element={<Navigate to="/minhas" />} />
+                  <Route path="*" element={<Navigate to="/inicio" />} />
                 </Routes>
               )
             ) : (
@@ -114,7 +114,6 @@ export default function App() {
                 <Route path="/gestao/vagas/importar" element={<ImportarEscala />} />
                 <Route path="/gestao/vagas/:id" element={<GestaoCandidaturas />} />
                 <Route path="/gestao/atividades" element={<GestaoAtividades />} />
-                <Route path="/gestao/calendario" element={<Calendario />} />
                 <Route path="/gestao/profissionais/:id" element={<GestaoProfissional />} />
                 <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
                 <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />

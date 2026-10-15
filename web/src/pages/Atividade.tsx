@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { Icon } from '../components/icons';
-import { Alert, Loading, PageHeader, Stat, StatusBadge, HoldButton } from '../components/ui';
+import { Alert, Loading, PageHeader, Stat, StatusBadge } from '../components/ui';
 import { ApiError, api, fmtDateTime, fmtMinutes, fmtTime, label, toLocalInput } from '../lib/api';
 import { GeoError, Selfie, alertBreakOver, distanceMeters, getPosition } from '../lib/device';
 
@@ -156,16 +156,15 @@ export default function Atividade() {
 
   if (!data) return error ? <Alert kind="danger">{error}</Alert> : <Loading />;
 
-  const opensAt = new Date(s.starts_at).getTime() - 15 * 60e3;
+  const opensAt = new Date(s.starts_at).getTime() - 2 * 3600e3;
   const closesAt = new Date(s.starts_at).getTime() + 15 * 60e3;
   const endsAt = new Date(s.ends_at).getTime();
   const pendingExc = data.exceptions.find((x) => x.status === 'PENDENTE');
   const lastExc = data.exceptions.at(-1);
   const clock = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
 
-  // Registros de presença só com o botão de segurar: evita check-in/checkout por toque acidental.
   const action = (type: EventType, text: string, primary = true) => (
-    <HoldButton key={type} label={text} tone={primary ? 'primary' : 'secondary'} disabled={!!busy} onConfirm={() => start(type)} />
+    <button className={`big ${primary ? 'primary' : ''}`} disabled={!!busy} onClick={() => start(type)}>{text}</button>
   );
 
   return (
@@ -208,7 +207,7 @@ export default function Atividade() {
         </div>
       ) : (
         <div className="stack">
-          {/* Mesma janela do servidor (15 min antes até 15 min depois), mostrada antes de pedir GPS e selfie à toa. */}
+          {/* Mesma janela do servidor (2 h antes até 15 min depois), mostrada antes de pedir GPS e selfie à toa. */}
           {s.status === 'AGUARDANDO_CHECKIN' && (
             now < opensAt ? <button className="big" disabled>Check-in liberado às {fmtTime(new Date(opensAt).toISOString())}</button>
               : now > closesAt ? (
@@ -219,15 +218,11 @@ export default function Atividade() {
                   </div>
                 ) : <Alert kind="danger">O horário desta vaga terminou.</Alert>
               )
-                : <div className="hold-row">{action('CHECK_IN', 'Fazer check-in')}</div>
+                : action('CHECK_IN', 'Fazer check-in')
           )}
-          {s.status === 'EM_ATIVIDADE' && (
-            <div className="hold-row">
-              {s.breaks_used < s.break_count && action('PAUSE_START', 'Iniciar pausa', false)}
-              {action('CHECK_OUT', 'Fazer checkout')}
-            </div>
-          )}
-          {onBreak && <div className="hold-row">{action('PAUSE_END', 'Retornar da pausa')}</div>}
+          {s.status === 'EM_ATIVIDADE' && action('CHECK_OUT', 'Fazer checkout')}
+          {s.status === 'EM_ATIVIDADE' && s.breaks_used < s.break_count && action('PAUSE_START', 'Iniciar pausa', false)}
+          {onBreak && action('PAUSE_END', 'Retornar da pausa')}
           {ACTIVE.includes(s.status) && now > endsAt && (
             <Alert kind="warning">Checkout pendente: o horário da vaga terminou. Após 30 minutos sem checkout, a atividade fica pendente para o gestor encerrar.</Alert>
           )}
@@ -243,7 +238,7 @@ export default function Atividade() {
               <button className="primary big" disabled={!!busy}>{s.reported_end_at ? 'Atualizar horário' : 'Enviar horário'}</button>
             </form>
           )}
-          {s.status === 'AGUARDANDO_CHECKIN' && <p className="muted">Check-in liberado de 15 minutos antes até 15 minutos depois do início, a até {s.radius_m} m da loja. Cada registro pede localização e uma selfie.</p>}
+          {s.status === 'AGUARDANDO_CHECKIN' && <p className="muted">Check-in liberado de 2 horas antes até 15 minutos depois do início, a até {s.radius_m} m da loja. Cada registro pede localização e uma selfie.</p>}
         </div>
       )}
 

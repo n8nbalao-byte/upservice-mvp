@@ -7,12 +7,11 @@ test('distância: 0,0027° de latitude ≈ 300 m', () => {
   assert.ok(Math.abs(d - 300) < 2, `obtido ${d}`);
 });
 
-test('janela de check-in: 15 min antes até 15 min depois', () => {
+test('janela de check-in: 2 h antes até 15 min depois', () => {
   const start = new Date('2026-10-14T11:00:00Z');
   const at = (min) => new Date(start.getTime() + min * 60000);
-  assert.match(checkinWindowError(start, at(-20)), /15 minutos antes/, '20 min antes ainda não');
-  assert.match(checkinWindowError(start, at(-16)), /15 minutos antes/);
-  assert.equal(checkinWindowError(start, at(-15)), null);
+  assert.match(checkinWindowError(start, at(-121)), /2 horas/);
+  assert.equal(checkinWindowError(start, at(-120)), null);
   assert.equal(checkinWindowError(start, at(15)), null);
   assert.match(checkinWindowError(start, at(16)), /15 minutos/);
 });
@@ -52,7 +51,7 @@ test('exceção de check-in: nunca para chegar cedo; atraso aceito até o térmi
   const start = new Date('2026-10-14T11:00:00Z');
   const end = new Date('2026-10-14T20:00:00Z');
   const at = (min) => new Date(start.getTime() + min * 60000);
-  assert.match(exceptionWindowError('CHECK_IN', start, end, at(-16)), /15 minutos antes/);
+  assert.match(exceptionWindowError('CHECK_IN', start, end, at(-121)), /2 horas/);
   assert.equal(exceptionWindowError('CHECK_IN', start, end, at(60)), null, 'atrasado 1 h ainda pode pedir');
   assert.match(exceptionWindowError('CHECK_IN', start, end, at(9 * 60 + 1)), /terminou/);
   assert.equal(exceptionWindowError('CHECK_OUT', start, end, at(-500)), null, 'janela só vale para check-in');

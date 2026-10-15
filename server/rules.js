@@ -10,13 +10,13 @@ export function distanceMeters(a, b) {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h));
 }
 
-export const CHECKIN_EARLY_MS = 15 * 60 * 1000;
+export const CHECKIN_EARLY_MS = 2 * 60 * 60 * 1000;
 export const CHECKIN_LATE_MS = 15 * 60 * 1000;
 
-/** Check-in vale de 15 min antes até 15 min depois do início. Retorna o motivo da recusa ou null. */
+/** Check-in vale de 2 h antes até 15 min depois do início. Retorna o motivo da recusa ou null. */
 export function checkinWindowError(startsAt, now) {
   const diff = new Date(now) - new Date(startsAt);
-  if (diff < -CHECKIN_EARLY_MS) return 'Check-in liberado somente 15 minutos antes do início da vaga.';
+  if (diff < -CHECKIN_EARLY_MS) return 'Check-in liberado somente 2 horas antes do início da vaga.';
   if (diff > CHECKIN_LATE_MS) return 'Prazo de check-in encerrado (tolerância de 15 minutos).';
   return null;
 }
@@ -69,7 +69,7 @@ export function workedTime(events) {
 /** Exceção não serve para chegar cedo: check-in por exceção só da abertura da janela até o término da vaga. */
 export function exceptionWindowError(type, startsAt, endsAt, now) {
   if (type !== 'CHECK_IN') return null;
-  if (new Date(now) - new Date(startsAt) < -CHECKIN_EARLY_MS) return 'Check-in liberado somente 15 minutos antes do início da vaga.';
+  if (new Date(now) - new Date(startsAt) < -CHECKIN_EARLY_MS) return 'Check-in liberado somente 2 horas antes do início da vaga.';
   if (new Date(now) > new Date(endsAt)) return 'O horário desta vaga já terminou.';
   return null;
 }

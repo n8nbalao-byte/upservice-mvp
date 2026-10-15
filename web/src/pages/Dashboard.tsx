@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useInbox, useMe } from '../App';
-import { useFit, useMedia } from '../components/fit';
 import { Icon, type IconName } from '../components/icons';
 import { Alert, EmptyState, Loading, StatusBadge, type Tone } from '../components/ui';
 import { api, fmtDate, fmtMoney, fmtTime, label } from '../lib/api';
@@ -39,6 +38,30 @@ const today = (now: Date) => {
   const s = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' });
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
+
+function useMedia(query: string) {
+  const [match, setMatch] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setMatch(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, [query]);
+  return match;
+}
+
+/** Quantas linhas de altura fixa cabem no elemento (a altura vem da grade, não do conteúdo). */
+function useFit(rowHeight: number, reserved = 0) {
+  const [n, setN] = useState(0);
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLElement | null) => {
+    observer.current?.disconnect();
+    if (!el) return;
+    observer.current = new ResizeObserver(([e]) => setN(Math.max(1, Math.floor((e.contentRect.height - reserved) / rowHeight))));
+    observer.current.observe(el);
+  }, [rowHeight, reserved]);
+  return [ref, n] as const;
+}
 
 function Kpi({ to, icon, tone, title, value, sub, hot }: { to: string; icon: IconName; tone: string; title: string; value: number; sub: string; hot?: boolean }) {
   return (

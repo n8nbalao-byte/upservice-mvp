@@ -1,8 +1,7 @@
-// Painel inicial do gestor/admin, busca do topo e calendário. Só leitura, sempre no escopo de unidades do usuário.
+// Painel inicial do gestor/admin e busca do topo. Só leitura, sempre no escopo de unidades do usuário.
 import { Router } from 'express';
-import { assertUnit, requireRole, unitScope, workerScope } from '../auth.js';
+import { requireRole, unitScope, workerScope } from '../auth.js';
 import { q } from '../db.js';
-import { fail } from '../http.js';
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
@@ -55,41 +54,6 @@ r.get('/manage/search', MANAGERS, async (req, res) => {
     q(`SELECT un.id, un.code, un.name FROM units un WHERE (un.name LIKE ? OR un.code LIKE ?) AND ${uWhere} ORDER BY un.code LIMIT 5`, [like, like, ...uArgs]),
   ]);
   res.json({ workers, jobs, units });
-});
-
-const CALENDAR_MAX_DAYS = 42;
-const CALENDAR_MAX_JOBS = 3000;
-const OPEN_SESSION = "'EM_ATIVIDADE','EM_PAUSA','PAUSA_EXCEDIDA','PENDENTE_DE_EXCECAO','PENDENTE_DE_FECHAMENTO'";
-
-// Calendário: vagas do período (dias operacionais em UTC-3, como /manage/sessions) com preenchimento e jornadas.
-r.get('/manage/calendar', MANAGERS, async (req, res) => {
-  const { from, to, unitId } = req.query;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(from ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(to ?? '')) fail(400, 'Informe o período (de / até).');
-  const start = new Date(`${from}T00:00:00-03:00`);
-  const end = new Date(new Date(`${to}T00:00:00-03:00`).getTime() + 86400e3);
-  const days = (end - start) / 86400e3;
-  if (!(days >= 1 && days <= CALENDAR_MAX_DAYS)) fail(400, `O período deve ter de 1 a ${CALENDAR_MAX_DAYS} dias.`);
-  let where, args;
-  if (unitId) {
-    await assertUnit(req.user, String(unitId)); // 404 para loja fora do acesso, sem revelar que existe
-    [where, args] = ['j.unit_id = ?', [String(unitId)]];
-  } else [where, args] = unitScope(req.user, 'j.unit_id');
-  const rows = await q(
-    `SELECT j.id, j.title, j.starts_at, j.ends_at, j.positions, j.status, un.id AS unit_id, un.code, un.filial, un.name AS unit_name,
-            (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status = 'APROVADA') AS approved,
-            (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status = 'PENDENTE') AS reserve,
-            (SELECT COUNT(*) FROM applications a JOIN work_sessions ws ON ws.application_id = a.id WHERE a.job_id = j.id AND ws.status IN (${OPEN_SESSION})) AS working,
-            (SELECT COUNT(*) FROM applications a JOIN work_sessions ws ON ws.application_id = a.id WHERE a.job_id = j.id AND ws.status = 'FINALIZADA') AS finished
-     FROM jobs j JOIN units un ON un.id = j.unit_id
-     WHERE j.starts_at >= ? AND j.starts_at < ? AND ${where}
-     ORDER BY j.starts_at, un.code LIMIT ?`,
-    [start, end, ...args, CALENDAR_MAX_JOBS + 1],
-  );
-  const num = ['positions', 'approved', 'reserve', 'working', 'finished'];
-  res.json({
-    from, to, truncated: rows.length > CALENDAR_MAX_JOBS,
-    jobs: rows.slice(0, CALENDAR_MAX_JOBS).map((j) => ({ ...j, ...Object.fromEntries(num.map((k) => [k, Number(j[k])])) })),
-  });
 });
 
 export default r;
