@@ -56,7 +56,7 @@ async function event(cookie, sessionId, type, where = UNIT, token) {
   return call(cookie, 'POST', `/api/sessions/${sessionId}/events`, { type, token, ...where, accuracy: 20, clientTs: new Date().toISOString(), selfie: JPEG });
 }
 
-async function approvedSession(worker, title, { startsIn = 3600e3 } = {}) {
+async function approvedSession(worker, title, { startsIn = 10 * 60e3 } = {}) {
   // Os testes reaproveitam o mesmo horário (próximas horas): encerra as diárias em aberto deste profissional nessa faixa,
   // senão a regra de conflito de horário recusa. Vagas de outros dias ficam intactas.
   const me = (await call(worker, 'GET', '/api/me')).body.user.id;
@@ -157,7 +157,7 @@ test('gestor não acessa unidade sem vínculo', { skip }, async () => {
 });
 
 test('candidaturas simultâneas: uma aprovada na hora, a outra na reserva', { skip }, async () => {
-  const starts = new Date(Date.now() + 3600e3); // dentro da janela de check-in (2 h antes)
+  const starts = new Date(Date.now() + 10 * 60e3); // dentro da janela de check-in (15 min antes)
   const created = await call(s.gestor, 'POST', '/api/manage/jobs', {
     unitId: s.unitA, title: 'Repositor', startsAt: starts, endsAt: new Date(starts.getTime() + 8 * 3600e3), positions: 1, dailyValue: 150.5, breakCount: 1, breakMinutes: 15, publish: true,
   });
@@ -734,4 +734,15 @@ test('importar escala: prévia sem gravar, filial desconhecida, escopo do gestor
   assert.equal(admin.body.summary.jobs, 1, 'admin alcança a loja B; turno da noite termina no dia seguinte');
   assert.equal((await call(s.w1, 'POST', '/api/manage/jobs/import', { defaults, items, dryRun: true })).status, 403);
   assert.equal((await call(s.gestor, 'POST', '/api/manage/jobs/import', { defaults: { ...defaults, startTime: '8h' }, items })).status, 400);
+});
+
+test('check-in só a partir de 15 min antes do início', { skip }, async () => {
+  const c = await login('cedo15@test.dev');
+  await completeWorker(c, '159.357.258-19');
+  const early = await approvedSession(c, 'Cedo demais', { startsIn: 20 * 60e3 });
+  const r = await event(c, early.session, 'CHECK_IN');
+  assert.ok(r.status >= 400);
+  assert.match(r.body.error, /15 minutos antes/);
+  const ok = await approvedSession(c, 'Na janela', { startsIn: 14 * 60e3 });
+  assert.equal((await event(c, ok.session, 'CHECK_IN')).status, 200);
 });

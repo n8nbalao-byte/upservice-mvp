@@ -605,3 +605,22 @@ img.avatar { object-fit: cover; }
   .jornada-cta { min-height: 38px; }
 }
 .next .card-footer .link { color: var(--accent-dark); font-size: 0.88rem; font-weight: 600; text-decoration: none; }
+
+/* ---------- Botão de segurar para confirmar (registros de presença) ---------- */
+.hold-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 6px 0; }
+.hold { position: relative; display: grid; place-items: center; width: 160px; height: 160px; min-height: 0; padding: 0; overflow: hidden; border: 0; border-radius: 50%; background: var(--surface); box-shadow: 0 8px 22px rgba(16, 36, 44, 0.16), inset 0 0 0 2px var(--line); color: var(--ink); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.hold:hover { background: var(--surface); border: 0; }
+.hold svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.hold circle { fill: none; stroke-width: 8; }
+.hold .track { stroke: #e6ecef; }
+.hold .ring { stroke: var(--graphite); stroke-linecap: round; }
+/* "Líquido" que sobe de baixo para cima enquanto segura; translúcido para o texto continuar legível. */
+.hold-fill { position: absolute; inset: 0; background: rgba(47, 54, 64, 0.22); transform: translateY(100%); }
+.hold.tone-secondary .ring { stroke: var(--warning); }
+.hold.tone-secondary .hold-fill { background: rgba(178, 107, 0, 0.22); }
+.hold-text { position: relative; display: grid; gap: 4px; padding: 0 20px; text-align: center; }
+.hold-text b { font-size: 1.05rem; line-height: 1.2; }
+.hold-text small { color: var(--muted); font-size: 0.72rem; font-weight: 500; }
+.hold.holding .hold-text small { color: var(--ink); font-weight: 600; }
+.hold:disabled { opacity: 0.5; }
+.hold:focus-visible { outline-offset: 4px; }
