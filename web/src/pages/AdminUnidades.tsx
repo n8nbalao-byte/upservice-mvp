@@ -4,12 +4,12 @@ import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAct
 import { api, label, type Unit } from '../lib/api';
 import { getPosition } from '../lib/device';
 
-type Form = { name: string; region: string; cep: string; street: string; number: string; district: string; city: string; uf: string; lat: string; lng: string; radiusM: string; maxAccuracyM: string };
+type Form = { name: string; filial: string; phone: string; region: string; cep: string; street: string; number: string; district: string; city: string; uf: string; lat: string; lng: string; radiusM: string; maxAccuracyM: string };
 
 const fmtCep = (v: string) => v.replace(/\D/g, '').slice(0, 8).replace(/^(\d{5})(\d)/, '$1-$2');
 
 const toForm = (u: Partial<Unit>): Form => ({
-  name: u.name ?? '', region: u.region ?? '', cep: fmtCep(u.cep ?? ''), street: u.street ?? '', number: u.number ?? '',
+  name: u.name ?? '', filial: u.filial ?? '', phone: u.phone ?? '', region: u.region ?? '', cep: fmtCep(u.cep ?? ''), street: u.street ?? '', number: u.number ?? '',
   district: u.district ?? '', city: u.city ?? '', uf: u.uf ?? '', lat: u.lat != null ? String(u.lat) : '', lng: u.lng != null ? String(u.lng) : '',
   radiusM: String(u.radius_m ?? 300), maxAccuracyM: String(u.max_accuracy_m ?? 100),
 });
@@ -75,7 +75,9 @@ function UnitForm({ unit, onSaved, onCancel }: { unit: Partial<Unit>; onSaved: (
       </div>
       <div className="cols">
         <label>Nome{input('name', { required: true, placeholder: 'Atacadão Penha' })}</label>
-        <label>Região <span className="hint">(opcional)</span>{input('region', { placeholder: 'Zona Leste' })}</label>
+        <label>Nº da filial <span className="hint">(opcional)</span>{input('filial', { inputMode: 'numeric', maxLength: 6, placeholder: '937' })}<span className="hint">Liga a loja às planilhas de escala</span></label>
+        <label>Telefone <span className="hint">(opcional)</span>{input('phone', { inputMode: 'tel', maxLength: 20, placeholder: '(11) 0000-0000' })}</label>
+        <label>Região <span className="hint">(opcional)</span>{input('region', { placeholder: 'Capital - Zona Leste' })}</label>
       </div>
       <h3>Endereço</h3>
       <div className="cols">
@@ -137,7 +139,7 @@ export default function AdminUnidades() {
   }
 
   const term = search.trim().toLowerCase();
-  const shown = (units ?? []).filter((u) => !term || `${u.code} ${u.name} ${u.address} ${u.region ?? ''}`.toLowerCase().includes(term));
+  const shown = (units ?? []).filter((u) => !term || `${u.code} ${u.filial ?? ''} ${u.name} ${u.address} ${u.region ?? ''}`.toLowerCase().includes(term));
 
   return (
     <div className="page">
@@ -149,18 +151,19 @@ export default function AdminUnidades() {
       {error && <Alert kind="danger">{error}</Alert>}
       {editing && <UnitForm key={editing.id ?? 'new'} unit={editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
 
-      <div className="filters"><label style={{ maxWidth: 420 }}>Buscar<input placeholder="Código, nome, endereço ou região" value={search} onChange={(e) => setSearch(e.target.value)} /></label></div>
+      <div className="filters"><label style={{ maxWidth: 420 }}>Buscar<input placeholder="Código, filial, nome, endereço ou região" value={search} onChange={(e) => setSearch(e.target.value)} /></label></div>
       <div className="card tight">
         <div className="card-header"><h2>Lojas</h2><span className="sub">{shown.length} de {units?.length ?? 0}</span></div>
         {!units ? <Loading /> : shown.length === 0 ? <EmptyState icon="store" title="Nenhuma unidade encontrada" /> : (
           <div className="table-wrap">
             <table className="responsive">
-              <thead><tr><th>Código</th><th>Loja</th><th className="num">Raio</th><th>Status</th><th>Ações</th></tr></thead>
+              <thead><tr><th>Código</th><th>Filial</th><th>Loja</th><th className="num">Raio</th><th>Status</th><th>Ações</th></tr></thead>
               <tbody>
                 {shown.map((u) => (
                   <tr key={u.id}>
                     <td data-label="Código" className="strong nowrap">{u.code}</td>
-                    <td data-label="Loja"><span className="strong">{u.name}</span><span className="muted">{u.address}</span></td>
+                    <td data-label="Filial" className="nowrap">{u.filial ?? <span className="muted">—</span>}</td>
+                    <td data-label="Loja"><span className="strong">{u.name}</span><span className="muted">{u.address}{u.phone && ` · ${u.phone}`}</span></td>
                     <td data-label="Raio" className="num">{u.radius_m} m</td>
                     <td data-label="Status"><StatusBadge status={u.status} />{u.status_reason && u.status !== 'ATIVA' && <span className="muted">{u.status_reason}</span>}</td>
                     <td data-label="Ações">

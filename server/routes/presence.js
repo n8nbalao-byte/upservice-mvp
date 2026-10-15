@@ -76,7 +76,15 @@ async function applyEvent(tq, s, next, e) {
   await tq('UPDATE work_sessions SET status = ?, breaks_used = breaks_used + ?, break_ends_at = ?, break_email_sent_at = NULL WHERE id = ?', [
     next, pauseStart ? 1 : 0, pauseStart ? new Date(new Date(e.at).getTime() + s.break_minutes * 60000) : null, s.id,
   ]);
-  if (next === 'FINALIZADA') await storeWorkedTime(tq, s.id);
+  if (next === 'FINALIZADA') {
+    await storeWorkedTime(tq, s.id);
+    // Checkout por GPS ou por exceção aprovada já confirma a diária (confirmed_by NULL = automático). O fechamento
+    // administrativo (checkout esquecido) continua dependendo do gestor.
+    if (e.validation !== 'FECHAMENTO_ADMINISTRATIVO') {
+      const done = await tq("INSERT IGNORE INTO daily_confirmations (application_id, result, note, confirmed_by) VALUES (?, 'CONCLUIDA', 'Confirmada automaticamente no checkout', NULL)", [s.application_id]);
+      if (done.affectedRows) await audit(tq, null, 'DAILY_AUTO_CONFIRM', 'application', s.application_id, { after: { result: 'CONCLUIDA' } });
+    }
+  }
 }
 
 /** Horas gravadas no fechamento: relatórios de muitos dias não precisam recalcular evento por evento. */

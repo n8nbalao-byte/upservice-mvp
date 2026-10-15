@@ -5,8 +5,9 @@ import { audit } from '../audit.js';
 import { assertUnit, requireRole } from '../auth.js';
 import { q, tx } from '../db.js';
 import { fail, int, num, requireReason, text } from '../http.js';
+import { ctx, flush } from '../penalties.js';
 import { distanceMeters } from '../rules.js';
-import { profileState } from './worker.js';
+import { applyToJob, promoteFromWaitlist } from '../staffing.js';
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
@@ -37,25 +38,27 @@ r.get('/jobs', requireRole('PROFISSIONAL'), async (req, res) => {
   res.json(jobs);
 });
 
+// Sem aprovação manual: habilitado (documentos aprovados) entra direto; vaga cheia = reserva (ver staffing.js).
 r.post('/jobs/:id/apply', requireRole('PROFISSIONAL'), async (req, res) => {
-  if (req.user.status !== 'ATIVO') fail(403, 'Sua conta não está liberada para candidaturas.');
-  if (!(await profileState(req.user.id)).complete) fail(400, 'Complete seu cadastro antes de se candidatar.');
-  const [job] = await q('SELECT j.status, u.status AS unit_status FROM jobs j JOIN units u ON u.id = j.unit_id WHERE j.id = ?', [req.params.id]);
-  if (!job || job.status !== 'ABERTA' || job.unit_status !== 'ATIVA') fail(400, 'Vaga indisponível.');
-  const id = randomUUID();
   try {
-    await q('INSERT INTO applications (id, job_id, user_id) VALUES (?,?,?)', [id, req.params.id, req.user.id]);
+    const result = await tx(async (tq) => {
+      // Trava a vaga: candidaturas simultâneas entram em fila e o limite de posições é respeitado.
+      const [job] = await tq('SELECT j.id, j.status, j.positions, j.starts_at, j.ends_at, u.status AS unit_status FROM jobs j JOIN units u ON u.id = j.unit_id WHERE j.id = ? FOR UPDATE', [req.params.id]);
+      if (!job || job.status !== 'ABERTA' || job.unit_status !== 'ATIVA' || new Date(job.starts_at) <= new Date()) fail(400, 'Vaga indisponível.');
+      return applyToJob(ctx(tq, req), job, req.user.id);
+    });
+    res.status(201).json(result);
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') fail(409, 'Você já se candidatou a esta vaga.');
     throw e;
   }
-  await audit(q, req, 'APPLICATION_CREATE', 'application', id);
-  res.status(201).json({ id });
 });
 
 r.get('/me/applications', requireRole('PROFISSIONAL'), async (req, res) => {
   res.json(await q(
-    `SELECT a.id, a.status, a.created_at, a.cancel_reason, j.title, j.starts_at, j.ends_at, j.daily_value,
+    `SELECT a.id, a.status, a.created_at, a.cancel_reason, a.decided_by IS NULL AS auto, j.title, j.starts_at, j.ends_at, j.daily_value,
+            (SELECT COUNT(*) FROM applications r WHERE r.job_id = a.job_id AND r.status = 'PENDENTE'
+               AND (r.created_at < a.created_at OR (r.created_at = a.created_at AND r.id <= a.id))) AS reserve_position,
             u.name AS unit_name, u.address AS unit_address, ws.id AS session_id, ws.status AS session_status, dc.result AS confirmation
      FROM applications a JOIN jobs j ON j.id = a.job_id JOIN units u ON u.id = j.unit_id
      LEFT JOIN work_sessions ws ON ws.application_id = a.id
@@ -65,10 +68,31 @@ r.get('/me/applications', requireRole('PROFISSIONAL'), async (req, res) => {
   ));
 });
 
+const WITHDRAW_LIMIT_MS = 2 * 3600e3;
+
+// Desistência: reserva a qualquer momento; diária aprovada até 2 h antes do início (a vaga vai para a reserva).
 r.post('/me/applications/:id/cancel', requireRole('PROFISSIONAL'), async (req, res) => {
-  const result = await q("UPDATE applications SET status = 'CANCELADA' WHERE id = ? AND user_id = ? AND status = 'PENDENTE'", [req.params.id, req.user.id]);
-  if (!result.affectedRows) fail(409, 'Só é possível cancelar candidaturas pendentes.');
-  await audit(q, req, 'APPLICATION_WITHDRAW', 'application', req.params.id);
+  const c = await tx(async (tq) => {
+    const c = ctx(tq, req);
+    const [a] = await tq(
+      `SELECT a.id, a.status, a.job_id, j.starts_at, ws.id AS session_id, ws.status AS session_status
+       FROM applications a JOIN jobs j ON j.id = a.job_id LEFT JOIN work_sessions ws ON ws.application_id = a.id
+       WHERE a.id = ? AND a.user_id = ? FOR UPDATE`,
+      [req.params.id, req.user.id],
+    );
+    if (!a || !['PENDENTE', 'APROVADA'].includes(a.status)) fail(409, 'Esta candidatura não pode mais ser cancelada.');
+    if (a.status === 'APROVADA') {
+      if (a.session_status !== 'AGUARDANDO_CHECKIN' || new Date(a.starts_at) - Date.now() < WITHDRAW_LIMIT_MS) {
+        fail(409, 'Faltam menos de 2 horas para o início: fale com a loja para desistir.');
+      }
+      await tq("UPDATE work_sessions SET status = 'CANCELADA_ADMINISTRATIVAMENTE' WHERE id = ?", [a.session_id]);
+    }
+    await tq("UPDATE applications SET status = 'CANCELADA', cancel_reason = 'Desistência do profissional' WHERE id = ?", [a.id]);
+    await audit(tq, req, 'APPLICATION_WITHDRAW', 'application', a.id, { before: { status: a.status }, after: { status: 'CANCELADA' } });
+    if (a.status === 'APROVADA') await promoteFromWaitlist(c, a.job_id);
+    return c;
+  });
+  await flush(c);
   res.json({ ok: true });
 });
 
@@ -140,7 +164,7 @@ r.get('/manage/jobs/:id/applications', MANAGERS, async (req, res) => {
   if (!job) fail(404, 'Não encontrado.');
   await assertUnit(req.user, job.unit_id);
   const applications = await q(
-    `SELECT a.id, a.status, a.created_at, a.cancel_reason, a.user_id, u.name, p.phone, p.city, p.uf,
+    `SELECT a.id, a.status, a.created_at, a.cancel_reason, a.user_id, a.decided_by IS NULL AS auto, u.name, p.phone, p.city, p.uf,
             (SELECT COUNT(*) FROM worker_documents d WHERE d.user_id = a.user_id AND d.status = 'APROVADO') AS docs_approved,
             ws.id AS session_id, ws.status AS session_status, dc.result AS confirmation
      FROM applications a JOIN users u ON u.id = a.user_id
@@ -184,8 +208,9 @@ r.post('/manage/applications/:id/decide', MANAGERS, async (req, res) => {
 // Decisão da UpService: só o gestor da unidade cancela aprovação; administrador não, pelo fluxo normal.
 r.post('/manage/applications/:id/cancel', requireRole('GESTOR'), async (req, res) => {
   const reason = requireReason(req.body.reason);
-  const { id } = await loadApplication(req);
-  await tx(async (tq) => {
+  const { id, job_id } = await loadApplication(req);
+  const c = await tx(async (tq) => {
+    const c = ctx(tq, req);
     const [app] = await tq(
       `SELECT a.status, ws.id AS session_id, ws.status AS session_status, dc.result
        FROM applications a JOIN work_sessions ws ON ws.application_id = a.id
@@ -199,7 +224,10 @@ r.post('/manage/applications/:id/cancel', requireRole('GESTOR'), async (req, res
     await tq("UPDATE applications SET status = 'CANCELADA', cancel_reason = ? WHERE id = ?", [reason, id]);
     await tq("UPDATE work_sessions SET status = 'CANCELADA_ADMINISTRATIVAMENTE' WHERE id = ?", [app.session_id]);
     await audit(tq, req, 'APPLICATION_CANCEL', 'application', id, { before: { status: 'APROVADA' }, after: { status: 'CANCELADA' }, reason });
+    await promoteFromWaitlist(c, job_id);
+    return c;
   });
+  await flush(c);
   res.json({ ok: true });
 });
 

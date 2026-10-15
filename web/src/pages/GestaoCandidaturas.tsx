@@ -25,7 +25,7 @@ export default function GestaoCandidaturas() {
 
   async function cancel(a: any) {
     const reason = await ask(reasonOpts(`Cancelar a aprovação de ${a.name}?`, {
-      message: 'A posição volta a ficar livre. O profissional vê o motivo no app.', confirmText: 'Cancelar aprovação', tone: 'danger',
+      message: 'A posição passa para a primeira pessoa da reserva (se houver). O profissional vê o motivo no app.', confirmText: 'Cancelar aprovação', tone: 'danger',
     }));
     if (!reason) return;
     await run(`${a.id}`, () => api(`/manage/applications/${a.id}/cancel`, { body: { reason } }), 'Aprovação cancelada.');
@@ -37,8 +37,10 @@ export default function GestaoCandidaturas() {
   const approved = applications.filter((a) => a.status === 'APROVADA').length;
   const pending = applications.filter((a) => a.status === 'PENDENTE');
   const full = approved >= job.positions;
-  const order: Record<string, number> = { PENDENTE: 0, APROVADA: 1, RECUSADA: 2, CANCELADA: 3 };
+  // Aprovadas primeiro; depois a reserva na ordem de chegada (o servidor já ordena por created_at).
+  const order: Record<string, number> = { APROVADA: 0, PENDENTE: 1, RECUSADA: 2, CANCELADA: 3 };
   const sorted = [...applications].sort((x, y) => (order[x.status] ?? 9) - (order[y.status] ?? 9));
+  const reservePos = (a: any) => pending.indexOf(a) + 1;
 
   return (
     <div className="page">
@@ -50,13 +52,13 @@ export default function GestaoCandidaturas() {
       />
       <div className="card row between">
         <div style={{ minWidth: 220, flex: 1, maxWidth: 360 }}><Progress value={approved} total={job.positions} /></div>
-        <span className="muted">{pending.length} pendente(s) · {applications.length} candidatura(s)</span>
+        <span className="muted">{pending.length} na reserva · {applications.length} candidatura(s)</span>
       </div>
-      {full && pending.length > 0 && <Alert kind="info">Todas as posições estão preenchidas. Para aprovar outra pessoa, cancele uma aprovação antes do check-in.</Alert>}
-      {job.status !== 'ABERTA' && pending.length > 0 && <Alert kind="warning">A vaga está {label(job.status).toLowerCase()}: candidaturas pendentes não podem ser aprovadas.</Alert>}
+      <Alert kind="info">Aprovação automática por ordem de chegada para quem tem os documentos aprovados. Com a vaga cheia, a pessoa entra na reserva e é chamada sozinha quando alguém desiste ou é cancelado.</Alert>
+      {job.status !== 'ABERTA' && pending.length > 0 && <Alert kind="warning">A vaga está {label(job.status).toLowerCase()}: a reserva não é mais chamada.</Alert>}
 
       <div className="card tight">
-        <div className="card-header"><h2>Candidaturas</h2><span className="sub">Documentos aprovados ajudam a decidir</span></div>
+        <div className="card-header"><h2>Candidaturas</h2><span className="sub">Aprovadas e reserva</span></div>
         {applications.length === 0 ? <EmptyState icon="users" title="Nenhuma candidatura ainda" text="Quando profissionais se candidatarem, eles aparecem aqui." /> : (
           <div className="table-wrap">
             <table className="responsive">
@@ -66,10 +68,10 @@ export default function GestaoCandidaturas() {
                   <tr key={a.id}>
                     <td data-label="Profissional"><Link className="strong" to={`/gestao/profissionais/${a.user_id}`}>{a.name}</Link></td>
                     <td data-label="Contato"><span>{a.phone}</span><span className="muted">{a.city}/{a.uf}</span></td>
-                    <td data-label="Documentos" className="num"><StatusBadge tone={Number(a.docs_approved) === 3 ? 'success' : 'warning'}>{a.docs_approved}/3</StatusBadge></td>
+                    <td data-label="Documentos" className="num"><StatusBadge tone={Number(a.docs_approved) >= 4 ? 'success' : 'warning'}>{a.docs_approved}/4</StatusBadge></td>
                     <td data-label="Status">
-                      <StatusBadge status={a.status} />
-                      {a.session_status && <span className="muted">{label(a.session_status)}</span>}
+                      {a.status === 'PENDENTE' ? <StatusBadge tone="info">Reserva nº {reservePos(a)}</StatusBadge> : <StatusBadge status={a.status} />}
+                      {a.status === 'APROVADA' && <span className="muted">{a.auto ? 'Automática' : 'Pelo gestor'}{a.session_status ? ` · ${label(a.session_status)}` : ''}</span>}
                     </td>
                     <td data-label="Ações">
                       <div className="row">

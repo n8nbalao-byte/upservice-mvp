@@ -83,7 +83,7 @@ export default function Inicio() {
 
       <div className="tiles">
         <Tile to="/vagas" icon="briefcase" tone="info" value={openJobs} title="Vagas abertas" hint="Para se candidatar" />
-        <Tile to="/minhas" icon="clock" tone="warning" value={pending} title="Candidaturas" hint="Aguardando a loja" />
+        <Tile to="/minhas" icon="clock" tone="warning" value={pending} title="Na reserva" hint="Chamado automático se abrir vaga" />
         <Tile to="/minhas" icon="wallet" tone="accent" value={fmtMoney(data.summary.valor)} title="A receber" hint={`${data.summary.concluidas} diária(s) concluída(s)`} />
         <Tile to="/ocorrencias" icon="alert" tone={strikeTone} value={`${data.strikes} de ${data.strikesToBlock}`} title="Faltas" hint="Desde o último bloqueio" />
       </div>

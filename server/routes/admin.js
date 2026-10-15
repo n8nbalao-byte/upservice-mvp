@@ -31,11 +31,26 @@ const cepDigits = (v) => {
   return cep;
 };
 
+// Nº da filial do Atacadão (opcional, único): liga a loja às planilhas de escala.
+const filialDigits = (v) => {
+  const d = String(v ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+  if (d.length > 6) fail(400, 'Nº da filial inválido.');
+  return d || null;
+};
+
+async function assertFilialFree(tq, filial, unitId = '') {
+  if (!filial) return;
+  const [other] = await tq('SELECT code FROM units WHERE filial = ? AND id <> ?', [filial, unitId]);
+  if (other) fail(409, `Filial ${filial} já cadastrada em ${other.code}.`);
+}
+
 function unitFields(b) {
   const uf = String(b.uf ?? '').trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(uf)) fail(400, 'UF inválida.');
   const f = {
     name: text(b.name, 'nome', { min: 2 }),
+    filial: filialDigits(b.filial),
+    phone: text(b.phone, 'telefone', { max: 20, optional: true }),
     region: text(b.region, 'região', { max: 100, optional: true }),
     cep: cepDigits(b.cep),
     street: text(b.street, 'logradouro', { min: 3 }),
@@ -56,6 +71,7 @@ function unitFields(b) {
 export async function createUnit(req, body) {
   const fields = unitFields(body);
   return tx(async (tq) => {
+    await assertFilialFree(tq, fields.filial);
     const [last] = await tq("SELECT code FROM units WHERE code LIKE 'ATC-%' ORDER BY CAST(SUBSTRING(code, 5) AS UNSIGNED) DESC LIMIT 1 FOR UPDATE");
     const code = `ATC-${String(Number(last?.code.slice(4) ?? 0) + 1).padStart(3, '0')}`;
     const unit = { id: randomUUID(), code, ...fields };
@@ -74,6 +90,7 @@ r.put('/units/:id', ADMIN, async (req, res) => {
   const [before] = await q('SELECT * FROM units WHERE id = ?', [req.params.id]);
   if (!before) fail(404, 'Não encontrado.');
   const after = unitFields(req.body); // o código não muda depois de criado
+  await assertFilialFree(q, after.filial, before.id);
   await q('UPDATE units SET ? WHERE id = ?', [after, before.id]);
   await audit(q, req, 'UNIT_UPDATE', 'unit', before.id, { before, after });
   res.json({ ok: true });

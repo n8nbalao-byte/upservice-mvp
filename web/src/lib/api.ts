@@ -29,7 +29,7 @@ export type Me = {
   documents: Doc[];
   complete: boolean;
 };
-export type Unit = { id: string; code: string; name: string; region: string | null; address: string; cep: string | null; street: string | null; number: string | null; district: string | null; city: string | null; uf: string | null; lat: number; lng: number; radius_m: number; max_accuracy_m: number; status: string; status_reason: string | null };
+export type Unit = { id: string; code: string; filial: string | null; phone: string | null; name: string; region: string | null; address: string; cep: string | null; street: string | null; number: string | null; district: string | null; city: string | null; uf: string | null; lat: number; lng: number; radius_m: number; max_accuracy_m: number; status: string; status_reason: string | null };
 
 const TZ = 'America/Sao_Paulo';
 export const fmtDateTime = (s: string) => new Date(s).toLocaleString('pt-BR', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' });

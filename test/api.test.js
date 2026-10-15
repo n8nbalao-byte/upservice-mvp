@@ -32,7 +32,8 @@ async function login(email) {
   return res.headers.getSetCookie()[0].split(';')[0];
 }
 
-async function completeWorker(cookie, cpf) {
+/** Cadastro completo; por padrão a UpService (admin) já aprovou os documentos, o que habilita a aprovação automática. */
+async function completeWorker(cookie, cpf, { approve = true } = {}) {
   assert.equal((await call(cookie, 'PUT', '/api/me/profile', {
     name: 'Fulano de Tal', cpf, rg: '123456789', phone: '11999990000', address: 'Rua A, 1', city: 'São Paulo', uf: 'SP',
     emergencyName: 'Ciclano', emergencyPhone: '11988880000', role: 'ADMINISTRADOR',
@@ -44,6 +45,10 @@ async function completeWorker(cookie, cpf) {
   assert.equal((await call(cookie, 'POST', '/api/me/documents', { type: 'SELFIE', file: JPEG })).status, 200);
   const done = await call(cookie, 'POST', '/api/me/terms', { accept: true });
   assert.equal(done.body.complete, true);
+  if (!approve) return;
+  for (const d of done.body.documents) {
+    assert.equal((await call(s.admin, 'POST', `/api/manage/documents/${d.id}/review`, { status: 'APROVADO' })).status, 200);
+  }
 }
 
 async function event(cookie, sessionId, type, where = UNIT, token) {
@@ -51,14 +56,20 @@ async function event(cookie, sessionId, type, where = UNIT, token) {
   return call(cookie, 'POST', `/api/sessions/${sessionId}/events`, { type, token, ...where, accuracy: 20, clientTs: new Date().toISOString(), selfie: JPEG });
 }
 
-async function approvedSession(worker, title) {
-  const starts = new Date(Date.now() + 3600e3);
+async function approvedSession(worker, title, { startsIn = 3600e3 } = {}) {
+  // Os testes reaproveitam o mesmo horário (próximas horas): encerra as diárias em aberto deste profissional nessa faixa,
+  // senão a regra de conflito de horário recusa. Vagas de outros dias ficam intactas.
+  const me = (await call(worker, 'GET', '/api/me')).body.user.id;
+  await q(`UPDATE work_sessions ws JOIN applications a ON a.id = ws.application_id JOIN jobs j ON j.id = a.job_id SET ws.status = 'FINALIZADA'
+           WHERE a.user_id = ? AND j.starts_at < ? AND ws.status NOT IN ('FINALIZADA', 'CANCELADA_ADMINISTRATIVAMENTE')`, [me, new Date(Date.now() + 86400e3)]);
+  const starts = new Date(Date.now() + startsIn);
   const job = (await call(s.gestor, 'POST', '/api/manage/jobs', {
     unitId: s.unitA, title, startsAt: starts, endsAt: new Date(starts.getTime() + 8 * 3600e3), positions: 1, dailyValue: 100, breakCount: 1, breakMinutes: 15, publish: true,
   })).body.id;
-  assert.equal((await call(worker, 'POST', `/api/jobs/${job}/apply`, {})).status, 201);
-  const [app] = (await call(s.gestor, 'GET', `/api/manage/jobs/${job}/applications`)).body.applications;
-  assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${app.id}/decide`, { decision: 'APROVADA' })).status, 200);
+  const applied = await call(worker, 'POST', `/api/jobs/${job}/apply`, {});
+  assert.equal(applied.status, 201);
+  assert.equal(applied.body.status, 'APROVADA', 'aprovação automática');
+  const app = { id: applied.body.id };
   const [ws] = await q('SELECT id FROM work_sessions WHERE application_id = ?', [app.id]);
   return { job, application: app.id, session: ws.id };
 }
@@ -145,7 +156,7 @@ test('gestor não acessa unidade sem vínculo', { skip }, async () => {
   assert.equal(r.status, 404);
 });
 
-test('aprovações concorrentes respeitam o limite de posições', { skip }, async () => {
+test('candidaturas simultâneas: uma aprovada na hora, a outra na reserva', { skip }, async () => {
   const starts = new Date(Date.now() + 3600e3); // dentro da janela de check-in (2 h antes)
   const created = await call(s.gestor, 'POST', '/api/manage/jobs', {
     unitId: s.unitA, title: 'Repositor', startsAt: starts, endsAt: new Date(starts.getTime() + 8 * 3600e3), positions: 1, dailyValue: 150.5, breakCount: 1, breakMinutes: 15, publish: true,
@@ -156,13 +167,13 @@ test('aprovações concorrentes respeitam o limite de posições', { skip }, asy
   const jobs = (await call(s.w1, 'GET', `/api/jobs?lat=${UNIT.lat}&lng=${UNIT.lng}`)).body;
   assert.equal(jobs[0].id, s.job);
   assert.equal(jobs[0].distance_m, 0);
-  assert.equal((await call(s.w1, 'POST', `/api/jobs/${s.job}/apply`, {})).status, 201);
+  const both = await Promise.all([s.w1, s.w2].map((w) => call(w, 'POST', `/api/jobs/${s.job}/apply`, {})));
+  assert.deepEqual(both.map((r) => r.status), [201, 201]);
+  assert.deepEqual(both.map((r) => r.body.status).sort(), ['APROVADA', 'RESERVA'], '1 posição: uma aprovada, outra na reserva');
+  assert.equal(both.find((r) => r.body.status === 'RESERVA').body.position, 1);
   assert.equal((await call(s.w1, 'POST', `/api/jobs/${s.job}/apply`, {})).status, 409, 'candidatura duplicada');
-  assert.equal((await call(s.w2, 'POST', `/api/jobs/${s.job}/apply`, {})).status, 201);
-
-  const apps = (await call(s.gestor, 'GET', `/api/manage/jobs/${s.job}/applications`)).body.applications;
-  const results = await Promise.all(apps.map((a) => call(s.gestor, 'POST', `/api/manage/applications/${a.id}/decide`, { decision: 'APROVADA' })));
-  assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  const inbox = (await call(s.gestor, 'GET', '/api/manage/inbox')).body.items;
+  assert.ok(!inbox.some((i) => i.kind === 'CANDIDATURA'), 'candidatura não vira pendência do gestor');
 
   const mine = (who) => call(who, 'GET', '/api/me/applications').then((r) => r.body[0]);
   const [a1, a2] = [await mine(s.w1), await mine(s.w2)];
@@ -221,10 +232,11 @@ test('selfies e documentos: só dono, gestor da unidade e admin', { skip }, asyn
   assert.ok(views.n >= 3);
 });
 
-test('confirmação da diária soma no valor a receber', { skip }, async () => {
-  const r = await call(s.gestor, 'POST', `/api/manage/applications/${s.application}/confirm`, { result: 'CONCLUIDA' });
-  assert.equal(r.status, 200);
-  assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${s.application}/confirm`, { result: 'CONCLUIDA' })).status, 409);
+test('checkout com GPS confirma a diária sozinho e soma no valor a receber', { skip }, async () => {
+  const [dc] = await q('SELECT result, confirmed_by FROM daily_confirmations WHERE application_id = ?', [s.application]);
+  assert.equal(dc.result, 'CONCLUIDA');
+  assert.equal(dc.confirmed_by, null, 'confirmada automaticamente');
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${s.application}/confirm`, { result: 'CONCLUIDA' })).status, 409, 'já confirmada');
   const summary = (await call(s.winner, 'GET', '/api/me/summary')).body;
   assert.equal(summary.concluidas, 1);
   assert.equal(summary.valor, 150.5);
@@ -232,13 +244,17 @@ test('confirmação da diária soma no valor a receber', { skip }, async () => {
 
 test('fila de documentos pendentes respeita o escopo do gestor', { skip }, async () => {
   const w4 = await login('w4@test.dev');
-  await completeWorker(w4, '935.411.347-80'); // documentos enviados, sem candidatura
+  await completeWorker(w4, '935.411.347-80', { approve: false }); // documentos enviados, sem candidatura
   const ids = async (who) => (await call(who, 'GET', '/api/manage/documents/pending')).body.map((r) => r.email);
-  const admin = await ids(s.admin);
-  const gestor = await ids(s.gestor);
-  assert.ok(admin.includes('w4@test.dev') && admin.includes('w1@test.dev'));
-  assert.ok(!gestor.includes('w4@test.dev'), 'gestor não vê quem não se candidatou nas suas lojas');
-  assert.ok(gestor.includes('w1@test.dev'));
+  assert.ok((await ids(s.admin)).includes('w4@test.dev'));
+  assert.ok(!(await ids(s.gestor)).includes('w4@test.dev'), 'gestor não vê quem não se candidatou nas suas lojas');
+  const starts = new Date(Date.now() + 5 * 3600e3);
+  const job = (await call(s.gestor, 'POST', '/api/manage/jobs', {
+    unitId: s.unitA, title: 'Documento pendente', startsAt: starts, endsAt: new Date(starts.getTime() + 4 * 3600e3), positions: 3, dailyValue: 100, breakCount: 0, breakMinutes: 15, publish: true,
+  })).body.id;
+  const blocked = await call(w4, 'POST', `/api/jobs/${job}/apply`, {});
+  assert.equal(blocked.status, 403);
+  assert.match(blocked.body.error, /documentos estão em análise/);
   assert.equal((await call(s.w1, 'GET', '/api/manage/documents/pending')).status, 403);
 });
 
@@ -330,7 +346,7 @@ test('selfie de tamanho real passa no registro e no pedido de exceção', { skip
 test('3 faltas confirmadas: bloqueio de 15 dias, vaga futura liberada e modo restrito com contestação', { skip }, async () => {
   s.w5 = await login('w5@test.dev');
   await completeWorker(s.w5, '123.456.789-09');
-  const future = await approvedSession(s.w5, 'Vaga futura');
+  const future = await approvedSession(s.w5, 'Vaga futura', { startsIn: 3 * 86400e3 });
   assert.equal((await absent(s.w5, 'Falta 1')).status, 200);
   assert.equal((await absent(s.w5, 'Falta 2')).status, 200);
   assert.equal((await userByEmail('w5@test.dev')).status, 'ATIVO', 'duas faltas ainda não bloqueiam');
@@ -411,7 +427,7 @@ test('gestor não reverte bloqueio do admin nem decide contestação de ocorrên
   const w1 = await userByEmail('w1@test.dev');
   const g2 = await login('gestor2@test.dev');
   // gestor da loja B passa a ter relação com w1 (candidatura numa vaga da loja B)
-  const starts = new Date(Date.now() + 3600e3);
+  const starts = new Date(Date.now() + 2 * 86400e3); // outro dia: não conflita com diárias em aberto do w1
   const job = (await call(g2, 'POST', '/api/manage/jobs', {
     unitId: s.unitB, title: 'Loja B', startsAt: starts, endsAt: new Date(starts.getTime() + 8 * 3600e3), positions: 1, dailyValue: 100, breakCount: 0, breakMinutes: 15, publish: true,
   })).body.id;
@@ -576,4 +592,73 @@ test('API nunca em cache e WhatsApp do suporte só com dígitos', { skip }, asyn
   assert.equal((await call(null, 'GET', '/api/config')).body.supportWhatsapp, '5511999990000');
   delete process.env.SUPPORT_WHATSAPP;
   assert.equal((await call(s.admin, 'GET', '/api/admin/users')).res.headers.get('cache-control'), 'no-store');
+});
+
+test('reserva: chamada sozinha quando o gestor cancela ou o profissional desiste; desistência só até 2 h antes', { skip }, async () => {
+  // O teste anterior deixa a loja A bloqueada (financeiro).
+  assert.equal((await call(s.admin, 'POST', `/api/units/${s.unitA}/status`, { status: 'ATIVA', reason: 'Pagamento regularizado em outubro' })).status, 200);
+  const workers = [];
+  for (const [i, cpf] of [['r1', '714.602.890-99'], ['r2', '432.143.870-57'], ['r3', '867.256.740-46']]) {
+    const c = await login(`${i}@test.dev`);
+    await completeWorker(c, cpf);
+    workers.push(c);
+  }
+  const [r1, r2, r3] = workers;
+  const mk = async (startsIn) => (await call(s.gestor, 'POST', '/api/manage/jobs', {
+    unitId: s.unitA, title: `Reserva ${startsIn}`, startsAt: new Date(Date.now() + startsIn), endsAt: new Date(Date.now() + startsIn + 4 * 3600e3), positions: 1, dailyValue: 120, breakCount: 0, breakMinutes: 15, publish: true,
+  })).body.id;
+  const job = await mk(4 * 86400e3);
+  const apply = (c) => call(c, 'POST', `/api/jobs/${job}/apply`, {}).then((r) => r.body);
+  const a1 = await apply(r1);
+  const a2 = await apply(r2);
+  const a3 = await apply(r3);
+  assert.deepEqual([a1.status, a2.status, a3.status], ['APROVADA', 'RESERVA', 'RESERVA']);
+  assert.deepEqual([a2.position, a3.position], [1, 2]);
+  const mine = (await call(r3, 'GET', '/api/me/applications')).body.find((a) => a.id === a3.id);
+  assert.equal(Number(mine.reserve_position), 2);
+
+  // Gestor cancela o aprovado: o 1º da reserva é aprovado e ganha a jornada (check-in liberado).
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${a1.id}/cancel`, { reason: 'Escala alterada pela loja' })).status, 200);
+  const status = async (id) => (await q('SELECT status FROM applications WHERE id = ?', [id]))[0].status;
+  assert.equal(await status(a2.id), 'APROVADA', 'reserva promovida');
+  assert.equal((await q('SELECT COUNT(*) AS n FROM work_sessions WHERE application_id = ?', [a2.id]))[0].n, 1);
+  assert.equal(await status(a3.id), 'PENDENTE');
+
+  // Profissional aprovado desiste com antecedência: o próximo da reserva entra.
+  assert.equal((await call(r2, 'POST', `/api/me/applications/${a2.id}/cancel`, {})).status, 200);
+  assert.equal(await status(a3.id), 'APROVADA');
+  assert.equal((await q('SELECT status FROM work_sessions WHERE application_id = ?', [a2.id]))[0].status, 'CANCELADA_ADMINISTRATIVAMENTE');
+
+  // Menos de 2 h para o início: desistência só falando com a loja.
+  const soon = await mk(3600e3);
+  const late = (await call(r1, 'POST', `/api/jobs/${soon}/apply`, {})).body;
+  assert.equal(late.status, 'APROVADA');
+  assert.equal((await call(r1, 'POST', `/api/me/applications/${late.id}/cancel`, {})).status, 409);
+
+  // Conflito de horário: r1 já tem diária aprovada nesse horário.
+  const clash = await call(s.gestor, 'POST', '/api/manage/jobs', {
+    unitId: s.unitA, title: 'Mesmo horário', startsAt: new Date(Date.now() + 2 * 3600e3), endsAt: new Date(Date.now() + 6 * 3600e3), positions: 5, dailyValue: 120, breakCount: 0, breakMinutes: 15, publish: true,
+  });
+  const dup = await call(r1, 'POST', `/api/jobs/${clash.body.id}/apply`, {});
+  assert.equal(dup.status, 409);
+  assert.match(dup.body.error, /diária aprovada nesse horário/);
+});
+
+test('fechamento administrativo não confirma a diária sozinho', { skip }, async () => {
+  const [n] = await q(`SELECT COUNT(*) AS n FROM work_sessions ws JOIN presence_events e ON e.work_session_id = ws.id AND e.validation = 'FECHAMENTO_ADMINISTRATIVO'
+                       JOIN daily_confirmations dc ON dc.application_id = ws.application_id AND dc.confirmed_by IS NULL`);
+  assert.equal(Number(n.n), 0);
+});
+
+test('loja: nº da filial único e telefone', { skip }, async () => {
+  const base = { ...ADDR, ...UNIT, name: 'Loja Filial', phone: '(11) 3859-1455' };
+  const created = await call(s.admin, 'POST', '/api/units', { ...base, filial: '0937' });
+  assert.equal(created.status, 201);
+  const [u] = await q('SELECT filial, phone FROM units WHERE id = ?', [created.body.id]);
+  assert.deepEqual({ ...u }, { filial: '937', phone: '(11) 3859-1455' }, 'filial só com dígitos, sem zero à esquerda');
+  const again = await call(s.admin, 'POST', '/api/units', { ...base, name: 'Outra', filial: '937' });
+  assert.equal(again.status, 409);
+  assert.match(again.body.error, /Filial 937 já cadastrada em ATC-/);
+  assert.equal((await call(s.admin, 'PUT', `/api/units/${created.body.id}`, { ...base, filial: '937' })).status, 200, 'a própria loja pode manter a filial');
+  assert.equal((await call(s.gestor, 'POST', '/api/units', { ...base, filial: '1' })).status, 403);
 });

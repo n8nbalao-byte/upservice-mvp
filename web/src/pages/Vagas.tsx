@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useMe } from '../App';
 import { Icon } from '../components/icons';
-import { Alert, EmptyState, Loading, PageHeader, StatusBadge, useAction } from '../components/ui';
+import { Alert, EmptyState, Loading, PageHeader, StatusBadge, useAction, useDialog } from '../components/ui';
 import { api, fmtMoney, fmtTime, label } from '../lib/api';
 import { getPosition } from '../lib/device';
 
@@ -12,8 +13,14 @@ type Job = {
 const dayBR = (s: string) => new Date(s).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit' });
 const km = (m: number) => (m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
 
+const REQUIRED_DOCS = ['SELFIE', 'CPF', 'RG', 'COMPROVANTE'];
+
 export default function Vagas() {
+  const { me } = useMe();
+  const { toast } = useDialog();
   const { busy, run } = useAction();
+  // Aprovação automática exige os documentos aprovados pela UpService (uma vez só).
+  const docsApproved = REQUIRED_DOCS.every((t) => me.documents.some((d) => d.type === t && d.status === 'APROVADO'));
   const [jobs, setJobs] = useState<Job[]>();
   const [where, setWhere] = useState<{ lat: number; lng: number } | null>(null);
   const [geo, setGeo] = useState<'loading' | 'ok' | 'off'>('loading');
@@ -33,7 +40,11 @@ export default function Vagas() {
   }, []);
 
   async function apply(j: Job) {
-    if (await run(j.id, () => api(`/jobs/${j.id}/apply`, { body: {} }), 'Candidatura enviada! Acompanhe em Diárias.')) load();
+    let r: { status: string; position?: number } | undefined;
+    if (await run(j.id, async () => { r = await api(`/jobs/${j.id}/apply`, { body: {} }); })) {
+      toast(r?.status === 'APROVADA' ? 'Vaga confirmada! No dia, faça o check-in pelo app.' : `Vaga cheia: você é o nº ${r?.position} da reserva. Se abrir uma posição, você é chamado automaticamente.`);
+      load();
+    }
   }
 
   return (
@@ -41,6 +52,7 @@ export default function Vagas() {
       <PageHeader title="Vagas disponíveis" description={geo === 'ok' ? 'Das lojas mais próximas de você para as mais distantes.' : 'Ordenadas por data.'} />
       {geo === 'off' && <Alert kind="info">Permita a localização no navegador para ver primeiro as lojas mais próximas. Ela só é usada para ordenar a lista.</Alert>}
       {error && <Alert kind="danger">{error}</Alert>}
+      {!docsApproved && <Alert kind="warning">Seus documentos estão em análise pela UP Service. Assim que forem aprovados, é só escolher a vaga: a confirmação é na hora.</Alert>}
       {!jobs ? <Loading text={geo === 'loading' ? 'Buscando sua localização…' : 'Carregando vagas…'} /> : jobs.length === 0 ? (
         <div className="card"><EmptyState icon="briefcase" title="Nenhuma vaga aberta no momento" text="Novas vagas aparecem aqui assim que forem publicadas." /></div>
       ) : (
@@ -64,9 +76,11 @@ export default function Vagas() {
               </div>
               {j.description && <p className="muted">{j.description}</p>}
               {j.my_status ? (
-                <StatusBadge status={j.my_status}>Sua candidatura: {label(j.my_status)}</StatusBadge>
+                <StatusBadge status={j.my_status} tone={j.my_status === 'PENDENTE' ? 'info' : undefined}>{j.my_status === 'PENDENTE' ? 'Você está na reserva' : `Sua candidatura: ${label(j.my_status)}`}</StatusBadge>
               ) : (
-                <button className="primary big" disabled={!j.available || busy === j.id} onClick={() => apply(j)}>{busy === j.id ? 'Enviando…' : 'Candidatar-me'}</button>
+                <button className={`big${j.available ? ' primary' : ''}`} disabled={!docsApproved || busy === j.id} onClick={() => apply(j)}>
+                  {busy === j.id ? 'Enviando…' : j.available ? 'Quero esta vaga' : 'Entrar na reserva'}
+                </button>
               )}
             </article>
           ))}

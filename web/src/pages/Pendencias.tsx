@@ -16,7 +16,7 @@ export const GROUPS: { title: string; description: string; tone: Tone; kinds: { 
   { title: 'Decisões', description: 'Contestações e ocorrências aguardando análise.', tone: 'warning', kinds: [
     { kind: 'CONTESTACAO', icon: 'info' }, { kind: 'OCORRENCIA', icon: 'alert' },
   ] },
-  { title: 'Rotina', description: 'Candidaturas e documentos para revisar.', tone: 'info', kinds: [
+  { title: 'Rotina', description: 'Documentos de cadastro para revisar (candidaturas são aprovadas automaticamente).', tone: 'info', kinds: [
     { kind: 'CANDIDATURA', icon: 'briefcase' }, { kind: 'DOCUMENTO', icon: 'file' },
   ] },
 ];
