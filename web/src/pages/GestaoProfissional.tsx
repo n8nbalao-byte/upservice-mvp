@@ -5,7 +5,7 @@ import { Icon } from '../components/icons';
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
 import { api, fmtDateTime, label, type Me, type Unit } from '../lib/api';
 
-const DOC_NAME: Record<string, string> = { CPF: 'CPF', RG: 'RG', COMPROVANTE: 'Comprovante de residência' };
+const DOC_NAME: Record<string, string> = { SELFIE: 'Selfie', CPF: 'CPF', RG: 'RG', COMPROVANTE: 'Comprovante de residência' };
 const MANUAL_TYPES = ['ABANDONO', 'FRAUDE', 'REGRA_OPERACIONAL'];
 
 type History = { occurrences: any[]; penalties: any[]; contestations: any[]; strikes: number; strikesToBlock: number };
@@ -162,6 +162,7 @@ export default function GestaoProfissional() {
 
   if (!data) return error ? <Alert kind="danger">{error}</Alert> : <Loading />;
   const p = data.profile;
+  const selfie = data.documents.find((d) => d.type === 'SELFIE');
   return (
     <div className="page">
       <PageHeader
@@ -174,6 +175,10 @@ export default function GestaoProfissional() {
       <div className="grid-2">
         <div className="card">
           <div className="card-header"><h2>Cadastro</h2></div>
+          <div className="profile-photo">
+            {selfie ? <a href={`/api/files/doc/${selfie.id}`} target="_blank" rel="noreferrer"><img src={`/api/files/doc/${selfie.id}`} alt={`Selfie de ${data.user.name}`} /></a> : <span className="none"><Icon name="user" size={32} /></span>}
+            <span>{selfie ? <><b>Selfie do cadastro</b> <StatusBadge status={selfie.status} /><small>Usada para conferir a identidade (comparação facial no futuro).</small></> : <><b>Sem selfie</b><small>O cadastro só fica completo com a selfie.</small></>}</span>
+          </div>
           {p ? (
             <table>
               <tbody>
@@ -188,7 +193,7 @@ export default function GestaoProfissional() {
           ) : <EmptyState icon="user" title="Cadastro não preenchido" />}
         </div>
         <div className="card">
-          <div className="card-header"><h2>Documentos</h2><span className="sub">{data.documents.filter((d) => d.status === 'APROVADO').length}/3 aprovados</span></div>
+          <div className="card-header"><h2>Documentos</h2><span className="sub">{data.documents.filter((d) => d.status === 'APROVADO').length}/{Object.keys(DOC_NAME).length} aprovados</span></div>
           {data.documents.length === 0 ? <EmptyState icon="file" title="Nenhum documento enviado" /> : (
             <div className="stack">
               {data.documents.map((d) => (

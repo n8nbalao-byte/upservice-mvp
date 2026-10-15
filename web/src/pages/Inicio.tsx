@@ -10,7 +10,7 @@ type Data = { summary: Record<string, number>; apps: App[]; jobs: { my_status: s
 
 const TZ = 'America/Sao_Paulo';
 const ACTIVE = ['AGUARDANDO_CHECKIN', 'EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA', 'PENDENTE_DE_EXCECAO', 'PENDENTE_DE_FECHAMENTO'];
-const DOCS = ['CPF', 'RG', 'COMPROVANTE'];
+const DOCS = ['SELFIE', 'CPF', 'RG', 'COMPROVANTE'];
 
 const dayOf = (iso: string) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: TZ });
 function when(iso: string) {

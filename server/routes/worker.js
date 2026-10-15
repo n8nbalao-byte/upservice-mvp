@@ -9,7 +9,8 @@ import { isValidCpf } from '../rules.js';
 import { decodeBase64, removeFile, saveFile, sniff } from '../storage.js';
 
 const r = Router();
-export const DOC_TYPES = ['CPF', 'RG', 'COMPROVANTE'];
+// SELFIE: foto do rosto tirada pela câmera no cadastro; base para a futura comparação facial.
+export const DOC_TYPES = ['CPF', 'RG', 'COMPROVANTE', 'SELFIE'];
 const MAX_DOC_BYTES = 5 * 1024 * 1024;
 
 export async function profileState(userId) {
@@ -73,6 +74,7 @@ r.post('/me/documents', requireRole('PROFISSIONAL'), async (req, res) => {
   if (buf.length > MAX_DOC_BYTES) fail(413, 'Arquivo maior que 5 MB.');
   const mime = sniff(buf);
   if (!mime) fail(400, 'Formato aceito: JPG, PNG ou PDF.');
+  if (type === 'SELFIE' && mime === 'application/pdf') fail(400, 'A selfie deve ser uma foto do seu rosto.');
 
   const [current] = await q("SELECT id, status FROM worker_documents WHERE user_id = ? AND type = ? AND status <> 'SUBSTITUIDO'", [req.user.id, type]);
   if (current?.status === 'APROVADO') fail(409, 'Documento já aprovado. Fale com a UpService para substituí-lo.');

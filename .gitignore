@@ -7,3 +7,6 @@ storage/
 !.env.example
 storage-load/
 appUpservice/
+
+# Planilhas de trabalho do cliente (não versionar)
+*.xlsx

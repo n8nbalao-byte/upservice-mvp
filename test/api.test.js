@@ -38,6 +38,10 @@ async function completeWorker(cookie, cpf) {
     emergencyName: 'Ciclano', emergencyPhone: '11988880000', role: 'ADMINISTRADOR',
   })).status, 200);
   for (const type of ['CPF', 'RG', 'COMPROVANTE']) assert.equal((await call(cookie, 'POST', '/api/me/documents', { type, file: JPEG })).status, 200);
+  assert.equal((await call(cookie, 'POST', '/api/me/terms', { accept: true })).body.complete, false, 'sem selfie o cadastro não fica completo');
+  const pdf = Buffer.from('%PDF-1.4 teste').toString('base64');
+  assert.equal((await call(cookie, 'POST', '/api/me/documents', { type: 'SELFIE', file: pdf })).status, 400, 'selfie não pode ser PDF');
+  assert.equal((await call(cookie, 'POST', '/api/me/documents', { type: 'SELFIE', file: JPEG })).status, 200);
   const done = await call(cookie, 'POST', '/api/me/terms', { accept: true });
   assert.equal(done.body.complete, true);
 }

@@ -22,7 +22,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
 }
 
 export type Role = 'PROFISSIONAL' | 'GESTOR' | 'ADMINISTRADOR';
-export type Doc = { id: string; type: 'CPF' | 'RG' | 'COMPROVANTE'; status: string; rejection_reason: string | null };
+export type Doc = { id: string; type: 'CPF' | 'RG' | 'COMPROVANTE' | 'SELFIE'; status: string; rejection_reason: string | null };
 export type Me = {
   user: { id: string; name: string; email: string; role: Role; status: string };
   profile: Record<string, any> | null;

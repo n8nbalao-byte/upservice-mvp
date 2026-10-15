@@ -95,6 +95,7 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
     : 'mailto:contato@upserviceintermed.com';
 
   const worker = me.user.role === 'PROFISSIONAL';
+  const selfie = me.documents.find((d) => d.type === 'SELFIE' && d.status !== 'REJEITADO');
   const groups = groupsFor(me, inboxCount);
   // Desktop: recolhe a barra (preferência lembrada). Celular/tablet: abre a gaveta.
   const menu = () => {
@@ -142,7 +143,7 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
           <span className="divider" />
           <details className="user-menu" ref={userMenu}>
             <summary aria-label="Menu do usuário">
-              <span className="avatar" aria-hidden="true">{initials(me.user.name)}</span>
+              {selfie ? <img className="avatar" src={`/api/files/doc/${selfie.id}`} alt="" /> : <span className="avatar" aria-hidden="true">{initials(me.user.name)}</span>}
               <span className="who"><strong>{me.user.name}</strong><small>{label(me.user.role)}</small></span>
               <span className="chev"><Icon name="chevronDown" size={18} /></span>
             </summary>
