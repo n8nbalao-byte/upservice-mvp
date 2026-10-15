@@ -146,7 +146,7 @@ r.post('/manage/jobs', MANAGERS, async (req, res) => {
 const IMPORT_MAX = 5000;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ISSUE = {
-  FILIAL_DESCONHECIDA: 'Filial não cadastrada', SEM_ACESSO: 'Loja fora do seu acesso', LOJA_INATIVA: 'Loja bloqueada ou inativa',
+  FILIAL_DESCONHECIDA: 'Filial não cadastrada (ou fora do seu acesso)', LOJA_INATIVA: 'Loja bloqueada ou inativa',
   DATA_INVALIDA: 'Data inválida', QUANTIDADE_INVALIDA: 'Quantidade inválida', DATA_PASSADA: 'Dia que já passou',
   JA_EXISTE: 'Vaga já existe', REPETIDA: 'Repetida na planilha',
 };
@@ -173,10 +173,11 @@ r.post('/manage/jobs/import', MANAGERS, async (req, res) => {
   const seen = new Set();
   const lines = items.map((i) => {
     const filial = digits(i.filial);
-    const unit = byFilial.get(filial);
+    // Loja fora do acesso do gestor é tratada como desconhecida: a prévia não revela código nem nome (como o 404 de assertUnit).
+    const found = byFilial.get(filial);
+    const unit = found && (!allowed || allowed.has(found.id)) ? found : null;
     const line = { filial, name: String(i.name ?? '').slice(0, 120), date: String(i.date ?? ''), positions: Number(i.positions), unit };
     if (!unit) return { ...line, issue: 'FILIAL_DESCONHECIDA' };
-    if (allowed && !allowed.has(unit.id)) return { ...line, issue: 'SEM_ACESSO' };
     if (unit.status !== 'ATIVA') return { ...line, issue: 'LOJA_INATIVA' };
     if (!/^\d{4}-\d{2}-\d{2}$/.test(line.date)) return { ...line, issue: 'DATA_INVALIDA' };
     if (!Number.isInteger(line.positions) || line.positions < 1 || line.positions > 500) return { ...line, issue: 'QUANTIDADE_INVALIDA' };

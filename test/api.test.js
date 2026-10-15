@@ -714,8 +714,10 @@ test('importar escala: prévia sem gravar, filial desconhecida, escopo do gestor
   const preview = await call(s.gestor, 'POST', '/api/manage/jobs/import', { defaults, items, dryRun: true });
   assert.equal(preview.status, 200);
   assert.equal((await q('SELECT COUNT(*) AS n FROM jobs'))[0].n, before, 'prévia não grava');
-  assert.deepEqual(preview.body.summary, { lines: 6, jobs: 2, positions: 35, issues: { REPETIDA: 1, DATA_PASSADA: 1, SEM_ACESSO: 1, FILIAL_DESCONHECIDA: 1 } });
+  assert.deepEqual(preview.body.summary, { lines: 6, jobs: 2, positions: 35, issues: { REPETIDA: 1, DATA_PASSADA: 1, FILIAL_DESCONHECIDA: 2 } });
   assert.equal(preview.body.stores.find((x) => x.filial === '777').unit, null);
+  assert.equal(preview.body.stores.find((x) => x.filial === '9002').unit, null, 'loja fora do acesso não revela código nem nome');
+  assert.ok(!JSON.stringify(preview.body).includes('Loja B'));
 
   const done = await call(s.gestor, 'POST', '/api/manage/jobs/import', { defaults, items });
   assert.equal(done.body.created, 2);
