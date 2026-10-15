@@ -746,3 +746,21 @@ test('check-in só a partir de 15 min antes do início', { skip }, async () => {
   const ok = await approvedSession(c, 'Na janela', { startsIn: 14 * 60e3 });
   assert.equal((await event(c, ok.session, 'CHECK_IN')).status, 200);
 });
+
+test('calendário: período, escopo do gestor e contagens', { skip }, async () => {
+  const day = (n) => new Date(Date.now() + n * 86400e3).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const g = (who, qs) => call(who, 'GET', `/api/manage/calendar?${qs}`);
+  const range = `from=${day(0)}&to=${day(30)}`;
+  const admin = (await g(s.admin, range)).body;
+  const gestor = (await g(s.gestor, range)).body;
+  assert.ok(admin.jobs.length > gestor.jobs.length, 'admin vê também a loja B');
+  assert.ok(gestor.jobs.length > 0);
+  assert.ok(gestor.jobs.every((j) => j.unit_id === s.unitA), 'gestor só vê as lojas dele');
+  const imported = gestor.jobs.filter((j) => j.title === 'Repositor escala');
+  assert.deepEqual(imported.map((j) => [j.positions, typeof j.approved, typeof j.reserve]), [[15, 'number', 'number'], [20, 'number', 'number']]);
+  assert.equal((await g(s.gestor, `${range}&unitId=${s.unitB}`)).status, 404, 'loja de outro gestor: 404');
+  assert.equal((await g(s.gestor, `${range}&unitId=${s.unitA}`)).body.jobs.length, gestor.jobs.length);
+  assert.equal((await g(s.w1, range)).status, 403);
+  assert.equal((await g(s.gestor, `from=${day(0)}&to=${day(50)}`)).status, 400, 'mais de 42 dias');
+  assert.equal((await g(s.gestor, 'from=ontem&to=hoje')).status, 400);
+});

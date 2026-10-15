@@ -9,6 +9,7 @@ import AdminUsuarios from './pages/AdminUsuarios';
 import Ajustes from './pages/Ajustes';
 import Atividade from './pages/Atividade';
 import Cadastro from './pages/Cadastro';
+import Calendario from './pages/Calendario';
 import Dashboard from './pages/Dashboard';
 import GestaoAtividades from './pages/GestaoAtividades';
 import GestaoCandidaturas from './pages/GestaoCandidaturas';
@@ -113,6 +114,7 @@ export default function App() {
                 <Route path="/gestao/vagas/importar" element={<ImportarEscala />} />
                 <Route path="/gestao/vagas/:id" element={<GestaoCandidaturas />} />
                 <Route path="/gestao/atividades" element={<GestaoAtividades />} />
+                <Route path="/gestao/calendario" element={<Calendario />} />
                 <Route path="/gestao/profissionais/:id" element={<GestaoProfissional />} />
                 <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
                 <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />

@@ -29,7 +29,8 @@ function groupsFor(me: Me, inboxCount: number): Group[] {
       { to: '/gestao/inicio', text: 'Dashboard', icon: 'home' },
       { to: '/gestao/pendencias', text: 'Pendências', icon: 'inbox', count: inboxCount },
       { to: '/gestao/vagas', text: 'Vagas', icon: 'briefcase' },
-      { to: '/gestao/atividades', text: 'Atividades', icon: 'calendar' },
+      { to: '/gestao/atividades', text: 'Atividades', icon: 'activity' },
+      { to: '/gestao/calendario', text: 'Calendário', icon: 'calendar' },
       { to: '/gestao/relatorios', text: 'Relatórios', icon: 'chart' },
     ] },
     { items: [
