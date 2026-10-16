@@ -1,7 +1,10 @@
 {
-  "name": "UpService",
-  "short_name": "UpService",
+  "id": "/",
+  "name": "UP Service",
+  "short_name": "UP Service",
+  "description": "Vagas, diárias e registro de presença da UP Service Intermediações.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#F3F6F7",
   "theme_color": "#E9ECEF",

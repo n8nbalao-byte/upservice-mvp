@@ -345,6 +345,8 @@ dialog.dialog .counter { justify-self: end; color: var(--muted); font-size: 0.78
 .login { width: min(440px, 100%); display: grid; gap: 18px; padding: 28px; }
 .login .logo { display: block; width: 220px; margin: 0 auto 4px; }
 .footer-links { display: flex; justify-content: center; gap: 16px; font-size: 0.82rem; }
+.company-line { text-align: center; font-size: 0.75rem; color: var(--muted); }
+.install-steps { display: grid; gap: 10px; margin: 0; padding: 16px 16px 16px 36px; border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--line); }
 .pending-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; }
 .pending-item:last-child { border-bottom: 0; }
 .pending-item:hover { background: var(--surface-2); }
