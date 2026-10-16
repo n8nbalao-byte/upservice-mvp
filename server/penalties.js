@@ -1,15 +1,17 @@
 // Ocorrências, bloqueios e reativação (v4.0 §4–§6). As funções recebem um contexto de transação
-// { tq, req, outbox }; os e-mails ficam no outbox e só saem depois do commit (flush), para não avisar algo desfeito.
+// { tq, req, outbox, whatsapp }; e-mails e WhatsApp ficam guardados e só saem depois do commit (flush), para não avisar algo desfeito.
 import { randomUUID } from 'node:crypto';
 import { audit } from './audit.js';
 import { sendMailSafe } from './mail.js';
+import { sendWhatsappSafe } from './whatsapp.js';
 import { BLOCK_DAYS, STRIKES_TO_BLOCK } from './rules.js';
 import { promoteFromWaitlist } from './staffing.js';
 
-export const ctx = (tq, req) => ({ tq, req, outbox: [] });
+export const ctx = (tq, req) => ({ tq, req, outbox: [], whatsapp: [] });
 
 export async function flush(c) {
   for (const [to, subject, text] of c.outbox) await sendMailSafe(to, subject, text);
+  for (const [phone, text] of c.whatsapp) await sendWhatsappSafe(phone, text);
 }
 
 export const managerEmails = async (tq, unitId) =>

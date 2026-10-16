@@ -6,6 +6,7 @@ import { audit } from './audit.js';
 import { fail } from './http.js';
 import { DOC_TYPES } from './routes/worker.js';
 
+const APP_URL = () => process.env.APP_URL || 'https://app.upserviceintermed.com';
 const fmt = (d) => new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
 
 /**
@@ -90,7 +91,7 @@ export async function promoteFromWaitlist(c, jobId) {
   const promoted = [];
   if (free <= 0) return promoted;
   const reserve = await c.tq(
-    "SELECT a.id, a.user_id, u.email, u.name FROM applications a JOIN users u ON u.id = a.user_id WHERE a.job_id = ? AND a.status = 'PENDENTE' ORDER BY a.created_at, a.id FOR UPDATE",
+    "SELECT a.id, a.user_id, u.email, u.name, u.whatsapp FROM applications a JOIN users u ON u.id = a.user_id WHERE a.job_id = ? AND a.status = 'PENDENTE' ORDER BY a.created_at, a.id FOR UPDATE",
     [job.id],
   );
   for (const r of reserve) {
@@ -99,6 +100,15 @@ export async function promoteFromWaitlist(c, jobId) {
     await approve(c, r.id, 'APPLICATION_PROMOTE');
     c.outbox.push([r.email, `UpService: você foi chamado(a) da reserva — ${job.unit_name}`,
       `Olá, ${r.name}.\n\nAbriu uma posição e sua candidatura para "${job.title}" em ${job.unit_name} (${fmt(job.starts_at)}) foi aprovada.\nNo dia, faça o check-in pelo app.`]);
+    // WhatsApp confirmado: avisa na hora que saiu da reserva e já está aprovado.
+    if (r.whatsapp) {
+      c.whatsapp.push([r.whatsapp, `Olá, ${r.name.split(' ')[0]}! Boa notícia: abriu uma vaga e você saiu da reserva. ✅
+
+Você está confirmado(a) em "${job.title}" — ${job.unit_name}, ${fmt(job.starts_at)}.
+
+No dia, faça o check-in pelo app: ${APP_URL()}/minhas
+Se não puder ir, desista pelo app para chamar o próximo da reserva.`]);
+    }
     promoted.push(r.id);
     free -= 1;
   }
