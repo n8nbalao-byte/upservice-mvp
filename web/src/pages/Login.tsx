@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Alert } from '../components/ui';
 import { api } from '../lib/api';
+import { isMobile, isStandalone } from '../lib/install';
 
 declare global {
   interface Window { google?: any }
@@ -54,7 +55,9 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
             <button className="primary big">Entrar</button>
           </form>
         )}
-        <p className="footer-links"><a href="/privacidade.html">Política de Privacidade</a><a href="/termos.html">Termos de Uso</a></p>
+        {isMobile() && !isStandalone() && <a className="btn big" href="/instalar">Baixar o app no celular</a>}
+        <p className="footer-links"><a href="/privacidade.html">Política de Privacidade</a><a href="/termos.html">Termos de Uso</a><a href="/politicas.html">Políticas</a></p>
+        <p className="company-line">UP Service Intermediações Ltda · CNPJ 24.930.043/0001-34</p>
       </main>
     </div>
   );

@@ -1,0 +1,22 @@
+/* Páginas de políticas (servidas pelo app e usadas também pelo site institucional). */
+body { margin: 0; background: #f6f7f9; color: #1d2733; font: 16px/1.65 system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; }
+header { background: #07152d; color: #fff; }
+header .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 14px 16px; }
+header a { color: #fff; text-decoration: none; font-weight: 700; }
+header nav { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .88rem; }
+header nav a { font-weight: 500; opacity: .85; }
+header nav a[aria-current='page'] { opacity: 1; text-decoration: underline; text-underline-offset: 4px; }
+.wrap { max-width: 780px; margin: 0 auto; }
+main.wrap { padding: 24px 16px 48px; }
+h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 4px; }
+h2 { font-size: 1.12rem; margin-top: 2rem; }
+a { color: #0b5f8a; }
+.muted { color: #5b6773; font-size: .9rem; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid #dfe3e8; }
+.cards { display: grid; gap: 12px; padding: 0; list-style: none; }
+.cards a { display: block; padding: 14px 16px; border: 1px solid #dfe3e8; border-radius: 12px; background: #fff; text-decoration: none; color: inherit; }
+.cards strong { color: #0b5f8a; }
+footer { border-top: 1px solid #dfe3e8; }
+footer .wrap { padding: 16px; font-size: .85rem; color: #5b6773; }
+@media (max-width: 520px) { table, tbody, tr, td, th { display: block; } thead { display: none; } td { border: 0; padding: 2px 0; } tr { padding: 8px 0; border-bottom: 1px solid #dfe3e8; } td:first-child { font-weight: 700; } }
