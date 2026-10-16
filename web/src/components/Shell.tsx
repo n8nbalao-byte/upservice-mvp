@@ -39,6 +39,7 @@ function groupsFor(me: Me, inboxCount: number): Group[] {
       ...(role === 'ADMINISTRADOR' ? [
         { to: '/admin/unidades', text: 'Unidades', icon: 'store' as const },
         { to: '/admin/usuarios', text: 'Usuários', icon: 'user' as const },
+        ...(me.user.isOwner ? [{ to: '/admin/configuracoes', text: 'Configurações', icon: 'sliders' as const }] : []),
       ] : []),
     ] },
   ];
