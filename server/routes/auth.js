@@ -1,11 +1,31 @@
 import { Router } from 'express';
-import { devLoginEnabled, endSession, findOrCreateUser, startSession } from '../auth.js';
+import { audit } from '../audit.js';
+import { devLoginEnabled, endSession, findOrCreateUser, requireOwner, startSession } from '../auth.js';
+import { q } from '../db.js';
 import { fail, text } from '../http.js';
 
 const r = Router();
 
-r.get('/config', (req, res) => {
-  res.json({ googleClientId: process.env.GOOGLE_CLIENT_ID || null, devLogin: devLoginEnabled(), supportWhatsapp: (process.env.SUPPORT_WHATSAPP ?? '').replace(/\D/g, '') || null });
+/** Perfis de cores do app: 1 = atual (prata e grafite), 2 = inspirado no Atacadão. Escolha global, só do principal. */
+export const THEMES = ['padrao', 'atacadao'];
+const currentTheme = async () => (await q("SELECT value FROM app_settings WHERE name = 'theme'"))[0]?.value ?? 'padrao';
+
+r.get('/config', async (req, res) => {
+  res.json({
+    googleClientId: process.env.GOOGLE_CLIENT_ID || null,
+    devLogin: devLoginEnabled(),
+    supportWhatsapp: (process.env.SUPPORT_WHATSAPP ?? '').replace(/\D/g, '') || null,
+    theme: await currentTheme(),
+  });
+});
+
+r.put('/admin/settings/theme', requireOwner, async (req, res) => {
+  const theme = String(req.body.theme ?? '');
+  if (!THEMES.includes(theme)) fail(400, 'Perfil de cores inválido.');
+  const before = await currentTheme();
+  await q("INSERT INTO app_settings (name, value, updated_by) VALUES ('theme', ?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value), updated_by = VALUES(updated_by)", [theme, req.user.id]);
+  await audit(q, req, 'SETTING_THEME', 'app_settings', 'theme', { before: { theme: before }, after: { theme } });
+  res.json({ theme });
 });
 
 r.post('/auth/google', async (req, res) => {

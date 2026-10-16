@@ -841,3 +841,18 @@ test('perfil: CPF e e-mail não mudam; gestor e admin editam só o nome', { skip
   assert.deepEqual([g.name, g.email], ['Gestor da Loja A', 'gestor@test.dev']);
   assert.equal((await call(s.gestor, 'PUT', '/api/me/name', { name: 'x' })).status, 400);
 });
+
+test('perfil de cores: global, só o administrador principal troca', { skip }, async () => {
+  assert.equal((await call(null, 'GET', '/api/config')).body.theme, 'padrao');
+  assert.equal((await call(s.gestor, 'PUT', '/api/admin/settings/theme', { theme: 'atacadao' })).status, 403);
+  const a3 = await login('admin3@test.dev');
+  await q("UPDATE users SET role = 'ADMINISTRADOR' WHERE email = 'admin3@test.dev'");
+  assert.equal((await call(a3, 'PUT', '/api/admin/settings/theme', { theme: 'atacadao' })).status, 403, 'admin comum não troca');
+  await q("UPDATE users SET is_owner = 1 WHERE email = 'admin@test.dev'");
+  assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/theme', { theme: 'roxo' })).status, 400);
+  assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/theme', { theme: 'atacadao' })).status, 200);
+  assert.equal((await call(s.w1, 'GET', '/api/config')).body.theme, 'atacadao', 'vale para todos');
+  assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/theme', { theme: 'padrao' })).status, 200);
+  const [log] = await q("SELECT COUNT(*) AS n FROM audit_events WHERE action = 'SETTING_THEME'");
+  assert.equal(Number(log.n), 2);
+});

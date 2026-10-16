@@ -2,9 +2,11 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { CHANGED, api, isBlocked, type Me } from './lib/api';
 import { beep } from './lib/device';
+import { applyTheme, type Theme } from './lib/theme';
 import { Shell } from './components/Shell';
 import { DialogProvider, Loading } from './components/ui';
 import AdminUnidades from './pages/AdminUnidades';
+import AdminConfiguracoes from './pages/AdminConfiguracoes';
 import AdminUsuarios from './pages/AdminUsuarios';
 import Ajustes from './pages/Ajustes';
 import Atividade from './pages/Atividade';
@@ -74,7 +76,10 @@ function useInboxPolling(enabled: boolean) {
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const reload = () => api<Me>('/me').then(setMe, () => setMe(null));
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    reload();
+    api<{ theme: Theme }>('/config').then((c) => applyTheme(c.theme), () => {});
+  }, []);
 
   const role = me?.user.role;
   const inbox = useInboxPolling(role === 'GESTOR' || role === 'ADMINISTRADOR');
@@ -125,6 +130,7 @@ export default function App() {
                 <Route path="/perfil" element={<Perfil />} />
                 {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
+                {me.user.isOwner && <Route path="/admin/configuracoes" element={<AdminConfiguracoes />} />}
                 <Route path="*" element={<Navigate to="/gestao/inicio" />} />
               </Routes>
             )}
