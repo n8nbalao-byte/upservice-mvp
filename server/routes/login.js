@@ -35,6 +35,14 @@ async function hit(rawKey, max, windowMs) {
   return row.n <= max;
 }
 const limited = async (key, max, windowMs) => { if (!(await hit(key, max, windowMs))) fail(429, 'Muitas tentativas. Aguarde alguns minutos e tente de novo.'); };
+// Só lê o contador, sem somar: para limites que contam apenas erros.
+async function peek(rawKey, windowMs) {
+  const [row] = await q('SELECT n, window_start FROM rate_limits WHERE k = ?', [sha(rawKey)]);
+  return row && new Date(row.window_start) > new Date(Date.now() - windowMs) ? row.n : 0;
+}
+const clearLimits = (...rawKeys) => q('DELETE FROM rate_limits WHERE k IN (?)', [rawKeys.map(sha)]);
+// Mesma rede: /24 no IPv4, /64 no IPv6.
+const netOf = (ip) => (String(ip).includes(':') ? String(ip).split(':').slice(0, 4).join(':') : String(ip).split('.').slice(0, 3).join('.'));
 
 // ---------- Senha (scrypt com sal por usuário; nunca em texto) ----------
 
@@ -63,12 +71,18 @@ r.post('/auth/password', async (req, res) => {
   const email = emailOf(req.body.email);
   const password = String(req.body.password ?? '');
   await limited(`pw:ip:${req.ip}`, 20, 15 * 60e3);
-  await limited(`pw:email:${email}`, 10, 15 * 60e3);
-  // Teto diário por conta, qualquer que seja o IP: trocar de IP não renova as tentativas.
-  await limited(`pw:email:dia:${email}`, 30, 24 * 3600e3);
+  // Por conta, qualquer IP (trocar de IP não renova os chutes), mas contam só os ERROS: acertar não gasta, e criar
+  // uma senha nova em "Esqueci minha senha" zera. Assim um atacante não consegue deixar o dono sem saída.
+  const errs = [[`pw:erro:${email}`, 10, 15 * 60e3], [`pw:erro:dia:${email}`, 30, 24 * 3600e3]];
+  for (const [k, max, w] of errs) {
+    if ((await peek(k, w)) >= max) fail(429, 'Muitas tentativas erradas nesta conta. Entre pelo Google, QR Code ou WhatsApp, ou crie uma senha nova em "Esqueci minha senha".');
+  }
   const [u] = await q('SELECT * FROM users WHERE email = ? AND deleted_at IS NULL', [email]);
   const ok = await verifyPassword(password, u?.password_hash);
-  if (!u || !ok) fail(401, 'E-mail ou senha incorretos.');
+  if (!u || !ok) {
+    for (const [k, , w] of errs) await hit(k, Infinity, w);
+    fail(401, 'E-mail ou senha incorretos.');
+  }
   await startSession(req, res, u);
   res.json({ ok: true });
 });
@@ -99,14 +113,16 @@ r.post('/auth/password/reset', async (req, res) => {
   const password = passwordRule(req.body.password);
   await limited(`reset:ip:${req.ip}`, 20, 15 * 60e3);
   const hashPw = await hashPassword(password);
-  await tx(async (tq) => {
+  const email = await tx(async (tq) => {
     const [t] = await tq("SELECT * FROM auth_tokens WHERE kind = 'RESET' AND token_hash = ? FOR UPDATE", [sha(token)]);
     if (!t || t.used_at || new Date(t.expires_at) < new Date()) fail(400, 'Link inválido ou expirado. Peça um novo em "Esqueci minha senha".');
     await tq('UPDATE auth_tokens SET used_at = ? WHERE id = ?', [new Date(), t.id]);
     await tq('UPDATE users SET password_hash = ? WHERE id = ? AND deleted_at IS NULL', [hashPw, t.user_id]);
     await tq('DELETE FROM sessions WHERE user_id = ?', [t.user_id]); // troca de senha encerra todas as sessões
     await audit(tq, { ...req, user: { id: t.user_id } }, 'PASSWORD_RESET', 'user', t.user_id);
+    return (await tq('SELECT email FROM users WHERE id = ?', [t.user_id]))[0]?.email;
   });
+  if (email) await clearLimits(`pw:erro:${email}`, `pw:erro:dia:${email}`); // senha nova: o dono volta a entrar
   res.json({ ok: true });
 });
 
@@ -138,10 +154,7 @@ const qrState = (t) => (t.used_at ? 'ENCERRADO' : new Date(t.expires_at) < new D
 // Celular (logado): dados do pedido para conferir antes de autorizar. Não devolve o número.
 // Contra golpe (um site falso mostra um QR verdadeiro gerado pelo golpista): o celular vê o IP de quem pediu e,
 // se não for a mesma rede do celular, só autoriza confirmando de forma explícita que está na frente do computador.
-const sameNetwork = (a, b) => {
-  const net = (ip) => (String(ip).includes(':') ? String(ip).split(':').slice(0, 4).join(':') : String(ip).split('.').slice(0, 3).join('.'));
-  return net(a) === net(b);
-};
+const sameNetwork = (a, b) => netOf(a) === netOf(b);
 r.get('/auth/qr/:id', requireLogin, async (req, res) => {
   const t = await qrRow(req.params.id);
   if (!t) fail(404, 'Pedido de acesso não encontrado.');
@@ -205,16 +218,18 @@ const phoneOf = (v) => {
 };
 const newCode = () => String(randomInt(0, 1000000)).padStart(6, '0');
 const PHONE_OK = { ok: true, message: 'Se este número estiver confirmado em uma conta, você vai receber um código no WhatsApp em instantes.' };
+const VERIFY_OK = { ok: true, message: 'Se o número puder ser usado, o código chega no WhatsApp em instantes. Não chegou? Se o número já estiver em outra conta, fale com a UP Service.' };
 const requireWhatsapp = async () => { if (!(await phoneLoginEnabled())) fail(503, 'O WhatsApp da UP Service ainda não está disponível.'); };
 
 // Confirmação (logado): envia um código para o número informado; ele só vira o WhatsApp da conta depois do código.
 r.post('/me/whatsapp/start', requireLogin, async (req, res) => {
   await requireWhatsapp();
   const phone = phoneOf(req.body.phone);
+  // Limite por pessoa (não por número: assim ninguém impede o dono do número de confirmá-lo).
   await limited(`verify:user:${req.user.id}`, 5, 3600e3);
-  await limited(`verify:phone:${phone}`, 3, 15 * 60e3);
+  // Número já confirmado em outra conta: resposta igual, sem enviar nada (não revela quem tem conta).
   const [other] = await q('SELECT id FROM users WHERE whatsapp = ? AND id <> ?', [phone, req.user.id]);
-  if (other) fail(409, 'Este número já está confirmado em outra conta. Fale com a UP Service.');
+  if (other) return res.json(VERIFY_OK);
   const code = newCode();
   await q("UPDATE auth_tokens SET used_at = ? WHERE kind = 'VERIFY' AND user_id = ? AND used_at IS NULL", [new Date(), req.user.id]);
   await q('INSERT INTO auth_tokens SET ?', [{ id: randomUUID(), kind: 'VERIFY', user_id: req.user.id, token_hash: sha(`verify:${randomUUID()}`), secret_hash: sha(`${phone}:${code}`), target: phone, expires_at: new Date(Date.now() + OTP_MS), created_ip: req.ip }]);
@@ -223,7 +238,7 @@ r.post('/me/whatsapp/start', requireLogin, async (req, res) => {
   } catch (e) {
     fail(502, 'Não foi possível enviar o código agora. Tente de novo em alguns minutos.');
   }
-  res.json({ ok: true, message: 'Enviamos um código para o seu WhatsApp.' });
+  res.json(VERIFY_OK);
 });
 
 r.post('/me/whatsapp/verify', requireLogin, async (req, res) => {
@@ -240,7 +255,7 @@ r.post('/me/whatsapp/verify', requireLogin, async (req, res) => {
     try {
       await tq('UPDATE users SET whatsapp = ?, whatsapp_verified_at = ? WHERE id = ?', [t.target, new Date(), req.user.id]);
     } catch (e) {
-      if (e.code === 'ER_DUP_ENTRY') fail(409, 'Este número já está confirmado em outra conta. Fale com a UP Service.');
+      if (e.code === 'ER_DUP_ENTRY') fail(400, 'Não foi possível confirmar este número. Fale com a UP Service.');
       throw e;
     }
     await audit(tq, req, 'WHATSAPP_VERIFY', 'user', req.user.id);
@@ -251,16 +266,24 @@ r.post('/me/whatsapp/verify', requireLogin, async (req, res) => {
 });
 
 // Login por código: só para número confirmado; resposta igual exista ou não a conta.
+// O código fica preso ao aparelho que pediu (cookie httpOnly): de outro aparelho ninguém consegue conferir, nem chutar,
+// nem invalidar o código de quem pediu. Pedir de novo em outro aparelho não derruba o código pendente.
+const OTP_COOKIE = 'otp_device';
+const otpDeviceOf = (req) => /(?:^|;\s*)otp_device=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
+const otpCookie = (value, maxAge) => `${OTP_COOKIE}=${value}; HttpOnly; Secure; SameSite=Strict; Path=/api/auth/phone; Max-Age=${maxAge}`;
+
 r.post('/auth/phone/start', async (req, res) => {
   await requireWhatsapp();
   const phone = phoneOf(req.body.phone);
-  const allowed = (await hit(`otp:ip:${req.ip}`, 10, 3600e3)) && (await hit(`otp:phone:${phone}`, 3, 15 * 60e3)) && (await hit(`otp:phone:dia:${phone}`, 10, 24 * 3600e3));
+  const device = randomBytes(24).toString('base64url');
+  res.setHeader('Set-Cookie', otpCookie(device, OTP_MS / 1000));
+  // Envios: por IP, por número a partir da mesma rede, e um teto diário alto por número (contra encher o WhatsApp de alguém).
+  const allowed = (await hit(`otp:ip:${req.ip}`, 10, 3600e3)) && (await hit(`otp:rede:${phone}:${netOf(req.ip)}`, 3, 15 * 60e3)) && (await hit(`otp:dia:${phone}`, 30, 24 * 3600e3));
   if (!allowed) return res.json(PHONE_OK);
   const [u] = await q('SELECT * FROM users WHERE whatsapp = ? AND whatsapp_verified_at IS NOT NULL AND deleted_at IS NULL', [phone]);
   if (u && canLogin(u)) {
     const code = newCode();
-    await q("UPDATE auth_tokens SET used_at = ? WHERE kind = 'OTP' AND target = ? AND used_at IS NULL", [new Date(), phone]);
-    await q('INSERT INTO auth_tokens SET ?', [{ id: randomUUID(), kind: 'OTP', user_id: u.id, token_hash: sha(`otp:${randomUUID()}`), secret_hash: sha(`${phone}:${code}`), target: phone, expires_at: new Date(Date.now() + OTP_MS), created_ip: req.ip }]);
+    await q('INSERT INTO auth_tokens SET ?', [{ id: randomUUID(), kind: 'OTP', user_id: u.id, token_hash: sha(`otpdev:${device}`), secret_hash: sha(`${phone}:${code}`), target: phone, expires_at: new Date(Date.now() + OTP_MS), created_ip: req.ip }]);
     // Sem await: a resposta leva o mesmo tempo exista ou não a conta; falha de envio só vai para o log.
     sendWhatsapp(phone, `Seu código de acesso UP Service: ${code}\nVale por 5 minutos. Não compartilhe com ninguém.`)
       .catch((e) => console.error('falha ao enviar código por WhatsApp', e.message));
@@ -273,10 +296,10 @@ r.post('/auth/phone/verify', async (req, res) => {
   const phone = phoneOf(req.body.phone);
   const code = String(req.body.code ?? '').trim();
   await limited(`otpverify:ip:${req.ip}`, 30, 15 * 60e3);
-  // Por número, qualquer que seja o IP: trocar de IP não dá mais chutes.
-  await limited(`otpverify:phone:${phone}`, 10, 15 * 60e3);
+  const device = otpDeviceOf(req);
+  if (!device) fail(401, 'Código inválido ou expirado.');
   const user = await tx(async (tq) => {
-    const [t] = await tq("SELECT * FROM auth_tokens WHERE kind = 'OTP' AND target = ? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1 FOR UPDATE", [phone]);
+    const [t] = await tq("SELECT * FROM auth_tokens WHERE kind = 'OTP' AND token_hash = ? AND target = ? AND used_at IS NULL FOR UPDATE", [sha(`otpdev:${device}`), phone]);
     if (!t || new Date(t.expires_at) < new Date()) return null;
     if (sha(`${phone}:${code}`) !== t.secret_hash) {
       // 5 erros invalidam o código.
@@ -288,6 +311,7 @@ r.post('/auth/phone/verify', async (req, res) => {
   });
   if (!user) fail(401, 'Código inválido ou expirado.');
   await startSession(req, res, user);
+  res.append('Set-Cookie', otpCookie('', 0));
   res.json({ ok: true });
 });
 
