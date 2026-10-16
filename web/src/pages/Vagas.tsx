@@ -11,6 +11,19 @@ type Job = {
   distance_m: number | null; my_status: string | null;
 };
 const dayBR = (s: string) => new Date(s).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit' });
+const dayKey = (t: number | string) => new Date(t).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+/** Hoje / Amanhã, no fuso de São Paulo. */
+const whenBadge = (startsAt: string, now: number) => (dayKey(startsAt) === dayKey(now) ? 'Hoje' : dayKey(startsAt) === dayKey(now + 86400e3) ? 'Amanhã' : null);
+/** Quanto falta para o check-in abrir (15 min antes do início). */
+function checkinIn(startsAt: string, now: number) {
+  const min = Math.ceil((new Date(startsAt).getTime() - 15 * 60e3 - now) / 60000);
+  if (min <= 0) return 'Check-in aberto agora';
+  if (min < 60) return `Check-in em ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `Check-in em ${h}h${min % 60 ? String(min % 60).padStart(2, '0') : ''}`;
+  const d = Math.round(h / 24);
+  return `Check-in em ${d} dia${d > 1 ? 's' : ''}`;
+}
 const km = (m: number) => (m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
 
 const REQUIRED_DOCS = ['SELFIE', 'CPF', 'RG', 'COMPROVANTE'];
@@ -25,6 +38,8 @@ export default function Vagas() {
   const [where, setWhere] = useState<{ lat: number; lng: number } | null>(null);
   const [geo, setGeo] = useState<'loading' | 'ok' | 'off'>('loading');
   const [error, setError] = useState('');
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
 
   const load = (pos = where) => api<Job[]>(`/jobs${pos ? `?lat=${pos.lat}&lng=${pos.lng}` : ''}`).then(setJobs, (e) => setError(e.message));
 
@@ -49,7 +64,7 @@ export default function Vagas() {
 
   return (
     <div className="page">
-      <PageHeader title="Vagas disponíveis" description={geo === 'ok' ? 'Das lojas mais próximas de você para as mais distantes.' : 'Ordenadas por data.'} />
+      <PageHeader title="Vagas disponíveis" description={geo === 'ok' ? 'Primeiro as lojas mais perto de você; entre elas, as que começam antes.' : 'As que começam antes aparecem primeiro.'} />
       {geo === 'off' && <Alert kind="info">Permita a localização no navegador para ver primeiro as lojas mais próximas. Ela só é usada para ordenar a lista.</Alert>}
       {error && <Alert kind="danger">{error}</Alert>}
       {!docsApproved && <Alert kind="warning">Seus documentos estão em análise pela UP Service. Assim que forem aprovados, é só escolher a vaga: a confirmação é na hora.</Alert>}
@@ -60,7 +75,7 @@ export default function Vagas() {
           {jobs.map((j) => (
             <article key={j.id} className="card stack">
               <div className="row between">
-                <h2>{j.title}</h2>
+                <h2>{j.title}{whenBadge(j.starts_at, now) && <span className={`when-badge${whenBadge(j.starts_at, now) === 'Hoje' ? ' today' : ''}`}>{whenBadge(j.starts_at, now)}</span>}</h2>
                 {j.distance_m != null && <StatusBadge tone="info"><Icon name="pin" size={12} />{km(j.distance_m)}</StatusBadge>}
               </div>
               <div>
@@ -71,6 +86,7 @@ export default function Vagas() {
                 <span><Icon name="clock" size={14} /> <span style={{ textTransform: 'capitalize' }}>{dayBR(j.starts_at)}</span> · {fmtTime(j.starts_at)}–{fmtTime(j.ends_at)}</span>
                 <span className="money">{fmtMoney(j.daily_value)}</span>
               </div>
+              <div className={`checkin-in${new Date(j.starts_at).getTime() - now < 3 * 3600e3 ? ' soon' : ''}`}><Icon name="clock" size={14} /> {checkinIn(j.starts_at, now)}</div>
               <div className="muted">
                 {j.break_count ? `${j.break_count} pausa(s) de ${j.break_minutes} min` : 'Sem pausas'} · {j.available ? `${j.available} vaga(s) livre(s)` : 'Sem vagas livres'}
               </div>

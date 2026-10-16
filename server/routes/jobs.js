@@ -6,7 +6,7 @@ import { assertUnit, requireRole } from '../auth.js';
 import { q, tx } from '../db.js';
 import { fail, int, num, requireReason, text } from '../http.js';
 import { ctx, flush } from '../penalties.js';
-import { distanceMeters } from '../rules.js';
+import { byNearThenSoon, distanceMeters } from '../rules.js';
 import { applyToJob, assertCanApprove, promoteFromWaitlist } from '../staffing.js';
 
 const r = Router();
@@ -34,7 +34,7 @@ r.get('/jobs', requireRole('PROFISSIONAL'), async (req, res) => {
     distance_m: hasHere ? Math.round(distanceMeters(here, { lat, lng })) : null,
   }));
   // ponytail: ordenação em memória; mover para SQL se passar de alguns milhares de vagas abertas.
-  if (hasHere) jobs.sort((a, b) => a.distance_m - b.distance_m);
+  if (hasHere) jobs.sort(byNearThenSoon);
   res.json(jobs);
 });
 
