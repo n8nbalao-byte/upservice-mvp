@@ -26,17 +26,23 @@ export const BONUSES = [
 export const PERFECT_BONUS = 50;
 export const STARS_PER_LEVEL = 30;
 
-/** Monta um mês: diárias em ordem, estrelas, bônus (posição na grade, meta e se já abriu) e o mês perfeito. */
+/** Monta um mês com TODOS os dias (cada dia é uma fase; dia sem diária fica vazio, sem estrela), as estrelas,
+ *  os bônus (meta, se já abriu e depois de qual dia aparecem na grade) e o mês perfeito. */
 export function buildMonth(month, diaries) {
+  const [y, mo] = month.split('-').map(Number);
+  const daysIn = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const byDay = new Map();
+  for (const d of diaries) { const k = Number(d.day); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(d); }
+  const days = Array.from({ length: daysIn }, (_, i) => ({ day: i + 1, diaries: byDay.get(i + 1) ?? [] }));
   const max = diaries.length * 3;
   const stars = diaries.reduce((s, d) => s + (d.stars ?? 0), 0);
   const bonuses = BONUSES.map((b) => {
     const goal = Math.max(1, Math.ceil(max * b.share));
-    return { key: b.key, value: b.value, goal, unlocked: max > 0 && stars >= goal, after: Math.min(diaries.length, Math.ceil(goal / 3)) };
+    return { key: b.key, value: b.value, goal, unlocked: max > 0 && stars >= goal, afterDay: Math.round(daysIn * b.share) };
   });
   const finished = diaries.length > 0 && diaries.every((d) => d.state === 'feita');
   const perfect = { value: PERFECT_BONUS, unlocked: finished && diaries.every((d) => d.stars > 0), lost: diaries.some((d) => d.stars === 0) };
-  return { month, diaries, stars, maxStars: max, bonuses, perfect };
+  return { month, days, diaries, stars, maxStars: max, bonuses, perfect };
 }
 
 export const levelOf = (total) => ({ level: Math.floor(total / STARS_PER_LEVEL) + 1, inLevel: total % STARS_PER_LEVEL, perLevel: STARS_PER_LEVEL });

@@ -57,8 +57,10 @@ async function openContestation(req, { userId, penaltyId, occurrenceId, message,
       if (!o) fail(404, 'Não encontrado.');
       if (o.status !== 'CONFIRMADA') fail(409, 'Só é possível contestar uma ocorrência confirmada.');
     }
-    const [open] = await tq("SELECT protocol FROM contestations WHERE (penalty_id = ? OR occurrence_id = ?) AND status = 'ABERTA' FOR UPDATE", [penaltyId ?? '', occurrenceId ?? '']);
-    if (open) fail(409, `Já existe uma contestação em análise (protocolo ${open.protocol}).`);
+    // Uma contestação por bloqueio ou ocorrência: depois de decidida (mantida, cancelada ou ajustada), não se contesta de novo.
+    const [prev] = await tq('SELECT protocol, status FROM contestations WHERE (penalty_id = ? OR occurrence_id = ?) ORDER BY created_at DESC LIMIT 1 FOR UPDATE', [penaltyId ?? '', occurrenceId ?? '']);
+    if (prev?.status === 'ABERTA') fail(409, `Já existe uma contestação em análise (protocolo ${prev.protocol}).`);
+    if (prev) fail(409, `Esta ${penaltyId ? 'punição' : 'ocorrência'} já foi contestada (protocolo ${prev.protocol}) e a decisão é final.`);
     const c = { id: randomUUID(), protocol: protocol(), user_id: userId, penalty_id: penaltyId ?? null, occurrence_id: occurrenceId ?? null, channel, message: msg, created_by: req.user.id };
     await tq('INSERT INTO contestations SET ?', [c]);
     await audit(tq, req, 'CONTESTATION_OPEN', 'contestation', c.id, { after: { protocol: c.protocol, channel, penaltyId, occurrenceId } });

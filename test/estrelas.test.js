@@ -32,4 +32,10 @@ test('mês: bônus abrem com as estrelas; mês perfeito só sem falta e com tudo
   assert.equal(faltou.perfect.unlocked, false);
   assert.equal(faltou.perfect.lost, true);
   assert.deepEqual(levelOf(64), { level: 3, inLevel: 4, perLevel: 30 });
+  // Todos os dias do mês aparecem como fases; dia sem diária fica vazio.
+  const nov = buildMonth('2026-11', [{ day: 3, stars: 3, state: 'feita' }, { day: 20, stars: null, state: 'proxima' }]);
+  assert.equal(nov.days.length, 30);
+  assert.deepEqual(nov.days.filter((d) => d.diaries.length).map((d) => d.day), [3, 20]);
+  assert.equal(buildMonth('2026-10', []).days.length, 31);
+  assert.deepEqual(nov.bonuses.map((b) => b.afterDay), [9, 17, 24]);
 });
