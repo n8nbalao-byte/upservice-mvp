@@ -93,9 +93,9 @@ export default function AdminUsuarios() {
               <thead><tr><th>Usuário</th><th>Papel</th><th>Status</th><th>Lojas</th><th>Ações</th></tr></thead>
               <tbody>
                 {shown.map((u) => {
-                  // O principal e a própria conta não são alterados por aqui (o servidor também recusa).
+                  // A própria conta, o principal e (para admin comum) outros admins não são alterados aqui; o servidor também recusa.
                   const isMe = u.id === me.user.id;
-                  const locked = isMe || u.isOwner;
+                  const locked = isMe || u.isOwner || (u.role === 'ADMINISTRADOR' && !me.user.isOwner);
                   return [
                     <tr key={u.id}>
                       <td data-label="Usuário"><span className="strong">{u.name}{isMe && ' (você)'}</span><span className="muted">{u.email}</span></td>

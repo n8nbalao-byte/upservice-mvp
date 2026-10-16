@@ -137,9 +137,10 @@ r.patch('/admin/users/:id', ADMIN, async (req, res) => {
   if (!ROLES.includes(after.role) || !USER_STATUS.includes(after.status)) fail(400, 'Papel ou status inválido.');
   // O administrador principal não é alterado por aqui (evita que outro admin o bloqueie ou rebaixe).
   if (target.is_owner) fail(403, 'O administrador principal não pode ser alterado.');
-  // Dar ou tirar o papel de administrador é só do administrador principal.
-  if ((after.role === 'ADMINISTRADOR') !== (before.role === 'ADMINISTRADOR') && !req.user.is_owner) {
-    fail(403, 'Somente o administrador principal pode conceder ou retirar o papel de administrador.');
+  // Dar ou tirar o papel de administrador, ou mexer em outro administrador (status, bloqueio), é só do principal:
+  // um admin comum não consegue tirar o acesso de um colega.
+  if (!req.user.is_owner && (after.role === 'ADMINISTRADOR' || before.role === 'ADMINISTRADOR')) {
+    fail(403, 'Somente o administrador principal pode alterar administradores ou conceder esse papel.');
   }
   const blockType = { BLOQUEADO_TEMPORARIAMENTE: 'BLOQUEIO_TEMPORARIO', BLOQUEADO_PERMANENTEMENTE: 'BLOQUEIO_PERMANENTE' };
   const c = await tx(async (tq) => {

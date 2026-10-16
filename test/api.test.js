@@ -820,6 +820,8 @@ test('administrador principal: só ele exclui usuários e dá/tira papel de admi
   assert.equal((await call(a2, 'PATCH', `/api/admin/users/${gId}`, { role: 'ADMINISTRADOR', reason: 'Novo administrador da equipe' })).status, 403);
   assert.equal((await call(s.admin, 'PATCH', `/api/admin/users/${gId}`, { role: 'ADMINISTRADOR', reason: 'Novo administrador da equipe' })).status, 200);
   assert.equal((await call(a2, 'PATCH', `/api/admin/users/${owner.id}`, { status: 'INATIVO', reason: 'Tentando bloquear o principal' })).status, 403);
+  assert.equal((await call(a2, 'PATCH', `/api/admin/users/${gId}`, { status: 'INATIVO', reason: 'Tirando o acesso de um colega' })).status, 403, 'admin comum não mexe em outro admin');
+  assert.equal((await call(a2, 'PATCH', `/api/admin/users/${gId}`, { role: 'GESTOR', reason: 'Rebaixando um colega admin' })).status, 403);
   assert.equal((await call(g, 'GET', '/api/me')).body.user.isOwner, false);
 });
 
