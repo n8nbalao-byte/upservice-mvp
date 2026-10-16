@@ -1,6 +1,6 @@
 # UpService
 
-PWA para a UpService: cadastro aberto de profissionais (Google), documentos, unidades, vagas, candidaturas e registro de presença (check-in, pausas, retorno e checkout com GPS a até 300 m + selfie)
+PWA para a UpService: cadastro aberto de profissionais (Google), documentos, unidades, vagas, candidaturas e registro de presença (check-in, pausas, retorno e checkout com GPS a até 300 m + selfie), com exceções aprovadas pelo gestor, fechamento de checkout esquecido, cálculo de horas, confirmação da diária, ocorrências, bloqueios (3 faltas → 15 dias) e contestação.
 
 - **Produção:** https://app.upserviceintermed.com
 - **Andamento:** [docs/STATUS.md](docs/STATUS.md) (marcos, os 52 itens da linha de base e critérios de aceite)
@@ -23,6 +23,7 @@ PWA para a UpService: cadastro aberto de profissionais (Google), documentos, uni
 | Aprovar ou recusar candidaturas | | suas lojas | todas |
 | Cancelar candidatura já aprovada (antes do check-in) | | suas lojas | ❌ |
 | Reabrir vaga encerrada | | ❌ | ✅ |
+| Atividades do dia, selfies, horas, confirmar diária ou falta | | suas lojas | todas |
 | Aprovar ou recusar exceções de presença | | suas lojas | todas |
 | Central de pendências (sino, som e notificação do navegador) | | suas lojas | todas |
 | Confirmar ou cancelar ocorrências; registrar ocorrência manual | | suas lojas | todas |
@@ -35,7 +36,7 @@ PWA para a UpService: cadastro aberto de profissionais (Google), documentos, uni
 | Unidades: cadastrar, editar, bloquear ou inativar | | ❌ | ✅ |
 | Usuários: papel, status e vínculo gestor↔unidade | | ❌ | ✅ |
 
-Ninguém altera o próprio papel. O cadastro aberto sempre cria `PROFISSIONAL`; gestores e administradores são promovidos em **Usuários** depois do primeiro login. Toda ação administrativa fica auditada.
+Ninguém altera o próprio papel. O cadastro aberto sempre cria `PROFISSIONAL`; gestores e administradores são promovidos em **Usuários** depois do primeiro login. Toda ação administrativa fica em `audit_events`.
 
 ## Rodar localmente
 
@@ -71,7 +72,7 @@ npm run loadtest  # carga local: cria o banco descartável upservice_load (nunca
 | E-mail | SMTP `smtp.hostinger.com:465`, remetente `contato@upserviceintermed.com` |
 | Google OAuth | Projeto `upservice-511606`, app publicado |
 
-Variáveis: `NODE_ENV=production`, `DATABASE_URL`, `STORAGE_DIR`, `GOOGLE_CLIENT_ID`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` e, opcional, `GOOGLE_MAPS_API_KEY`. Nunca definir variáveis sensíveis no git.
+Variáveis: `NODE_ENV=production`, `DATABASE_URL`, `STORAGE_DIR`, `GOOGLE_CLIENT_ID`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` e, opcional, `GOOGLE_MAPS_API_KEY`. Nunca definir `DEV_LOGIN` nem `PORT` (a Hostinger define a porta).
 
 ### Migrations em produção
 
@@ -86,7 +87,7 @@ Logs da aplicação: `$H/current/nodejs/console.log`. Logs de deploy: `$H/logs/<
 
 ### Backup e restauração
 
-- **Automático:** em produção, o app faz `mysqldump` + gzip a cada 24 h em `~/upservice-backups` (pasta 700, arquivos 600), mantendo 14 dias. Manual: `node --env-file=$H/config/.env server/backups.js`
+- **Automático:** em produção, o app faz `mysqldump` + gzip a cada 24 h em `~/upservice-backups` (pasta 700, arquivos 600), mantendo 14 dias. Manual: `node --env-file=$H/config/.env server/backup.js`.
 - **Documentos e selfies** (`~/upservice-storage`) não entram no dump: dependem do backup da hospedagem.
 - **Teste de restauração:** criar um banco vazio temporário no hPanel e rodar
   `RESTORE_DATABASE_URL=mysql://usuario:senha@127.0.0.1:3306/banco_temp node --env-file=$H/config/.env scripts/restore-check.mjs ~/upservice-backups/<arquivo>.sql.gz`.
@@ -100,6 +101,6 @@ GitHub Actions em todo PR e push no `main`: `npm ci`, typecheck, testes contra M
 
 - A PWA não lê GPS com a página fechada: com a tela da atividade aberta, confere a cada 10 min; fechada, o painel mostra "localização não atualizada". Nunca afirma presença contínua.
 - O GPS do navegador pode ser falsificado; selfie, token único e auditoria reduzem, mas não eliminam.
-- A varredura (avisos de pausa e checkout, `PENDENTE_DE_FECHAMENTO`, ocorrências automáticas e fim de bloqueios temporários) roda num `setInterval` do processo; se a Hostinger hibernar o app, o comportamento muda.
-
-<!-- Deploy trigger: 2026-10-15T22:20:00Z -->
+- A varredura (avisos de pausa e checkout, `PENDENTE_DE_FECHAMENTO`, ocorrências automáticas e fim de bloqueios temporários) roda num `setInterval` do processo; se a Hostinger hibernar o app, mover para cron.
+- As notificações do painel funcionam com a página aberta (em qualquer aba). Com o navegador fechado, o aviso chega só por e-mail; push com o app fechado exigiria Web Push (service worker + chaves VAPID).
+- As coordenadas automáticas pelo OpenStreetMap erram centenas de metros a km em avenidas longas; conferir o pino no mapa ou usar `GOOGLE_MAPS_API_KEY`.
