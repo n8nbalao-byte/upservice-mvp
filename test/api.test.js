@@ -857,6 +857,80 @@ test('perfil de cores: global, só o administrador principal troca', { skip }, a
   assert.equal(Number(log.n), 2);
 });
 
+test('Configurações → WhatsApp: só o principal, chave nunca volta, instância, QR/código, teste e desconexão', { skip }, async () => {
+  const http = await import('node:http');
+  const calls = [];
+  let state = 'missing';
+  const mock = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (c) => { b += c; });
+    req.on('end', () => {
+      calls.push({ method: req.method, url: req.url, key: req.headers.apikey, body: b ? JSON.parse(b) : null });
+      const send = (status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+      const ok = req.headers.apikey === 'chave-geral' || (req.headers.apikey === 'chave-da-instancia' && req.url.includes('upservice'));
+      if (!ok) return send(401, { error: 'Unauthorized' });
+      if (req.url === '/instance/create') { state = 'close'; return send(201, { instance: { instanceName: 'upservice' }, hash: 'chave-da-instancia' }); }
+      if (state === 'missing') return send(404, { error: 'not found' });
+      if (req.url.startsWith('/instance/connectionState/')) return send(200, { instance: { state } });
+      if (req.url.startsWith('/instance/connect/')) return send(200, req.url.includes('number=') ? { pairingCode: 'ABCD-1234' } : { base64: 'data:image/png;base64,iVBOR', code: 'x' });
+      if (req.url.startsWith('/instance/logout/')) { state = 'close'; return send(200, { status: 'SUCCESS' }); }
+      if (req.url.startsWith('/message/sendText/')) return send(201, { key: { id: '1' } });
+      send(404, {});
+    });
+  }).listen(0);
+  const URL_EVO = `http://localhost:${mock.address().port}`;
+  try {
+    await q("UPDATE users SET is_owner = 1 WHERE email = 'admin@test.dev'");
+    const a3 = await login('admin-wa@test.dev');
+    await q("UPDATE users SET role = 'ADMINISTRADOR' WHERE email = 'admin-wa@test.dev'");
+    assert.equal((await call(a3, 'GET', '/api/admin/whatsapp')).status, 403, 'admin comum não vê');
+    assert.equal((await call(s.gestor, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, key: 'x' })).status, 403);
+    assert.deepEqual((await call(s.admin, 'GET', '/api/admin/whatsapp')).body, { configured: false });
+
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: 'ftp://x', key: 'k' })).status, 400);
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, instance: 'up service', key: 'k' })).status, 400);
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, key: '' })).status, 400, 'primeira vez exige a chave');
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, instance: 'upservice', key: 'chave-geral' })).status, 200);
+    const st = (await call(s.admin, 'GET', '/api/admin/whatsapp')).body;
+    assert.equal(st.state, 'SEM_INSTANCIA');
+    assert.equal(st.hasKey, true);
+    assert.ok(!JSON.stringify(st).includes('chave-geral'), 'a chave nunca volta para a tela');
+
+    assert.equal((await call(s.admin, 'POST', '/api/admin/whatsapp/create', {})).status, 200);
+    assert.equal(calls.find((c) => c.url === '/instance/create').body.instanceName, 'upservice');
+    assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.state, 'DESCONECTADO');
+    assert.equal(calls.at(-1).key, 'chave-da-instancia', 'depois de criar, o app usa só a chave da instância');
+
+    const qr = (await call(s.admin, 'POST', '/api/admin/whatsapp/connect', { method: 'qr' })).body;
+    assert.equal(qr.qr, 'data:image/png;base64,iVBOR');
+    const code = (await call(s.admin, 'POST', '/api/admin/whatsapp/connect', { method: 'code', phone: '(11) 92674-6277' })).body;
+    assert.equal(code.pairingCode, 'ABCD-1234');
+    assert.ok(calls.at(-1).url.endsWith('?number=5511926746277'));
+
+    state = 'open';
+    assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.state, 'CONECTADO');
+    assert.equal((await call(s.admin, 'POST', '/api/admin/whatsapp/test', { phone: '11999990000' })).status, 200);
+    assert.deepEqual(calls.at(-1).body, { number: '5511999990000', text: 'Teste do app UP Service: o WhatsApp está conectado. ✅' });
+    assert.equal((await call(s.admin, 'POST', '/api/admin/whatsapp/logout', {})).status, 200);
+    assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.state, 'DESCONECTADO');
+
+    // Chave salva é mantida quando o campo vem vazio; variáveis do servidor têm prioridade e travam a edição.
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, instance: 'upservice', key: '' })).status, 200);
+    assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.hasKey, true);
+    Object.assign(process.env, { EVOLUTION_API_URL: URL_EVO, EVOLUTION_API_KEY: 'chave-geral', EVOLUTION_INSTANCE: 'upservice' });
+    assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.source, 'env');
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, key: 'x' })).status, 409);
+    const [log] = await q("SELECT COUNT(*) AS n FROM audit_events WHERE action LIKE 'WHATSAPP_%' OR action = 'SETTING_WHATSAPP'");
+    assert.ok(Number(log.n) >= 6);
+    const [row] = await q("SELECT after_json FROM audit_events WHERE action = 'SETTING_WHATSAPP' LIMIT 1").catch(() => [{}]);
+    assert.ok(!JSON.stringify(row ?? {}).includes('chave-geral'), 'a auditoria não guarda a chave');
+  } finally {
+    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
+    mock.close();
+    await q("DELETE FROM app_settings WHERE name = 'evolution'");
+  }
+});
+
 test('números públicos do site: só totais, iguais ao banco', { skip }, async () => {
   const r = await call(null, 'GET', '/api/public/stats');
   assert.equal(r.status, 200);

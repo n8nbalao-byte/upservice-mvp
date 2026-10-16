@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Loading, PageHeader, StatusBadge, useAction } from '../components/ui';
 import { api } from '../lib/api';
 import { applyTheme, type Theme } from '../lib/theme';
+import { WhatsappConfig } from '../components/WhatsappConfig';
 
 const THEMES: { key: Theme; name: string; text: string }[] = [
   { key: 'padrao', name: 'Perfil 1 — Prata', text: 'Identidade atual do sistema: barra lateral prata, destaques e botões em grafite.' },
@@ -54,6 +55,10 @@ export default function AdminConfiguracoes() {
             ))}
           </div>
         )}
+      </section>
+      <section className="stack" style={{ marginTop: 32 }}>
+        <h2 className="section-title">WhatsApp</h2>
+        <WhatsappConfig />
       </section>
     </div>
   );
