@@ -7,7 +7,10 @@ import { buildMonth, diaryStars, levelOf } from '../estrelas.js';
 import { fail } from '../http.js';
 
 const r = Router();
-const monthOf = (d) => new Date(d).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
+const dateOf = (d) => new Date(d).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+const monthOf = (d) => dateOf(d).slice(0, 7);
+const dayOf = (d) => dateOf(d).slice(8, 10);
+const nextMonth = (m) => { const [y, mo] = m.split('-').map(Number); return mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`; };
 export const gamificationOn = async () => (await q("SELECT value FROM app_settings WHERE name = 'gamification'"))[0]?.value === 'on';
 
 async function starsOf(userId) {
@@ -22,7 +25,8 @@ async function starsOf(userId) {
     [userId],
   );
   const now = Date.now();
-  const byMonth = new Map([[monthOf(now), []]]);
+  // Mês atual e o próximo sempre aparecem (dá para rolar e ver as fases que vêm); os passados, se tiveram diária.
+  const byMonth = new Map([[monthOf(now), []], [nextMonth(monthOf(now)), []]]);
   for (const row of rows) {
     const s = diaryStars({
       result: row.result, sessionStatus: row.session_status, endsAt: row.ends_at,
@@ -30,7 +34,7 @@ async function starsOf(userId) {
     }, now);
     const m = monthOf(row.starts_at);
     if (!byMonth.has(m)) byMonth.set(m, []);
-    byMonth.get(m).push({ id: row.id, title: row.title, unit: row.unit_name, startsAt: row.starts_at, ...s });
+    byMonth.get(m).push({ id: row.id, title: row.title, unit: row.unit_name, startsAt: row.starts_at, day: Number(dayOf(row.starts_at)), ...s });
   }
   const months = [...byMonth.keys()].sort().map((m) => buildMonth(m, byMonth.get(m)));
   const total = months.reduce((t, m) => t + m.stars, 0);

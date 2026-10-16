@@ -857,3 +857,9 @@ img.avatar { object-fit: cover; }
 @keyframes g-glow { from { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), 0 0 6px rgba(255, 220, 80, 0.6); } to { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), 0 0 18px rgba(255, 230, 120, 1); } }
 @media (prefers-reduced-motion: reduce) { .g-tile.bonus.open { animation: none; } }
 @media (max-width: 420px) { .g-grid { gap: 7px; } .g-num { font-size: 1.1rem; } .g-stars svg { width: 11px; height: 11px; } .g-arrow { width: 32px; height: 32px; } .g-total { font-size: 1.4rem; } }
+/* Fases do mês sem diária: só o número do dia, apagado e sem estrela; hoje com contorno. */
+.g-tile.g-blank { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.28); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.18); }
+.g-tile.g-blank .g-num { color: rgba(255, 255, 255, 0.75); text-shadow: none; font-size: 1.05rem; }
+.g-tile.is-today { outline: 3px solid #fff; outline-offset: 2px; }
+/* A largura manda (aspect-ratio): sem esticar na altura da linha, todas as fases ficam do mesmo tamanho. */
+.g-grid > .g-tile { width: 100%; align-self: start; }

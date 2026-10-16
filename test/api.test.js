@@ -381,6 +381,15 @@ test('contestação aceita reativa; nova falta sozinha não bloqueia; bloqueio v
   assert.equal((await call(s.gestor, 'POST', `/api/manage/contestations/${ct.id}/decide`, { decision: 'CANCELADA', reason: 'Atestado médico apresentado' })).status, 200);
   assert.equal((await userByEmail('w5@test.dev')).status, 'ATIVO');
 
+  // Uma contestação por ocorrência: decidida (mantida), não se contesta de novo.
+  const [occ] = await q("SELECT id FROM occurrences WHERE user_id = ? AND status = 'CONFIRMADA' LIMIT 1", [s.w5Id]);
+  assert.equal((await call(s.w5, 'POST', '/api/me/contestations', { occurrenceId: occ.id, message: 'Eu estava presente na loja nesse dia' })).status, 201);
+  const [ct2] = await q('SELECT id FROM contestations WHERE occurrence_id = ?', [occ.id]);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/contestations/${ct2.id}/decide`, { decision: 'MANTIDA', reason: 'Registro confirmado pela loja' })).status, 200);
+  const again = await call(s.w5, 'POST', '/api/me/contestations', { occurrenceId: occ.id, message: 'Quero contestar mais uma vez' });
+  assert.equal(again.status, 409);
+  assert.match(again.body.error, /já foi contestada/);
+
   assert.equal((await absent(s.w5, 'Falta 4')).status, 200);
   assert.equal((await userByEmail('w5@test.dev')).status, 'ATIVO', 'faltas já usadas num bloqueio não voltam a contar');
 
