@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Icon } from '../components/icons';
 import { JornadaBars } from '../components/JornadaBars';
 import { Alert, Loading, PageHeader, HoldButton, useDialog } from '../components/ui';
@@ -25,6 +25,10 @@ export default function Atividade() {
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const [skipBreak, setSkipBreak] = useState(false);
+  // Estrelas ligadas: depois do checkout, vai para a comemoração da fase (tela de estrelas).
+  const navigate = useNavigate();
+  const [gamification, setGamification] = useState(false);
+  useEffect(() => { api<{ gamification?: boolean }>('/config').then((c) => setGamification(!!c.gamification), () => {}); }, []);
   const { confirm } = useDialog();
   const clockOffset = useRef(0);
   const alerted = useRef(false);
@@ -122,6 +126,7 @@ export default function Atividade() {
         const { token } = await api(`/sessions/${id}/token`, { body: {} });
         await api(`/sessions/${id}/events`, { body: { type, token, selfie, ...coords(pos), clientTs: new Date(pos.timestamp).toISOString() } });
         await load();
+        if (type === 'CHECK_OUT' && gamification) navigate('/estrelas');
       } catch (e: any) {
         if (e instanceof ApiError && e.status === 422) setFailure({ type, reason: 'OUTRO', error: e.message, pos });
         throw e;

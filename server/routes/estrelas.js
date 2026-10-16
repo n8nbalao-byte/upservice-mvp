@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { requireRole, workerAllowed } from '../auth.js';
 import { q } from '../db.js';
-import { buildMonth, diaryStars, levelOf } from '../estrelas.js';
+import { buildMonth, diaryReport, diaryStars, levelOf } from '../estrelas.js';
 import { fail } from '../http.js';
 
 const r = Router();
@@ -17,6 +17,7 @@ async function starsOf(userId) {
   const rows = await q(
     `SELECT a.id, j.title, j.starts_at, j.ends_at, u.name AS unit_name, ws.status AS session_status, dc.result,
             (SELECT GROUP_CONCAT(DISTINCT e.validation) FROM presence_events e WHERE e.work_session_id = ws.id) AS validations,
+            (SELECT GROUP_CONCAT(CONCAT(e.type, ':', e.validation) ORDER BY e.occurred_at) FROM presence_events e WHERE e.work_session_id = ws.id) AS steps,
             (SELECT GROUP_CONCAT(o.type) FROM occurrences o WHERE o.application_id = a.id AND o.status <> 'CANCELADA') AS occurrences
      FROM applications a JOIN jobs j ON j.id = a.job_id JOIN units u ON u.id = j.unit_id
      LEFT JOIN work_sessions ws ON ws.application_id = a.id LEFT JOIN daily_confirmations dc ON dc.application_id = a.id
@@ -28,10 +29,12 @@ async function starsOf(userId) {
   // Mês atual e o próximo sempre aparecem (dá para rolar e ver as fases que vêm); os passados, se tiveram diária.
   const byMonth = new Map([[monthOf(now), []], [nextMonth(monthOf(now)), []]]);
   for (const row of rows) {
-    const s = diaryStars({
-      result: row.result, sessionStatus: row.session_status, endsAt: row.ends_at,
-      validations: (row.validations ?? '').split(',').filter(Boolean), occurrences: (row.occurrences ?? '').split(',').filter(Boolean),
-    }, now);
+    const occurrences = (row.occurrences ?? '').split(',').filter(Boolean);
+    const s = diaryStars({ result: row.result, sessionStatus: row.session_status, endsAt: row.ends_at, validations: (row.validations ?? '').split(',').filter(Boolean), occurrences }, now);
+    // Primeiro registro de cada tipo (sem horário): base do resumo que o profissional vê ao tocar no dia.
+    const steps = {};
+    for (const p of (row.steps ?? '').split(',').filter(Boolean)) { const [t, v] = p.split(':'); steps[t] ??= v; }
+    if (s.state === 'feita') s.report = diaryReport({ stars: s.stars, steps, occurrences });
     const m = monthOf(row.starts_at);
     if (!byMonth.has(m)) byMonth.set(m, []);
     byMonth.get(m).push({ id: row.id, title: row.title, unit: row.unit_name, startsAt: row.starts_at, day: Number(dayOf(row.starts_at)), ...s });
