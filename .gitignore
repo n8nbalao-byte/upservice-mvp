@@ -10,3 +10,5 @@ appUpservice/
 
 # Planilhas de trabalho do cliente (não versionar)
 *.xlsx
+# ...exceto a planilha de exemplo usada nos testes (sem ela o CI falha)
+!test/fixtures/*.xlsx
