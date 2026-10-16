@@ -856,3 +856,15 @@ test('perfil de cores: global, só o administrador principal troca', { skip }, a
   const [log] = await q("SELECT COUNT(*) AS n FROM audit_events WHERE action = 'SETTING_THEME'");
   assert.equal(Number(log.n), 2);
 });
+
+test('números públicos do site: só totais, iguais ao banco', { skip }, async () => {
+  const r = await call(null, 'GET', '/api/public/stats');
+  assert.equal(r.status, 200);
+  assert.deepEqual(Object.keys(r.body).sort(), ['atualizadoEm', 'desde', 'diarias', 'lojas', 'profissionais', 'vagasAbertas']);
+  const [db] = await q(`SELECT (SELECT COUNT(*) FROM units WHERE status = 'ATIVA') AS lojas,
+    (SELECT COUNT(*) FROM users WHERE role = 'PROFISSIONAL' AND deleted_at IS NULL AND status <> 'INATIVO') AS profissionais,
+    (SELECT COUNT(*) FROM daily_confirmations WHERE result = 'CONCLUIDA') AS diarias`);
+  assert.deepEqual([r.body.lojas, r.body.profissionais, r.body.diarias], [Number(db.lojas), Number(db.profissionais), Number(db.diarias)]);
+  assert.ok(r.body.lojas > 0 && r.body.diarias > 0, 'os testes anteriores criaram lojas e diárias');
+  assert.match(r.res.headers.get('cache-control'), /max-age=600/);
+});

@@ -20,6 +20,24 @@ r.get('/config', async (req, res) => {
   });
 });
 
+// Números públicos da operação (site institucional): só totais, nenhum dado pessoal. Cache de 10 min.
+const STATS_MS = 10 * 60e3;
+let stats = null;
+r.get('/public/stats', async (req, res) => {
+  if (!stats || Date.now() - stats.at > STATS_MS) {
+    const [row] = await q(
+      `SELECT (SELECT COUNT(*) FROM units WHERE status = 'ATIVA') AS lojas,
+              (SELECT COUNT(*) FROM users WHERE role = 'PROFISSIONAL' AND deleted_at IS NULL AND status <> 'INATIVO') AS profissionais,
+              (SELECT COUNT(*) FROM daily_confirmations WHERE result = 'CONCLUIDA') AS diarias,
+              (SELECT COUNT(*) FROM jobs WHERE status = 'ABERTA' AND starts_at > ?) AS vagasAbertas`,
+      [new Date()],
+    );
+    stats = { at: Date.now(), body: { ...Object.fromEntries(Object.entries(row).map(([k, v]) => [k, Number(v)])), desde: 2016, atualizadoEm: new Date().toISOString() } };
+  }
+  res.set('Cache-Control', 'public, max-age=600');
+  res.json(stats.body);
+});
+
 r.put('/admin/settings/theme', requireOwner, async (req, res) => {
   const theme = String(req.body.theme ?? '');
   if (!THEMES.includes(theme)) fail(400, 'Perfil de cores inválido.');
