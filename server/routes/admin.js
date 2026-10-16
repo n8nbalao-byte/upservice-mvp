@@ -194,6 +194,7 @@ r.delete('/admin/users/:id', requireOwner, async (req, res) => {
       if (f.session_id) await tq("UPDATE work_sessions SET status = 'CANCELADA_ADMINISTRATIVAMENTE' WHERE id = ?", [f.session_id]);
     }
     await tq('DELETE FROM sessions WHERE user_id = ?', [u.id]);
+    await tq('DELETE FROM auth_tokens WHERE user_id = ?', [u.id]);
     files.push(...(await tq('SELECT storage_key FROM worker_documents WHERE user_id = ?', [u.id])).map((d) => d.storage_key));
 
     const [h] = await tq(
@@ -216,7 +217,7 @@ r.delete('/admin/users/:id', requireOwner, async (req, res) => {
       await tq(`UPDATE presence_exceptions SET selfie_key = '', selfie_sha256 = '' WHERE work_session_id IN (SELECT id FROM (SELECT ws.id ${selfies}) t)`, [u.id]);
       await tq('UPDATE unit_managers SET active = 0 WHERE user_id = ?', [u.id]);
       await tq(
-        "UPDATE users SET name = 'Usuário excluído', email = ?, google_sub = NULL, status = 'INATIVO', deleted_at = ? WHERE id = ?",
+        "UPDATE users SET name = 'Usuário excluído', email = ?, google_sub = NULL, password_hash = NULL, status = 'INATIVO', deleted_at = ? WHERE id = ?",
         [`excluido+${u.id}@upservice.invalid`, new Date(), u.id],
       );
       mode = 'ANONIMIZADO';

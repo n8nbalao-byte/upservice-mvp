@@ -29,6 +29,15 @@ export default function Perfil() {
           <label>Perfil de acesso<input value={label(me.user.role)} readOnly aria-readonly /></label>
         </div>
       </section>
+      <section className="card form" aria-label="Senha">
+        <h2>Senha</h2>
+        <p className="muted">Para entrar também com e-mail e senha, crie ou troque a senha pelo link que enviamos para {me.user.email}. Ao salvar a senha nova, você sai de todos os aparelhos.</p>
+        <div>
+          <button type="button" disabled={busy === 'pw'} onClick={() => run('pw', () => api('/auth/password/forgot', { body: { email: me.user.email } }), 'Link enviado. Confira seu e-mail (e o spam).')}>
+            {busy === 'pw' ? 'Enviando…' : 'Enviar link para criar ou trocar a senha'}
+          </button>
+        </div>
+      </section>
       {worker ? (
         <DadosPessoais title="Dados pessoais" />
       ) : (

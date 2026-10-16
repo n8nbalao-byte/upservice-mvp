@@ -8,6 +8,7 @@ import auth from './routes/auth.js';
 import dashboard from './routes/dashboard.js';
 import files from './routes/files.js';
 import jobs from './routes/jobs.js';
+import login from './routes/login.js';
 import penalties from './routes/penalties.js';
 import presence from './routes/presence.js';
 import reports from './routes/reports.js';
@@ -46,7 +47,7 @@ const restrictBlocked = (req, res, next) => {
 
 // Respostas da API nunca ficam em cache (navegador nem CDN da Hostinger): depois de salvar, a tela recarrega dados novos.
 app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-app.use('/api', loadUser, restrictBlocked, auth, worker, jobs, presence, penalties, reports, dashboard, admin, whatsapp, files);
+app.use('/api', loadUser, restrictBlocked, auth, login, worker, jobs, presence, penalties, reports, dashboard, admin, whatsapp, files);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Não encontrado.' }));
 
 app.use(express.static(dist));

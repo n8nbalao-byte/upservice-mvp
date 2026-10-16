@@ -25,6 +25,8 @@ import Minhas from './pages/Minhas';
 import Ocorrencias from './pages/Ocorrencias';
 import Pendencias from './pages/Pendencias';
 import Perfil from './pages/Perfil';
+import QrAprovar from './pages/QrAprovar';
+import RedefinirSenha from './pages/RedefinirSenha';
 import Relatorios from './pages/Relatorios';
 import Vagas from './pages/Vagas';
 
@@ -84,6 +86,8 @@ export default function App() {
   const role = me?.user.role;
   const inbox = useInboxPolling(role === 'GESTOR' || role === 'ADMINISTRADOR');
 
+  // O link do e-mail funciona logado ou não.
+  if (location.pathname === '/redefinir-senha') return <RedefinirSenha />;
   if (me === undefined) return <div className="login-wrap"><Loading /></div>;
   if (!me) return <DialogProvider><Login onLogin={reload} /></DialogProvider>;
 
@@ -110,6 +114,7 @@ export default function App() {
                   <Route path="/atividade/:id" element={<Atividade />} />
                   <Route path="/ocorrencias" element={<Ocorrencias />} />
                   <Route path="/perfil" element={<Perfil />} />
+                  <Route path="/qr/:id" element={<QrAprovar />} />
                   <Route path="*" element={<Navigate to="/minhas" />} />
                 </Routes>
               )
@@ -128,6 +133,7 @@ export default function App() {
                 <Route path="/gestao/relatorios" element={<Relatorios />} />
                 <Route path="/gestao/ajustes" element={<Ajustes />} />
                 <Route path="/perfil" element={<Perfil />} />
+                <Route path="/qr/:id" element={<QrAprovar />} />
                 {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
                 {me.user.isOwner && <Route path="/admin/configuracoes" element={<AdminConfiguracoes />} />}

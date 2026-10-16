@@ -942,3 +942,132 @@ test('números públicos do site: só totais, iguais ao banco', { skip }, async 
   assert.ok(r.body.lojas > 0 && r.body.diarias > 0, 'os testes anteriores criaram lojas e diárias');
   assert.match(r.res.headers.get('cache-control'), /max-age=600/);
 });
+
+test('login por senha, recuperação, QR Code e código por WhatsApp', { skip }, async () => {
+  const { createHash } = await import('node:crypto');
+  const http = await import('node:http');
+  const sha = (v) => createHash('sha256').update(v).digest('hex');
+  const cookieOf = (res, name) => res.headers.getSetCookie().find((c) => c.startsWith(`${name}=`))?.split(';')[0];
+  const waitFor = async (fn) => { for (let i = 0; i < 40 && !fn(); i++) await new Promise((r) => setTimeout(r, 50)); };
+  await q('DELETE FROM rate_limits');
+
+  // Senha: conta só do Google ainda não tem senha; erro igual para e-mail inexistente.
+  const u = await login('senha@test.dev');
+  const uid = (await userByEmail('senha@test.dev')).id;
+  const wrong = await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'qualquer123' });
+  const ghost = await call(null, 'POST', '/api/auth/password', { email: 'ninguem@test.dev', password: 'qualquer123' });
+  assert.deepEqual([wrong.status, ghost.status, wrong.body.error], [401, 401, ghost.body.error]);
+
+  // Esqueci: resposta igual exista ou não a conta; token guardado só como hash, e o anterior é invalidado.
+  const f1 = await call(null, 'POST', '/api/auth/password/forgot', { email: 'SENHA@test.dev ' });
+  const f2 = await call(null, 'POST', '/api/auth/password/forgot', { email: 'ninguem@test.dev' });
+  assert.deepEqual([f1.status, f1.body], [f2.status, f2.body]);
+  await call(null, 'POST', '/api/auth/password/forgot', { email: 'senha@test.dev' });
+  const tokens = await q("SELECT id, used_at FROM auth_tokens WHERE kind = 'RESET' AND user_id = ? ORDER BY created_at", [uid]);
+  assert.equal(tokens.length, 2);
+  assert.ok(tokens[0].used_at, 'pedido novo invalida o link anterior');
+  // O e-mail não sai nos testes: troca o hash do token válido por um conhecido.
+  await q('UPDATE auth_tokens SET token_hash = ? WHERE id = ?', [sha('token-teste'), tokens[1].id]);
+  assert.equal((await call(null, 'POST', '/api/auth/password/reset', { token: 'token-teste', password: 'curta1' })).status, 400, 'senha fraca');
+  assert.equal((await call(null, 'POST', '/api/auth/password/reset', { token: 'outro', password: 'SenhaBoa123' })).status, 400);
+  assert.equal((await call(null, 'POST', '/api/auth/password/reset', { token: 'token-teste', password: 'SenhaBoa123' })).status, 200);
+  assert.equal((await call(null, 'POST', '/api/auth/password/reset', { token: 'token-teste', password: 'OutraSenha123' })).status, 400, 'uso único');
+  assert.equal((await call(u, 'GET', '/api/me')).status, 401, 'trocar a senha encerra as sessões abertas');
+  const [stored] = await q('SELECT password_hash FROM users WHERE id = ?', [uid]);
+  assert.match(stored.password_hash, /^scrypt\$/);
+  assert.ok(!stored.password_hash.includes('SenhaBoa123'));
+  const [exp] = await q("SELECT id FROM auth_tokens WHERE kind = 'RESET' AND user_id = ? ORDER BY created_at DESC LIMIT 1", [uid]);
+  await q('UPDATE auth_tokens SET token_hash = ?, used_at = NULL, expires_at = ? WHERE id = ?', [sha('vencido'), new Date(Date.now() - 1000), exp.id]);
+  assert.equal((await call(null, 'POST', '/api/auth/password/reset', { token: 'vencido', password: 'SenhaBoa123' })).status, 400, 'link vencido');
+
+  const ok = await call(null, 'POST', '/api/auth/password', { email: 'Senha@Test.dev', password: 'SenhaBoa123' });
+  assert.equal(ok.status, 200);
+  const pw = cookieOf(ok.res, 'sid');
+  assert.equal((await call(pw, 'GET', '/api/me')).body.user.email, 'senha@test.dev');
+  await q("UPDATE users SET status = 'INATIVO' WHERE id = ?", [uid]);
+  assert.equal((await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'SenhaBoa123' })).status, 403, 'conta inativa não entra');
+  await q("UPDATE users SET status = 'ATIVO' WHERE id = ?", [uid]);
+  let last;
+  for (let i = 0; i < 10; i++) last = await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'errada123' });
+  assert.equal(last.status, 429, 'limite de tentativas por e-mail');
+  await q('DELETE FROM rate_limits');
+
+  // QR Code: o QR só tem o id; sem sessão no celular não aprova; número errado 3x invalida; a sessão sai uma vez só.
+  const start = await call(null, 'POST', '/api/auth/qr/start');
+  const { id, code } = start.body;
+  const secret = cookieOf(start.res, 'qr_secret');
+  assert.ok(secret && /^\d{2}$/.test(code));
+  assert.equal((await call(null, 'POST', `/api/auth/qr/${id}/approve`, { code })).status, 401);
+  assert.equal((await call(pw, 'GET', `/api/auth/qr/${id}`)).body.code, undefined, 'o celular não recebe o número');
+  assert.deepEqual((await call(secret, 'GET', `/api/auth/qr/${id}/status`)).body, { status: 'AGUARDANDO' });
+  assert.equal((await call('qr_secret=falso', 'GET', `/api/auth/qr/${id}/status`)).status, 404, 'sem o segredo do computador');
+  const bad = code === '99' ? '98' : '99';
+  assert.equal((await call(pw, 'POST', `/api/auth/qr/${id}/approve`, { code: bad })).status, 400);
+  assert.equal((await call(pw, 'POST', `/api/auth/qr/${id}/approve`, { code })).status, 200);
+  const st = await call(secret, 'GET', `/api/auth/qr/${id}/status`);
+  assert.equal(st.body.status, 'CONFIRMADO');
+  const desk = cookieOf(st.res, 'sid');
+  assert.equal(cookieOf(st.res, 'qr_secret'), 'qr_secret=', 'segredo apagado');
+  assert.equal((await call(desk, 'GET', '/api/me')).body.user.email, 'senha@test.dev');
+  assert.deepEqual((await call(secret, 'GET', `/api/auth/qr/${id}/status`)).body, { status: 'ENCERRADO' }, 'uso único');
+
+  const s2 = await call(null, 'POST', '/api/auth/qr/start');
+  const bad2 = s2.body.code === '99' ? '98' : '99';
+  for (let i = 0; i < 3; i++) await call(pw, 'POST', `/api/auth/qr/${s2.body.id}/approve`, { code: bad2 });
+  assert.equal((await call(pw, 'POST', `/api/auth/qr/${s2.body.id}/approve`, { code: s2.body.code })).status, 409, '3 erros invalidam');
+  const s3 = await call(null, 'POST', '/api/auth/qr/start');
+  await q('UPDATE auth_tokens SET expires_at = ? WHERE id = ?', [new Date(Date.now() - 1000), s3.body.id]);
+  assert.equal((await call(pw, 'POST', `/api/auth/qr/${s3.body.id}/approve`, { code: s3.body.code })).status, 409, 'expirado');
+  assert.deepEqual((await call(cookieOf(s3.res, 'qr_secret'), 'GET', `/api/auth/qr/${s3.body.id}/status`)).body, { status: 'EXPIRADO' });
+
+  // WhatsApp: escondido sem configuração; telefone repetido entre contas não recebe; código vale 1x; 5 erros invalidam.
+  assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, false);
+  assert.equal((await call(null, 'POST', '/api/auth/phone/start', { phone: '11999990000' })).status, 503);
+  const sent = [];
+  const mock = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (c) => { b += c; });
+    req.on('end', () => { sent.push({ url: req.url, key: req.headers.apikey, body: JSON.parse(b) }); res.end('{}'); });
+  }).listen(0);
+  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}/`, EVOLUTION_API_KEY: 'chave-teste', EVOLUTION_INSTANCE: 'upservice' });
+  const w2 = (await userByEmail('w2@test.dev')).id;
+  try {
+    assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, true);
+    const dup = await call(null, 'POST', '/api/auth/phone/start', { phone: '(11) 99999-0000' });
+    const none = await call(null, 'POST', '/api/auth/phone/start', { phone: '11900000000' });
+    assert.deepEqual(dup.body, none.body);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(sent.length, 0, 'w1 e w2 têm o mesmo telefone: ninguém recebe');
+    await q("UPDATE worker_profiles SET phone = '11977776666' WHERE user_id = ?", [w2]);
+    await call(null, 'POST', '/api/auth/phone/start', { phone: '+55 11 97777-6666' });
+    await waitFor(() => sent.length);
+    assert.equal(sent.length, 1);
+    assert.deepEqual([sent[0].url, sent[0].key, sent[0].body.number], ['/message/sendText/upservice', 'chave-teste', '5511977776666']);
+    const otp = /(\d{6})/.exec(sent[0].body.text)[1];
+    const [row] = await q("SELECT * FROM auth_tokens WHERE kind = 'OTP' AND target = '11977776666'");
+    assert.ok(!JSON.stringify(row).includes(otp), 'código guardado só como hash');
+    const wrongCode = otp === '000000' ? '111111' : '000000';
+    assert.equal((await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: wrongCode })).status, 401);
+    const v = await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp });
+    assert.equal(v.status, 200);
+    assert.equal((await call(cookieOf(v.res, 'sid'), 'GET', '/api/me')).body.user.email, 'w2@test.dev');
+    assert.equal((await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp })).status, 401, 'uso único');
+
+    const newCode = async (n) => {
+      await call(null, 'POST', '/api/auth/phone/start', { phone: '11977776666' });
+      await waitFor(() => sent.length >= n);
+      const c = /(\d{6})/.exec(sent[n - 1].body.text)[1];
+      return [c, c === '000000' ? '111111' : '000000'];
+    };
+    const [otp2, wrong2] = await newCode(2);
+    for (let i = 0; i < 4; i++) await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: wrong2 });
+    assert.equal((await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp2 })).status, 200, '4 erros ainda permitem');
+    const [otp3, wrong3] = await newCode(3);
+    for (let i = 0; i < 5; i++) await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: wrong3 });
+    assert.equal((await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp3 })).status, 401, '5 erros invalidam');
+  } finally {
+    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
+    mock.close();
+    await q("UPDATE worker_profiles SET phone = '11999990000' WHERE user_id = ?", [w2]);
+  }
+});

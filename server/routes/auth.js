@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { audit } from '../audit.js';
 import { devLoginEnabled, endSession, findOrCreateUser, requireOwner, startSession } from '../auth.js';
 import { q } from '../db.js';
+import { phoneLoginEnabled } from './login.js';
 import { fail, text } from '../http.js';
 
 const r = Router();
@@ -16,6 +17,7 @@ r.get('/config', async (req, res) => {
     devLogin: devLoginEnabled(),
     // WhatsApp oficial da UP Service (o mesmo do site); SUPPORT_WHATSAPP no painel troca o número.
     supportWhatsapp: (process.env.SUPPORT_WHATSAPP || '5511926746277').replace(/\D/g, '') || null,
+    phoneLogin: await phoneLoginEnabled(),
     theme: await currentTheme(),
   });
 });
