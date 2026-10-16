@@ -25,8 +25,11 @@ import Minhas from './pages/Minhas';
 import Ocorrencias from './pages/Ocorrencias';
 import Pendencias from './pages/Pendencias';
 import Perfil from './pages/Perfil';
+import QrAprovar from './pages/QrAprovar';
+import RedefinirSenha from './pages/RedefinirSenha';
 import Relatorios from './pages/Relatorios';
 import Vagas from './pages/Vagas';
+import { ConfirmarWhatsapp } from './components/ConfirmarWhatsapp';
 
 const MeContext = createContext<{ me: Me; reload: () => Promise<void> }>(null!);
 export const useMe = () => useContext(MeContext);
@@ -75,20 +78,28 @@ function useInboxPolling(enabled: boolean) {
 
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
+  const [whatsappRequired, setWhatsappRequired] = useState(false);
+  const [whatsappLater, setWhatsappLater] = useState(false);
   const reload = () => api<Me>('/me').then(setMe, () => setMe(null));
   useEffect(() => {
     reload();
-    api<{ theme: Theme }>('/config').then((c) => applyTheme(c.theme), () => {});
+    api<{ theme: Theme; phoneLogin?: boolean }>('/config').then((c) => { applyTheme(c.theme); setWhatsappRequired(!!c.phoneLogin); }, () => {});
   }, []);
 
   const role = me?.user.role;
   const inbox = useInboxPolling(role === 'GESTOR' || role === 'ADMINISTRADOR');
 
+  // O link do e-mail funciona logado ou não.
+  if (location.pathname === '/redefinir-senha') return <RedefinirSenha />;
   if (me === undefined) return <div className="login-wrap"><Loading /></div>;
   if (!me) return <DialogProvider><Login onLogin={reload} /></DialogProvider>;
 
   const blocked = role === 'PROFISSIONAL' && isBlocked(me.user.status);
   const logout = () => api('/auth/logout', { body: {} }).then(() => setMe(null));
+  // WhatsApp confirmado é obrigatório para todos (menos o bloqueado, em modo restrito). Se o envio falhar, segue por enquanto.
+  if (whatsappRequired && !me.user.whatsapp && !blocked && !whatsappLater) {
+    return <DialogProvider><WhatsappObrigatorio me={me} onDone={reload} onLater={() => setWhatsappLater(true)} onLogout={logout} /></DialogProvider>;
+  }
   return (
     <MeContext.Provider value={{ me, reload }}>
       <InboxContext.Provider value={inbox}>
@@ -110,6 +121,7 @@ export default function App() {
                   <Route path="/atividade/:id" element={<Atividade />} />
                   <Route path="/ocorrencias" element={<Ocorrencias />} />
                   <Route path="/perfil" element={<Perfil />} />
+                  <Route path="/qr/:id" element={<QrAprovar />} />
                   <Route path="*" element={<Navigate to="/minhas" />} />
                 </Routes>
               )
@@ -128,6 +140,7 @@ export default function App() {
                 <Route path="/gestao/relatorios" element={<Relatorios />} />
                 <Route path="/gestao/ajustes" element={<Ajustes />} />
                 <Route path="/perfil" element={<Perfil />} />
+                <Route path="/qr/:id" element={<QrAprovar />} />
                 {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
                 {me.user.isOwner && <Route path="/admin/configuracoes" element={<AdminConfiguracoes />} />}
@@ -139,5 +152,23 @@ export default function App() {
         </DialogProvider>
       </InboxContext.Provider>
     </MeContext.Provider>
+  );
+}
+
+function WhatsappObrigatorio({ me, onDone, onLater, onLogout }: { me: Me; onDone: () => void; onLater: () => void; onLogout: () => void }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="login-wrap">
+      <main className="login card">
+        <img className="logo" src="/logo.png" alt="UP Service Intermediações" />
+        <div className="stack" style={{ textAlign: 'center', gap: 6 }}>
+          <h1 style={{ fontSize: '1.3rem' }}>Confirme seu WhatsApp</h1>
+          <p className="muted">Olá, {me.user.name.split(' ')[0]}. Para usar o app, confirme o seu número de WhatsApp: é por ele que avisamos sobre diárias e que você pode entrar com um código.</p>
+        </div>
+        <ConfirmarWhatsapp initial={me.profile?.phone ?? ''} onDone={onDone} onSendFailed={() => setFailed(true)} />
+        {failed && <button type="button" onClick={onLater}>Continuar sem confirmar por enquanto</button>}
+        <button type="button" className="ghost" onClick={onLogout}>Sair</button>
+      </main>
+    </div>
   );
 }

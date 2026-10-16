@@ -1,5 +1,6 @@
-import { type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useMe } from '../App';
+import { ConfirmarWhatsapp } from '../components/ConfirmarWhatsapp';
 import { DadosPessoais } from '../components/DadosPessoais';
 import { PageHeader, useAction } from '../components/ui';
 import { api, label } from '../lib/api';
@@ -12,6 +13,8 @@ export default function Perfil() {
   const { me, reload } = useMe();
   const { busy, run } = useAction();
   const worker = me.user.role === 'PROFISSIONAL';
+  const [changing, setChanging] = useState(false);
+  const fmtPhone = (d: string) => d.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3');
 
   async function saveName(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -27,6 +30,26 @@ export default function Perfil() {
         <div className="cols">
           <label>E-mail<input value={me.user.email} readOnly aria-readonly /><span className="hint">Vem da sua conta Google; não pode ser alterado aqui</span></label>
           <label>Perfil de acesso<input value={label(me.user.role)} readOnly aria-readonly /></label>
+        </div>
+      </section>
+      <section className="card form" aria-label="WhatsApp">
+        <h2>WhatsApp</h2>
+        {me.user.whatsapp && !changing ? (
+          <div className="row wrap between">
+            <p>Confirmado: <strong>{fmtPhone(me.user.whatsapp)}</strong>. Use este número para entrar com código e receber avisos.</p>
+            <button type="button" onClick={() => setChanging(true)}>Trocar número</button>
+          </div>
+        ) : (
+          <ConfirmarWhatsapp initial={me.profile?.phone ?? ''} onDone={async () => { setChanging(false); await reload(); }} />
+        )}
+      </section>
+      <section className="card form" aria-label="Senha">
+        <h2>Senha</h2>
+        <p className="muted">Para entrar também com e-mail e senha, crie ou troque a senha pelo link que enviamos para {me.user.email}. Ao salvar a senha nova, você sai de todos os aparelhos.</p>
+        <div>
+          <button type="button" disabled={busy === 'pw'} onClick={() => run('pw', () => api('/auth/password/forgot', { body: { email: me.user.email } }), 'Link enviado. Confira seu e-mail (e o spam).')}>
+            {busy === 'pw' ? 'Enviando…' : 'Enviar link para criar ou trocar a senha'}
+          </button>
         </div>
       </section>
       {worker ? (

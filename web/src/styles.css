@@ -348,6 +348,62 @@ dialog.dialog .counter { justify-self: end; color: var(--muted); font-size: 0.78
 .wa-code { margin: 0; font-size: 2rem; font-weight: 800; letter-spacing: 0.15em; font-variant-numeric: tabular-nums; }
 .company-line { text-align: center; font-size: 0.75rem; color: var(--muted); }
 .install-steps { display: grid; gap: 10px; margin: 0; padding: 16px 16px 16px 36px; border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--line); }
+
+/* Login: no celular, cabeçalho compacto e o formulário logo abaixo; a partir de 900 px, tela dividida com carrossel e curva. */
+.auth { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-rows: auto 1fr; background: var(--surface); }
+.auth input { font-size: 16px; } /* 16 px: o iPhone não dá zoom ao focar */
+.auth-visual { position: relative; overflow: hidden; color: #fff; background: linear-gradient(135deg, var(--graphite) 0%, var(--nav-active) 60%, var(--accent-hover) 100%); }
+.auth-visual img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.2s ease; }
+.auth-visual img.on { opacity: 1; }
+.auth-visual-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.55) 100%); }
+.auth-visual-body { position: relative; display: grid; gap: 6px; padding: 22px 16px 40px; }
+.auth-visual h2 { color: #fff; font-size: 1.15rem; font-weight: 700; max-width: 28ch; }
+.auth-kicker { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85; }
+.auth-quote, .auth-dots, .auth-note, .auth-curve { display: none; }
+.auth-panel { position: relative; margin-top: -22px; border-radius: 22px 22px 0 0; background: var(--surface); padding: 24px 16px 32px; display: grid; justify-items: center; align-content: start; }
+.auth-box { width: min(420px, 100%); display: grid; gap: 18px; }
+.auth-box h1 { font-size: 1.6rem; }
+.auth-logo { display: block; width: 130px; }
+@media (max-height: 500px) { .auth-visual h2 { display: none; } .auth-logo { width: 104px; } }
+.auth-tabs { display: flex; gap: 4px; padding: 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.auth-tabs button { flex: 1; min-height: 42px; border: 0; background: transparent; color: var(--muted); border-radius: 10px; }
+.auth-tabs button:hover { background: transparent; color: var(--ink); }
+.auth-tabs button[aria-selected='true'] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.auth-pass { display: flex; gap: 6px; }
+.auth-pass input { flex: 1; min-width: 0; }
+.auth-small { font-size: 0.85rem; color: var(--muted); }
+.auth-or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 0.85rem; }
+.auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.auth-google { display: flex; justify-content: center; min-height: 44px; }
+.auth-dev { padding-top: 14px; border-top: 1px dashed var(--line-strong); }
+.auth-qr { display: grid; gap: 14px; justify-items: center; text-align: center; }
+.auth-steps { justify-self: stretch; margin: 0; padding-left: 20px; text-align: left; color: var(--ink-2); font-size: 0.9rem; }
+.auth-qr-box { width: 216px; aspect-ratio: 1; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: #fff; }
+.auth-qr-box svg { display: block; width: 100%; height: 100%; }
+.auth-qr-box.off { opacity: 0.25; filter: blur(2px); }
+.auth-qr-code { margin: 0; font-size: 2.4rem; font-weight: 800; letter-spacing: 0.2em; font-variant-numeric: tabular-nums; color: var(--ink); }
+@media (min-width: 900px) {
+  .auth { grid-template-rows: none; grid-template-columns: minmax(0, 1.15fr) minmax(460px, 1fr); }
+  .auth-visual { position: sticky; top: 0; align-self: start; height: 100vh; height: 100dvh; }
+  .auth-logo { width: 170px; }
+  .auth-visual-body { height: 100%; align-content: end; gap: 20px; padding: 56px 120px 56px 56px; max-width: 720px; }
+  .auth-visual h2 { font-size: 2.1rem; line-height: 1.15; }
+  .auth-quote { display: grid; gap: 10px; margin: 8px 0 0; animation: auth-in 0.6s ease; }
+  .auth-quote blockquote { margin: 0; font-size: 1.2rem; line-height: 1.45; }
+  .auth-quote figcaption { font-size: 0.9rem; opacity: 0.9; }
+  .auth-dots { display: flex; gap: 8px; }
+  .auth-dots button { min-height: 0; width: 10px; height: 10px; padding: 0; border: 0; border-radius: 99px; background: rgba(255, 255, 255, 0.45); transition: width 0.3s; }
+  .auth-dots button:hover { background: rgba(255, 255, 255, 0.75); }
+  .auth-dots button[aria-current='true'] { width: 28px; background: #fff; }
+  .auth-note { display: block; font-size: 0.75rem; opacity: 0.7; }
+  .auth-curve { display: block; position: absolute; top: 0; right: -1px; width: 90px; height: 100%; fill: var(--surface); }
+  .auth-panel { margin: 0; border-radius: 0; padding: 48px 40px; align-content: center; }
+}
+@keyframes auth-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .auth-visual img, .auth-dots button { transition: none; }
+  .auth-quote { animation: none; }
+}
 .pending-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; }
 .pending-item:last-child { border-bottom: 0; }
 .pending-item:hover { background: var(--surface-2); }

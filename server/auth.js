@@ -100,7 +100,7 @@ export const unitScope = (user, col) => (user.role === 'ADMINISTRADOR'
   ? ['1 = 1', []]
   : [`${col} IN (SELECT unit_id FROM unit_managers WHERE user_id = ? AND active = 1)`, [user.id]]);
 
-export const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, isOwner: !!u.is_owner });
+export const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, isOwner: !!u.is_owner, whatsapp: u.whatsapp_verified_at ? u.whatsapp : null });
 
 /**
  * Administrador principal: papel ADMINISTRADOR + users.is_owner = 1. A flag só é gravada por SSH para a conta com
