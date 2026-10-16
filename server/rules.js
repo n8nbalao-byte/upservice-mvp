@@ -10,6 +10,14 @@ export function distanceMeters(a, b) {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h));
 }
 
+/**
+ * Ordem da lista de vagas do profissional: primeiro as lojas mais perto (por faixa de distância) e, dentro da
+ * mesma faixa, a vaga que começa antes (check-in mais cedo). Sem localização, só pelo horário.
+ */
+const DISTANCE_BANDS_M = [2000, 5000, 10000, 20000, 50000];
+export const distanceBand = (m) => (m == null ? 0 : DISTANCE_BANDS_M.findIndex((max) => m <= max) + 1 || DISTANCE_BANDS_M.length + 1);
+export const byNearThenSoon = (a, b) => distanceBand(a.distance_m) - distanceBand(b.distance_m) || new Date(a.starts_at) - new Date(b.starts_at);
+
 export const CHECKIN_EARLY_MS = 15 * 60 * 1000;
 export const CHECKIN_LATE_MS = 15 * 60 * 1000;
 

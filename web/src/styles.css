@@ -336,6 +336,11 @@ dialog.dialog .counter { justify-self: end; color: var(--muted); font-size: 0.78
 .status-hero .muted { color: #c3c8cf; }
 .status-hero .state { font-size: 1.4rem; font-weight: 700; }
 .money { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Lista de vagas: Hoje/Amanhã ao lado do título e quanto falta para o check-in (destaque nas próximas 3 horas). */
+.when-badge { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 99px; font-size: 0.72rem; font-weight: 700; vertical-align: 3px; background: var(--info-soft); color: var(--info); }
+.when-badge.today { background: var(--warning-soft); color: #8a5300; }
+.checkin-in { display: flex; align-items: center; gap: 6px; font-size: 0.88rem; font-weight: 600; color: var(--ink-2); }
+.checkin-in.soon { color: #8a5300; }
 .steps { display: flex; gap: 8px; }
 .steps .step { flex: 1; display: grid; gap: 6px; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
 .steps .step::before { content: ''; height: 4px; border-radius: 99px; background: #e6ecef; }

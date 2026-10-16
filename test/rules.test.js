@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkinWindowError, csvCell, distanceMeters, exceptionWindowError, isStrike, isValidCpf, nextState, transitionError, workedTime } from '../server/rules.js';
+import { byNearThenSoon, checkinWindowError, csvCell, distanceBand, distanceMeters, exceptionWindowError, isStrike, isValidCpf, nextState, transitionError, workedTime } from '../server/rules.js';
 
 test('distância: 0,0027° de latitude ≈ 300 m', () => {
   const d = distanceMeters({ lat: -23.55, lng: -46.63 }, { lat: -23.5527, lng: -46.63 });
@@ -92,4 +92,17 @@ test('diária automática só quando as horas cobrem a jornada (30 min de folga)
   assert.equal(coversShift(436, job), true, 'dentro da folga');
   assert.equal(coversShift(434, job), false, 'saiu mais cedo');
   assert.equal(coversShift(2, job), false, 'check-in e checkout em seguida');
+});
+
+test('lista de vagas: primeiro as mais perto (por faixa) e, na mesma faixa, a que começa antes', () => {
+  const h = (n) => new Date(Date.UTC(2026, 9, 20, n)).toISOString();
+  const jobs = [
+    { id: 'perto-depois', distance_m: 1200, starts_at: h(20) },
+    { id: 'perto-antes', distance_m: 1900, starts_at: h(9) },
+    { id: 'longe-hoje', distance_m: 30000, starts_at: h(8) },
+    { id: 'medio', distance_m: 4000, starts_at: h(7) },
+    { id: 'muito-longe', distance_m: 90000, starts_at: h(6) },
+  ];
+  assert.deepEqual(jobs.sort(byNearThenSoon).map((j) => j.id), ['perto-antes', 'perto-depois', 'medio', 'longe-hoje', 'muito-longe']);
+  assert.deepEqual([distanceBand(2000), distanceBand(2001), distanceBand(50000), distanceBand(50001), distanceBand(null)], [1, 2, 5, 6, 0]);
 });
