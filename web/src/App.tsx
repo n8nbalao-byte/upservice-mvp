@@ -165,8 +165,8 @@ function WhatsappObrigatorio({ me, onDone, onLater, onLogout }: { me: Me; onDone
           <h1 style={{ fontSize: '1.3rem' }}>Confirme seu WhatsApp</h1>
           <p className="muted">Olá, {me.user.name.split(' ')[0]}. Para usar o app, confirme o seu número de WhatsApp: é por ele que avisamos sobre diárias e que você pode entrar com um código.</p>
         </div>
-        <ConfirmarWhatsapp initial={me.profile?.phone ?? ''} onDone={onDone} onSendFailed={() => setFailed(true)} />
-        {failed && <button type="button" onClick={onLater}>Continuar sem confirmar por enquanto</button>}
+        <ConfirmarWhatsapp initial={me.profile?.phone ?? ''} onDone={onDone} onSent={() => setFailed(true)} />
+        {failed && <button type="button" className="ghost" onClick={onLater}>Não recebi o código — continuar por enquanto</button>}
         <button type="button" className="ghost" onClick={onLogout}>Sair</button>
       </main>
     </div>

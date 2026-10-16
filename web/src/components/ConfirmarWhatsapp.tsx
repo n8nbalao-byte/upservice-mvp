@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
-import { api, ApiError } from '../lib/api';
+import { api } from '../lib/api';
 import { Alert } from './ui';
 
 /** Confirmar o WhatsApp da conta: número → código de 6 dígitos enviado pelo WhatsApp oficial da UP Service. */
-export function ConfirmarWhatsapp({ initial = '', onDone, onSendFailed }: { initial?: string; onDone: () => void; onSendFailed?: () => void }) {
+export function ConfirmarWhatsapp({ initial = '', onDone, onSent }: { initial?: string; onDone: () => void; onSent?: () => void }) {
   const [phone, setPhone] = useState(initial);
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -16,9 +16,9 @@ export function ConfirmarWhatsapp({ initial = '', onDone, onSendFailed }: { init
     try {
       await api('/me/whatsapp/start', { body: { phone } });
       setSent(true);
+      onSent?.();
     } catch (err) {
       setError((err as Error).message);
-      if (err instanceof ApiError && (err.status === 502 || err.status === 503)) onSendFailed?.();
     }
     setBusy(false);
   }
@@ -41,7 +41,7 @@ export function ConfirmarWhatsapp({ initial = '', onDone, onSendFailed }: { init
         </form>
       ) : (
         <form className="form" onSubmit={verify}>
-          <Alert kind="info">Enviamos um código pelo WhatsApp da UP Service, (11) 92674-6277, para o número {phone}.</Alert>
+          <Alert kind="info">O código chega pelo WhatsApp da UP Service, (11) 92674-6277, no número {phone}. Pode levar alguns segundos.</Alert>
           <label>Código de 6 dígitos<input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required autoFocus /></label>
           <button className="primary big" disabled={busy}>{busy ? 'Conferindo…' : 'Confirmar'}</button>
           <div className="row wrap">

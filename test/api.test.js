@@ -963,6 +963,7 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
   const f2 = await call(null, 'POST', '/api/auth/password/forgot', { email: 'ninguem@test.dev' });
   assert.deepEqual([f1.status, f1.body], [f2.status, f2.body]);
   await call(null, 'POST', '/api/auth/password/forgot', { email: 'senha@test.dev' });
+  await new Promise((r) => setTimeout(r, 200)); // o pedido roda depois da resposta
   const tokens = await q("SELECT id, used_at FROM auth_tokens WHERE kind = 'RESET' AND user_id = ? ORDER BY created_at", [uid]);
   assert.equal(tokens.length, 2);
   assert.ok(tokens[0].used_at, 'pedido novo invalida o link anterior');
@@ -991,7 +992,14 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
   for (let i = 0; i < 12; i++) assert.equal((await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'SenhaBoa123' })).status, 200);
   await q('DELETE FROM rate_limits');
   let last;
-  for (let i = 0; i < 11; i++) last = await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'errada123' });
+  // Pedidos simultâneos não furam o limite: de 15 erros ao mesmo tempo, só 10 passam pela conferência.
+  const burst = await Promise.all(Array.from({ length: 15 }, () => call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'errada123' })));
+  const conferidas = burst.filter((b) => b.status === 401).length;
+  assert.ok(conferidas <= 10, `no máximo 10 conferências, vieram ${conferidas}`);
+  assert.equal(conferidas + burst.filter((b) => b.status === 429).length, 15);
+  // Recusas devolvem a reserva: completando até 10 erros, um por vez, o próximo é recusado.
+  for (let i = conferidas; i < 10; i++) assert.equal((await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'errada123' })).status, 401);
+  last = await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'errada123' });
   assert.equal(last.status, 429, 'limite de erros por e-mail');
   await q('DELETE FROM rate_limits');
 
@@ -1036,6 +1044,7 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
   await q('INSERT INTO rate_limits (k, window_start, n) VALUES (?, ?, 30)', [sha('pw:erro:dia:senha@test.dev'), new Date()]);
   assert.equal((await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'SenhaBoa123' })).status, 429, '30 erros no dia: senha travada');
   await call(null, 'POST', '/api/auth/password/forgot', { email: 'senha@test.dev' });
+  await new Promise((r) => setTimeout(r, 200)); // o pedido roda depois da resposta
   const [rt] = await q("SELECT id FROM auth_tokens WHERE kind = 'RESET' AND user_id = ? ORDER BY created_at DESC LIMIT 1", [uid]);
   await q('UPDATE auth_tokens SET token_hash = ? WHERE id = ?', [sha('token-dois'), rt.id]);
   assert.equal((await call(null, 'POST', '/api/auth/password/reset', { token: 'token-dois', password: 'SenhaNova456' })).status, 200);
@@ -1055,6 +1064,7 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
   const waA = await login('wa-a@test.dev');
   const waB = await login('wa-b@test.dev');
   const w2 = (await userByEmail('wa-a@test.dev')).id;
+  const waitSent = async (n) => { for (let i = 0; i < 40 && sent.length < n; i++) await new Promise((r) => setTimeout(r, 50)); };
   const lastCode = () => /(\d{6})/.exec(sent.at(-1).body.text)[1];
   try {
     assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, true);
@@ -1068,6 +1078,7 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
     // Confirmar o número na conta (logado).
     assert.equal((await call(null, 'POST', '/api/me/whatsapp/start', { phone: '11977776666' })).status, 401);
     assert.equal((await call(waA, 'POST', '/api/me/whatsapp/start', { phone: '+55 11 97777-6666' })).status, 200);
+    await waitSent(1);
     assert.deepEqual([sent.at(-1).url, sent.at(-1).key, sent.at(-1).body.number], ['/message/sendText/upservice', 'chave-teste', '5511977776666']);
     assert.equal((await call(waA, 'POST', '/api/me/whatsapp/verify', { code: lastCode() === '000000' ? '111111' : '000000' })).status, 400);
     assert.equal((await call(waA, 'POST', '/api/me/whatsapp/verify', { code: lastCode() })).status, 200);
@@ -1082,8 +1093,7 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
     assert.equal(sent.length, before, 'número de outra conta não recebe código');
 
     // Login por código, preso ao aparelho que pediu (cookie otp_device).
-    const waitFor = async (n) => { for (let i = 0; i < 40 && sent.length < n; i++) await new Promise((r) => setTimeout(r, 50)); };
-    const ask = async (n) => { const st = await call(null, 'POST', '/api/auth/phone/start', { phone: '11977776666' }); await waitFor(n); return [cookieOf(st.res, 'otp_device'), lastCode()]; };
+    const ask = async (n) => { const st = await call(null, 'POST', '/api/auth/phone/start', { phone: '11977776666' }); await waitSent(n); return [cookieOf(st.res, 'otp_device'), lastCode()]; };
     const [dev1, otp1] = await ask(2);
     assert.ok(dev1);
     // Outro aparelho (sem o cookie) não confere, não chuta e não invalida o código de quem pediu.
