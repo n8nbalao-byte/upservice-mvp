@@ -36,12 +36,14 @@ export default function Ocorrencias() {
   }
 
   if (!data) return error ? <Alert kind="danger">{error}</Alert> : <Loading />;
-  const open = (key: 'penalty_id' | 'occurrence_id', id: string) => data.contestations.find((c) => c[key] === id && c.status === 'ABERTA');
+  // Uma contestação por item: a mais recente (em análise ou já decidida) substitui o botão de contestar.
+  const open = (key: 'penalty_id' | 'occurrence_id', id: string) => data.contestations.find((c) => c[key] === id);
+  const contested = (c: any) => (c.status === 'ABERTA' ? `Contestação em análise · ${c.protocol}` : `Já contestada · ${label(c.status)} · ${c.protocol}`);
   const active = data.penalties.find((p) => p.status === 'ATIVA');
 
   return (
     <div className="page" style={{ maxWidth: 860 }}>
-      <PageHeader title="Ocorrências" description="Suas ocorrências, bloqueios e contestações. Você pode contestar qualquer punição." />
+      <PageHeader title="Ocorrências" description="Suas ocorrências, bloqueios e contestações. Cada punição ou ocorrência pode ser contestada uma vez." />
       {isBlocked(me.user.status) && active && (
         <Alert kind="danger">
           <b>Sua conta está bloqueada {active.ends_at ? `até ${fmtDateTime(active.ends_at)}` : 'por tempo indeterminado'}.</b>{' '}
@@ -74,7 +76,7 @@ export default function Ocorrencias() {
             <p>Motivo: {p.reason}</p>
             <p className="muted">De {fmtDateTime(p.starts_at)} {p.ends_at ? `até ${fmtDateTime(p.ends_at)}` : '(sem prazo)'}{p.end_reason && ` · ${p.end_reason}`}</p>
             {p.status === 'ATIVA' && (open('penalty_id', p.id)
-              ? <StatusBadge tone="info">Contestação em análise · {open('penalty_id', p.id).protocol}</StatusBadge>
+              ? <StatusBadge tone="info">{contested(open('penalty_id', p.id))}</StatusBadge>
               : <div><button className="primary" onClick={() => setTarget({ penaltyId: p.id, title: label(p.type) })}>Contestar bloqueio</button></div>)}
           </article>
         ))}
@@ -88,7 +90,7 @@ export default function Ocorrencias() {
             <p className="muted">{o.unit_name} · {fmtDateTime(o.created_at)}</p>
             {o.description && <p>{o.description}</p>}
             {o.status === 'CONFIRMADA' && (open('occurrence_id', o.id)
-              ? <StatusBadge tone="info">Contestação em análise · {open('occurrence_id', o.id).protocol}</StatusBadge>
+              ? <StatusBadge tone="info">{contested(open('occurrence_id', o.id))}</StatusBadge>
               : <div><button className="sm" onClick={() => setTarget({ occurrenceId: o.id, title: label(o.type) })}>Contestar ocorrência</button></div>)}
           </article>
         ))}

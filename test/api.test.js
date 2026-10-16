@@ -381,6 +381,15 @@ test('contestação aceita reativa; nova falta sozinha não bloqueia; bloqueio v
   assert.equal((await call(s.gestor, 'POST', `/api/manage/contestations/${ct.id}/decide`, { decision: 'CANCELADA', reason: 'Atestado médico apresentado' })).status, 200);
   assert.equal((await userByEmail('w5@test.dev')).status, 'ATIVO');
 
+  // Uma contestação por ocorrência: decidida (mantida), não se contesta de novo.
+  const [occ] = await q("SELECT id FROM occurrences WHERE user_id = ? AND status = 'CONFIRMADA' LIMIT 1", [s.w5Id]);
+  assert.equal((await call(s.w5, 'POST', '/api/me/contestations', { occurrenceId: occ.id, message: 'Eu estava presente na loja nesse dia' })).status, 201);
+  const [ct2] = await q('SELECT id FROM contestations WHERE occurrence_id = ?', [occ.id]);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/contestations/${ct2.id}/decide`, { decision: 'MANTIDA', reason: 'Registro confirmado pela loja' })).status, 200);
+  const again = await call(s.w5, 'POST', '/api/me/contestations', { occurrenceId: occ.id, message: 'Quero contestar mais uma vez' });
+  assert.equal(again.status, 409);
+  assert.match(again.body.error, /já foi contestada/);
+
   assert.equal((await absent(s.w5, 'Falta 4')).status, 200);
   assert.equal((await userByEmail('w5@test.dev')).status, 'ATIVO', 'faltas já usadas num bloqueio não voltam a contar');
 
@@ -1172,4 +1181,24 @@ test('reserva chamada recebe WhatsApp (se tiver número confirmado), só depois 
     for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
     mock.close();
   }
+});
+
+test('estrelas (prévia): profissional só vê com o interruptor ligado; principal liga; gestor confere a ficha', { skip }, async () => {
+  assert.equal((await call(null, 'GET', '/api/config')).body.gamification, false);
+  assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).status, 403, 'desligado: profissional não vê');
+  assert.equal((await call(s.gestor, 'PUT', '/api/admin/settings/gamification', { enabled: true })).status, 403);
+  await q("UPDATE users SET is_owner = 1 WHERE email = 'admin@test.dev'");
+  const w1 = (await userByEmail('w1@test.dev')).id;
+  const preview = await call(s.admin, 'GET', `/api/manage/workers/${w1}/estrelas`);
+  assert.equal(preview.status, 200, 'admin confere mesmo desligado');
+  assert.ok(Array.isArray(preview.body.months) && preview.body.months.length >= 1);
+  assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/gamification', { enabled: true })).status, 200);
+  assert.equal((await call(null, 'GET', '/api/config')).body.gamification, true);
+  const mine = await call(s.w1, 'GET', '/api/me/estrelas');
+  assert.equal(mine.status, 200);
+  assert.deepEqual(mine.body.total, preview.body.total);
+  assert.ok(mine.body.months.some((m) => m.month === mine.body.current), 'mês atual sempre aparece');
+  for (const m of mine.body.months) for (const d of m.diaries) assert.ok(d.stars === null || (d.stars >= 0 && d.stars <= 3));
+  assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/gamification', { enabled: false })).status, 200);
+  assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).status, 403);
 });
