@@ -764,3 +764,80 @@ test('calendário: período, escopo do gestor e contagens', { skip }, async () =
   assert.equal((await g(s.gestor, `from=${day(0)}&to=${day(50)}`)).status, 400, 'mais de 42 dias');
   assert.equal((await g(s.gestor, 'from=ontem&to=hoje')).status, 400);
 });
+
+test('administrador principal: só ele exclui usuários e dá/tira papel de admin; ninguém altera o principal', { skip }, async () => {
+  const a2 = await login('admin2@test.dev');
+  await q("UPDATE users SET role = 'ADMINISTRADOR' WHERE email = 'admin2@test.dev'");
+  const novo = await login('semhistorico@test.dev');
+  const novoId = (await userByEmail('semhistorico@test.dev')).id;
+  assert.equal((await call(a2, 'DELETE', `/api/admin/users/${novoId}`, { reason: 'Conta de teste duplicada' })).status, 403, 'admin comum não exclui');
+
+  await q("UPDATE users SET is_owner = 1 WHERE email = 'admin@test.dev'");
+  const owner = (await call(s.admin, 'GET', '/api/me')).body.user;
+  assert.equal(owner.isOwner, true);
+  assert.equal((await call(s.admin, 'DELETE', `/api/admin/users/${owner.id}`, { reason: 'Tentando excluir a si mesmo' })).status, 403);
+  assert.equal((await call(s.admin, 'DELETE', `/api/admin/users/${novoId}`, {})).status, 400, 'justificativa obrigatória');
+
+  // Sem histórico: apagado por completo.
+  const gone = await call(s.admin, 'DELETE', `/api/admin/users/${novoId}`, { reason: 'Conta de teste duplicada' });
+  assert.equal(gone.body.mode, 'APAGADO');
+  assert.equal(await userByEmail('semhistorico@test.dev'), undefined);
+  assert.equal((await call(novo, 'GET', '/api/me')).status, 401, 'sessão revogada');
+
+  // Com histórico: anonimizado; vaga futura liberada e a reserva é chamada.
+  const h = await login('comhistorico@test.dev');
+  const r = await login('reserva-del@test.dev');
+  await completeWorker(h, '274.185.963-91');
+  await completeWorker(r, '396.174.258-82');
+  const starts = new Date(Date.now() + 3 * 86400e3);
+  const job = (await call(s.gestor, 'POST', '/api/manage/jobs', {
+    unitId: s.unitA, title: 'Exclusão', startsAt: starts, endsAt: new Date(starts.getTime() + 4 * 3600e3), positions: 1, dailyValue: 100, breakCount: 0, breakMinutes: 15, publish: true,
+  })).body.id;
+  assert.equal((await call(h, 'POST', `/api/jobs/${job}/apply`, {})).body.status, 'APROVADA');
+  const reserve = (await call(r, 'POST', `/api/jobs/${job}/apply`, {})).body;
+  assert.equal(reserve.status, 'RESERVA');
+  const hId = (await userByEmail('comhistorico@test.dev')).id;
+  const del = await call(s.admin, 'DELETE', `/api/admin/users/${hId}`, { reason: 'Pedido do titular (LGPD)' });
+  assert.deepEqual([del.body.mode, del.body.released], ['ANONIMIZADO', 1]);
+  const [anon] = await q('SELECT name, email, google_sub, status, deleted_at FROM users WHERE id = ?', [hId]);
+  assert.equal(anon.name, 'Usuário excluído');
+  assert.match(anon.email, /^excluido\+.+@upservice\.invalid$/);
+  assert.equal(anon.google_sub, null);
+  assert.equal(anon.status, 'INATIVO');
+  assert.ok(anon.deleted_at);
+  for (const t of ['worker_profiles', 'worker_documents', 'sessions']) {
+    assert.equal(Number((await q(`SELECT COUNT(*) AS n FROM ${t} WHERE user_id = ?`, [hId]))[0].n), 0, `${t} apagado`);
+  }
+  assert.equal((await q('SELECT status FROM applications WHERE id = ?', [reserve.id]))[0].status, 'APROVADA', 'reserva promovida');
+  assert.equal((await call(h, 'GET', '/api/me')).status, 401);
+  assert.ok(!(await call(s.admin, 'GET', '/api/admin/users')).body.some((u) => u.id === hId), 'excluído some da lista');
+  const [log] = await q("SELECT before_json, after_json FROM audit_events WHERE action = 'USER_DELETE' AND entity_id = ?", [hId]);
+  assert.ok(!/comhistorico|274\.185/.test(log.before_json + log.after_json), 'auditoria sem dados pessoais');
+
+  // Papel de admin: só o principal concede; ninguém altera o principal.
+  const g = await login('promover@test.dev');
+  const gId = (await userByEmail('promover@test.dev')).id;
+  assert.equal((await call(a2, 'PATCH', `/api/admin/users/${gId}`, { role: 'ADMINISTRADOR', reason: 'Novo administrador da equipe' })).status, 403);
+  assert.equal((await call(s.admin, 'PATCH', `/api/admin/users/${gId}`, { role: 'ADMINISTRADOR', reason: 'Novo administrador da equipe' })).status, 200);
+  assert.equal((await call(a2, 'PATCH', `/api/admin/users/${owner.id}`, { status: 'INATIVO', reason: 'Tentando bloquear o principal' })).status, 403);
+  assert.equal((await call(a2, 'PATCH', `/api/admin/users/${gId}`, { status: 'INATIVO', reason: 'Tirando o acesso de um colega' })).status, 403, 'admin comum não mexe em outro admin');
+  assert.equal((await call(a2, 'PATCH', `/api/admin/users/${gId}`, { role: 'GESTOR', reason: 'Rebaixando um colega admin' })).status, 403);
+  assert.equal((await call(g, 'GET', '/api/me')).body.user.isOwner, false);
+});
+
+test('perfil: CPF e e-mail não mudam; gestor e admin editam só o nome', { skip }, async () => {
+  const c = await login('perfil@test.dev');
+  await completeWorker(c, '418.529.637-19');
+  const base = { name: 'Fulano de Tal', rg: '123456789', phone: '11999990000', address: 'Rua A, 1', city: 'São Paulo', uf: 'SP', emergencyName: 'Ciclano', emergencyPhone: '11988880000' };
+  assert.equal((await call(c, 'PUT', '/api/me/profile', { ...base, cpf: '529.982.247-25' })).status, 400, 'CPF não muda');
+  const ok = await call(c, 'PUT', '/api/me/profile', { ...base, cpf: '418.529.637-19', city: 'Guarulhos', email: 'outro@x.com' });
+  assert.equal(ok.status, 200);
+  const me = (await call(c, 'GET', '/api/me')).body;
+  assert.equal(me.user.email, 'perfil@test.dev', 'e-mail ignorado');
+  assert.equal(me.profile.city, 'Guarulhos');
+  assert.equal((await call(c, 'PUT', '/api/me/name', { name: 'Outro Nome' })).status, 403, 'profissional usa o perfil completo');
+  assert.equal((await call(s.gestor, 'PUT', '/api/me/name', { name: 'Gestor da Loja A', email: 'x@y.com' })).status, 200);
+  const g = (await call(s.gestor, 'GET', '/api/me')).body.user;
+  assert.deepEqual([g.name, g.email], ['Gestor da Loja A', 'gestor@test.dev']);
+  assert.equal((await call(s.gestor, 'PUT', '/api/me/name', { name: 'x' })).status, 400);
+});

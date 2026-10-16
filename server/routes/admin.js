@@ -2,12 +2,14 @@
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { audit } from '../audit.js';
-import { canLogin, publicUser, requireRole, workerAllowed } from '../auth.js';
+import { canLogin, publicUser, requireOwner, requireRole, workerAllowed } from '../auth.js';
 import { q, tx } from '../db.js';
 import { geocode, lookupCep } from '../geo.js';
 import { applyBlock, ctx, endBlock, flush } from '../penalties.js';
 import { BLOCK_DAYS } from '../rules.js';
 import { fail, int, num, requireReason, text } from '../http.js';
+import { promoteFromWaitlist } from '../staffing.js';
+import { removeFile } from '../storage.js';
 import { profileState } from './worker.js';
 
 const r = Router();
@@ -120,7 +122,7 @@ r.post('/units/:id/status', ADMIN, async (req, res) => {
 
 r.get('/admin/users', ADMIN, async (req, res) => {
   const term = `%${String(req.query.q ?? '').trim()}%`;
-  const users = await q('SELECT * FROM users WHERE name LIKE ? OR email LIKE ? ORDER BY role DESC, name LIMIT 100', [term, term]);
+  const users = await q('SELECT * FROM users WHERE deleted_at IS NULL AND (name LIKE ? OR email LIKE ?) ORDER BY role DESC, name LIMIT 100', [term, term]);
   const links = users.length ? await q('SELECT user_id, unit_id FROM unit_managers WHERE active = 1 AND user_id IN (?)', [users.map((u) => u.id)]) : [];
   res.json(users.map((u) => ({ ...publicUser(u), unitIds: links.filter((l) => l.user_id === u.id).map((l) => l.unit_id) })));
 });
@@ -128,10 +130,18 @@ r.get('/admin/users', ADMIN, async (req, res) => {
 r.patch('/admin/users/:id', ADMIN, async (req, res) => {
   if (req.params.id === req.user.id) fail(403, 'Ninguém pode alterar o próprio papel ou status.');
   const reason = requireReason(req.body.reason);
-  const [before] = await q('SELECT role, status FROM users WHERE id = ?', [req.params.id]);
-  if (!before) fail(404, 'Não encontrado.');
+  const [target] = await q('SELECT role, status, is_owner, deleted_at FROM users WHERE id = ?', [req.params.id]);
+  if (!target || target.deleted_at) fail(404, 'Não encontrado.');
+  const before = { role: target.role, status: target.status };
   const after = { role: req.body.role ?? before.role, status: req.body.status ?? before.status };
   if (!ROLES.includes(after.role) || !USER_STATUS.includes(after.status)) fail(400, 'Papel ou status inválido.');
+  // O administrador principal não é alterado por aqui (evita que outro admin o bloqueie ou rebaixe).
+  if (target.is_owner) fail(403, 'O administrador principal não pode ser alterado.');
+  // Dar ou tirar o papel de administrador, ou mexer em outro administrador (status, bloqueio), é só do principal:
+  // um admin comum não consegue tirar o acesso de um colega.
+  if (!req.user.is_owner && (after.role === 'ADMINISTRADOR' || before.role === 'ADMINISTRADOR')) {
+    fail(403, 'Somente o administrador principal pode alterar administradores ou conceder esse papel.');
+  }
   const blockType = { BLOQUEADO_TEMPORARIAMENTE: 'BLOQUEIO_TEMPORARIO', BLOQUEADO_PERMANENTEMENTE: 'BLOQUEIO_PERMANENTE' };
   const c = await tx(async (tq) => {
     const c = ctx(tq, req);
@@ -156,6 +166,69 @@ r.patch('/admin/users/:id', ADMIN, async (req, res) => {
   });
   await flush(c);
   res.json({ ok: true });
+});
+
+/**
+ * Exclusão de usuário (só o administrador principal): o acesso acaba na hora e os dados pessoais saem.
+ * Sem histórico (nunca se candidatou nem teve ocorrência/bloqueio/contestação): apagado por completo.
+ * Com histórico: diárias e presença ficam (retenção de 5 anos dos termos), mas anonimizadas: sem nome, e-mail,
+ * Google, perfil (CPF etc.), documentos nem selfies. Vagas futuras e reserva são liberadas para a fila.
+ */
+r.delete('/admin/users/:id', requireOwner, async (req, res) => {
+  if (req.params.id === req.user.id) fail(403, 'Você não pode excluir a própria conta.');
+  const reason = requireReason(req.body?.reason);
+  const files = [];
+  const { c, mode, released } = await tx(async (tq) => {
+    const c = ctx(tq, req);
+    const [u] = await tq('SELECT id, role, is_owner, deleted_at FROM users WHERE id = ? FOR UPDATE', [req.params.id]);
+    if (!u || u.deleted_at) fail(404, 'Não encontrado.');
+    if (u.is_owner) fail(403, 'O administrador principal não pode ser excluído.');
+
+    const future = await tq(
+      `SELECT a.id, a.job_id, ws.id AS session_id FROM applications a JOIN jobs j ON j.id = a.job_id LEFT JOIN work_sessions ws ON ws.application_id = a.id
+       WHERE a.user_id = ? AND a.status IN ('APROVADA', 'PENDENTE') AND j.starts_at > ? AND (ws.id IS NULL OR ws.status = 'AGUARDANDO_CHECKIN') FOR UPDATE`,
+      [u.id, new Date()],
+    );
+    for (const f of future) {
+      await tq("UPDATE applications SET status = 'CANCELADA', cancel_reason = 'Conta excluída' WHERE id = ?", [f.id]);
+      if (f.session_id) await tq("UPDATE work_sessions SET status = 'CANCELADA_ADMINISTRATIVAMENTE' WHERE id = ?", [f.session_id]);
+    }
+    await tq('DELETE FROM sessions WHERE user_id = ?', [u.id]);
+    files.push(...(await tq('SELECT storage_key FROM worker_documents WHERE user_id = ?', [u.id])).map((d) => d.storage_key));
+
+    const [h] = await tq(
+      `SELECT (SELECT COUNT(*) FROM applications WHERE user_id = ?) + (SELECT COUNT(*) FROM occurrences WHERE user_id = ?)
+            + (SELECT COUNT(*) FROM penalties WHERE user_id = ?) + (SELECT COUNT(*) FROM contestations WHERE user_id = ?) AS n`,
+      [u.id, u.id, u.id, u.id],
+    );
+    await tq('DELETE FROM worker_documents WHERE user_id = ?', [u.id]);
+    await tq('DELETE FROM worker_profiles WHERE user_id = ?', [u.id]);
+    let mode;
+    if (!Number(h.n)) {
+      await tq('DELETE FROM unit_managers WHERE user_id = ?', [u.id]);
+      await tq('DELETE FROM users WHERE id = ?', [u.id]);
+      mode = 'APAGADO';
+    } else {
+      const selfies = `FROM work_sessions ws JOIN applications a ON a.id = ws.application_id WHERE a.user_id = ?`;
+      files.push(...(await tq(`SELECT e.selfie_key AS k FROM presence_events e WHERE e.selfie_key IS NOT NULL AND e.work_session_id IN (SELECT ws.id ${selfies})`, [u.id])).map((r) => r.k));
+      files.push(...(await tq(`SELECT x.selfie_key AS k FROM presence_exceptions x WHERE x.selfie_key <> '' AND x.work_session_id IN (SELECT ws.id ${selfies})`, [u.id])).map((r) => r.k));
+      await tq(`UPDATE presence_events SET selfie_key = NULL, selfie_sha256 = NULL WHERE work_session_id IN (SELECT id FROM (SELECT ws.id ${selfies}) t)`, [u.id]);
+      await tq(`UPDATE presence_exceptions SET selfie_key = '', selfie_sha256 = '' WHERE work_session_id IN (SELECT id FROM (SELECT ws.id ${selfies}) t)`, [u.id]);
+      await tq('UPDATE unit_managers SET active = 0 WHERE user_id = ?', [u.id]);
+      await tq(
+        "UPDATE users SET name = 'Usuário excluído', email = ?, google_sub = NULL, status = 'INATIVO', deleted_at = ? WHERE id = ?",
+        [`excluido+${u.id}@upservice.invalid`, new Date(), u.id],
+      );
+      mode = 'ANONIMIZADO';
+    }
+    // Auditoria sem dados pessoais: só papel, modo e quantas vagas foram liberadas.
+    await audit(tq, req, 'USER_DELETE', 'user', u.id, { before: { role: u.role }, after: { mode, released: future.length }, reason });
+    for (const jobId of new Set(future.map((f) => f.job_id))) await promoteFromWaitlist(c, jobId);
+    return { c, mode, released: future.length };
+  });
+  for (const k of files) await removeFile(k);
+  await flush(c);
+  res.json({ ok: true, mode, released });
 });
 
 r.put('/admin/users/:id/units', ADMIN, async (req, res) => {

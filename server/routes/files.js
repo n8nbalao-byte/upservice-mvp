@@ -9,8 +9,12 @@ import { loadFile } from '../storage.js';
 const r = Router();
 
 async function send(res, key, mime) {
+  // Selfies/documentos de conta excluída ficam sem chave e sem arquivo: 404, não erro interno.
+  if (!key) fail(404, 'Arquivo removido.');
+  const data = await loadFile(key).catch((e) => { if (e.code === 'ENOENT') return null; throw e; });
+  if (!data) fail(404, 'Arquivo não encontrado.');
   res.set({ 'Content-Type': mime, 'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline' });
-  res.send(await loadFile(key));
+  res.send(data);
 }
 
 r.get('/files/doc/:id', requireLogin, async (req, res) => {

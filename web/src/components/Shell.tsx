@@ -149,6 +149,7 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
             </summary>
             <div className="menu">
               <div className="email">{me.user.email}</div>
+              {!(worker && isBlocked(me.user.status)) && <Link className="menu-link" to="/perfil"><Icon name="user" size={18} />Meu perfil</Link>}
               {!worker && <Link className="menu-link" to="/gestao/ajustes"><Icon name="bell" size={18} />Ajustes de notificação</Link>}
               <button className="ghost" onClick={onLogout}><Icon name="logout" size={18} />Sair</button>
             </div>
