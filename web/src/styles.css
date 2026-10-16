@@ -919,3 +919,20 @@ img.avatar { object-fit: cover; }
 @keyframes g-pop { from { transform: scale(0) rotate(-30deg); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes g-fall { to { transform: translateY(110vh) rotate(540deg); } }
 @media (prefers-reduced-motion: reduce) { .g-celebrate .g-stars.big span, .g-confetti i { animation: none; } .g-confetti { display: none; } }
+
+/* ---------- Minhas diárias: próximas em cartões pequenos, ações fixas, avisos ---------- */
+.next-section { display: grid; gap: 8px; }
+.mini-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mini-card { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 10px 14px; }
+.mini-card .next-day { font-weight: 800; }
+.next-empty.card { padding: 14px 16px; border-top: 0; }
+.diarias-actions { position: sticky; bottom: 16px; z-index: 5; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; border-radius: var(--radius-lg); background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(6px); border: 1px solid var(--line); box-shadow: var(--shadow-lg); }
+.diarias-actions > * { min-height: 46px; }
+@media (max-width: 1023px) { .app.worker .diarias-actions { bottom: calc(72px + env(safe-area-inset-bottom)); } }
+.aviso-banner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius-lg); background: var(--success-soft); border: 1px solid #b7e3c8; color: #0f5a37; }
+.aviso-banner p { margin: 2px 0 0; font-size: 0.88rem; color: var(--ink-2); }
+.avisos { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.aviso { display: grid; gap: 6px; }
+.aviso.new { border-left: 4px solid var(--success); }
+.bottom-nav a { position: relative; }
+.bottom-nav .nav-count { position: absolute; top: 2px; left: calc(50% + 6px); margin: 0; min-width: 18px; padding: 0 5px; line-height: 18px; font-size: 0.68rem; border-radius: 99px; }

@@ -29,6 +29,7 @@ import QrAprovar from './pages/QrAprovar';
 import RedefinirSenha from './pages/RedefinirSenha';
 import Relatorios from './pages/Relatorios';
 import Vagas from './pages/Vagas';
+import Avisos from './pages/Avisos';
 import Estrelas, { GestaoEstrelas } from './pages/Estrelas';
 import { ConfirmarWhatsapp } from './components/ConfirmarWhatsapp';
 
@@ -119,6 +120,7 @@ export default function App() {
                   <Route path="/cadastro" element={<Cadastro />} />
                   <Route path="/vagas" element={me.complete ? <Vagas /> : <Navigate to="/cadastro" />} />
                   <Route path="/minhas" element={<Minhas />} />
+                  <Route path="/avisos" element={<Avisos />} />
                   <Route path="/estrelas" element={<Estrelas />} />
                   <Route path="/atividade/:id" element={<Atividade />} />
                   <Route path="/ocorrencias" element={<Ocorrencias />} />

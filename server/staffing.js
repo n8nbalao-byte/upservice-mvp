@@ -100,6 +100,8 @@ export async function promoteFromWaitlist(c, jobId) {
     await approve(c, r.id, 'APPLICATION_PROMOTE');
     c.outbox.push([r.email, `UpService: você foi chamado(a) da reserva — ${job.unit_name}`,
       `Olá, ${r.name}.\n\nAbriu uma posição e sua candidatura para "${job.title}" em ${job.unit_name} (${fmt(job.starts_at)}) foi aprovada.\nNo dia, faça o check-in pelo app.`]);
+    // Aviso dentro do app, na mesma transação (some junto se a operação for desfeita).
+    await c.tq('INSERT INTO notifications SET ?', [{ id: randomUUID(), user_id: r.user_id, kind: 'RESERVA_CHAMADA', title: 'Você saiu da reserva!', body: `Abriu uma vaga e você está confirmado(a) em "${job.title}" — ${job.unit_name}, ${fmt(job.starts_at)}.`, link: '/minhas' }]);
     // WhatsApp confirmado: avisa na hora que saiu da reserva e já está aprovado.
     if (r.whatsapp) {
       c.whatsapp.push([r.whatsapp, `Olá, ${r.name.split(' ')[0]}! Boa notícia: abriu uma vaga e você saiu da reserva. ✅

@@ -1165,6 +1165,15 @@ test('reserva chamada recebe WhatsApp (se tiver número confirmado), só depois 
     assert.equal(sent[0].body.number, '5511966665555');
     assert.match(sent[0].body.text, /saiu da reserva/);
     assert.match(sent[0].body.text, /Repositor reserva WhatsApp/);
+    // Também dentro do app: aviso não lido e a diária contada no botão "Diárias".
+    const av = (await call(beto, 'GET', '/api/me/avisos')).body;
+    assert.equal(av.unread, 1);
+    assert.equal(av.items[0].title, 'Você saiu da reserva!');
+    assert.match(av.items[0].body, /Repositor reserva WhatsApp/);
+    assert.equal(av.upcoming, 1);
+    assert.equal((await call(ana, 'GET', '/api/me/avisos')).body.unread, 0, 'quem desistiu não recebe aviso');
+    assert.equal((await call(beto, 'POST', '/api/me/avisos/lidos', {})).status, 200);
+    assert.equal((await call(beto, 'GET', '/api/me/avisos')).body.unread, 0);
 
     // Sem WhatsApp confirmado: a chamada acontece igual, só sem mensagem.
     const cris = await login('cris-res@test.dev');
