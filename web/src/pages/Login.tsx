@@ -56,7 +56,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
           </form>
         )}
         {isMobile() && !isStandalone() && <a className="btn big" href="/instalar">Baixar o app no celular</a>}
-        <p className="footer-links"><a href="/privacidade.html">Política de Privacidade</a><a href="/termos.html">Termos de Uso</a></p>
+        <p className="footer-links"><a href="/privacidade.html">Política de Privacidade</a><a href="/termos.html">Termos de Uso</a><a href="/politicas.html">Políticas</a></p>
         <p className="company-line">UP Service Intermediações Ltda · CNPJ 24.930.043/0001-34</p>
       </main>
     </div>
