@@ -17,6 +17,7 @@ r.get('/config', async (req, res) => {
     devLogin: devLoginEnabled(),
     // WhatsApp oficial da UP Service (o mesmo do site); SUPPORT_WHATSAPP no painel troca o número.
     supportWhatsapp: (process.env.SUPPORT_WHATSAPP || '5511926746277').replace(/\D/g, '') || null,
+    // Com o WhatsApp da UP Service no ar: entrar por código e confirmar o número (obrigatório para todos).
     phoneLogin: await phoneLoginEnabled(),
     theme: await currentTheme(),
   });

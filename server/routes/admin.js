@@ -217,7 +217,7 @@ r.delete('/admin/users/:id', requireOwner, async (req, res) => {
       await tq(`UPDATE presence_exceptions SET selfie_key = '', selfie_sha256 = '' WHERE work_session_id IN (SELECT id FROM (SELECT ws.id ${selfies}) t)`, [u.id]);
       await tq('UPDATE unit_managers SET active = 0 WHERE user_id = ?', [u.id]);
       await tq(
-        "UPDATE users SET name = 'Usuário excluído', email = ?, google_sub = NULL, password_hash = NULL, status = 'INATIVO', deleted_at = ? WHERE id = ?",
+        "UPDATE users SET name = 'Usuário excluído', email = ?, google_sub = NULL, password_hash = NULL, whatsapp = NULL, whatsapp_verified_at = NULL, status = 'INATIVO', deleted_at = ? WHERE id = ?",
         [`excluido+${u.id}@upservice.invalid`, new Date(), u.id],
       );
       mode = 'ANONIMIZADO';

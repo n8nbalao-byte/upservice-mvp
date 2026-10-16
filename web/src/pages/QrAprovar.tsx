@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Alert, Loading, PageHeader } from '../components/ui';
 import { api, fmtTime } from '../lib/api';
 
-type Info = { status: string; createdAt: string; expiresAt: string; device: string | null };
+type Info = { status: string; createdAt: string; expiresAt: string; device: string | null; ip: string | null; sameNetwork: boolean };
 
 /** "Chrome no Windows" a partir do user agent; só para a pessoa reconhecer o computador. */
 function deviceName(ua: string | null) {
@@ -23,7 +23,7 @@ export default function QrAprovar() {
 
   useEffect(() => { api<Info>(`/auth/qr/${id}`).then(setInfo, (e) => setError(e.message)); }, [id]);
 
-  async function answer(body: { code?: string; deny?: boolean }) {
+  async function answer(body: { code?: string; deny?: boolean; otherNetwork?: boolean }) {
     setBusy(true);
     setError('');
     await api(`/auth/qr/${id}/approve`, { body }).then(() => setDone(body.deny ? 'deny' : 'ok'), (e) => setError(e.message));
@@ -31,7 +31,8 @@ export default function QrAprovar() {
   }
   const approve = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    answer({ code: String(new FormData(e.currentTarget).get('code') ?? '') });
+    const f = new FormData(e.currentTarget);
+    answer({ code: String(f.get('code') ?? ''), otherNetwork: f.get('otherNetwork') === 'on' });
   };
 
   return (
@@ -46,6 +47,13 @@ export default function QrAprovar() {
       ) : (
         <form className="card form" onSubmit={approve}>
           <p>Pedido de acesso pelo <strong>{deviceName(info.device)}</strong>, às {fmtTime(info.createdAt)}. Vale até {fmtTime(info.expiresAt)}.</p>
+          <p className="muted">Endereço (IP) do computador: <strong>{info.ip ?? 'desconhecido'}</strong></p>
+          {!info.sameNetwork && (
+            <>
+              <Alert kind="danger">Este pedido veio de <strong>outra rede</strong>, não da mesma do seu celular. Se você não está na frente desse computador agora, <strong>recuse</strong>: alguém pode estar tentando entrar na sua conta.</Alert>
+              <label className="check"><input type="checkbox" name="otherNetwork" required /> Estou na frente deste computador agora e fui eu que abri o QR Code.</label>
+            </>
+          )}
           <label>
             Número que aparece no computador
             <input name="code" inputMode="numeric" pattern="\d{2}" maxLength={2} required autoFocus autoComplete="off" style={{ fontSize: '1.6rem', letterSpacing: '0.3em', maxWidth: 140 }} />

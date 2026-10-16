@@ -144,7 +144,7 @@ function PhoneForm({ onLogin, onError }: { onLogin: () => void; onError: (m: str
       <form className="form" onSubmit={send}>
         <label>Celular com DDD<input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" inputMode="tel" autoComplete="tel-national" placeholder="(11) 99999-0000" required /></label>
         <button className="primary big" disabled={busy}>{busy ? 'Enviando…' : 'Receber código no WhatsApp'}</button>
-        <p className="auth-small">Vale para o celular informado no seu cadastro de profissional.</p>
+        <p className="auth-small">Vale para o WhatsApp que você confirmou na sua conta (em Meu perfil).</p>
       </form>
     );
   }

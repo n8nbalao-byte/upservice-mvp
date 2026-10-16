@@ -1,10 +1,17 @@
 -- Login por e-mail/senha, recuperação de senha, QR Code e código por WhatsApp. Só adiciona.
 ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL;
 
--- Tokens de uso único, sempre guardados como hash (sha256): RESET (senha), OTP (código no WhatsApp), QR (login no computador).
+-- WhatsApp confirmado por código (obrigatório para todos): só um número por conta e uma conta por número.
+ALTER TABLE users
+  ADD COLUMN whatsapp VARCHAR(11) NULL,
+  ADD COLUMN whatsapp_verified_at DATETIME(3) NULL,
+  ADD UNIQUE KEY users_whatsapp (whatsapp);
+
+-- Tokens de uso único, sempre guardados como hash (sha256): RESET (senha), OTP (código de login no WhatsApp),
+-- QR (login no computador), VERIFY (confirmar o número de WhatsApp da conta).
 CREATE TABLE auth_tokens (
   id CHAR(36) PRIMARY KEY,
-  kind ENUM('RESET','OTP','QR') NOT NULL,
+  kind ENUM('RESET','OTP','QR','VERIFY') NOT NULL,
   user_id CHAR(36) NULL,
   token_hash CHAR(64) NOT NULL,
   secret_hash CHAR(64) NULL,

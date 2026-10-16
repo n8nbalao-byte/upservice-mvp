@@ -1020,7 +1020,21 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
   assert.equal((await call(pw, 'POST', `/api/auth/qr/${s3.body.id}/approve`, { code: s3.body.code })).status, 409, 'expirado');
   assert.deepEqual((await call(cookieOf(s3.res, 'qr_secret'), 'GET', `/api/auth/qr/${s3.body.id}/status`)).body, { status: 'EXPIRADO' });
 
-  // WhatsApp: escondido sem configuração; telefone repetido entre contas não recebe; código vale 1x; 5 erros invalidam.
+  // QR de outra rede (golpe com QR verdadeiro num site falso): o celular vê o IP e precisa confirmar de forma explícita.
+  const s4 = await call(null, 'POST', '/api/auth/qr/start');
+  await q("UPDATE auth_tokens SET created_ip = '203.0.113.9' WHERE id = ?", [s4.body.id]);
+  const info4 = (await call(pw, 'GET', `/api/auth/qr/${s4.body.id}`)).body;
+  assert.deepEqual([info4.ip, info4.sameNetwork], ['203.0.113.9', false]);
+  assert.equal((await call(pw, 'POST', `/api/auth/qr/${s4.body.id}/approve`, { code: s4.body.code })).status, 428, 'outra rede exige confirmação');
+  assert.equal((await call(pw, 'POST', `/api/auth/qr/${s4.body.id}/approve`, { code: s4.body.code, otherNetwork: true })).status, 200);
+
+  // Senha: teto diário por conta, qualquer IP.
+  await q('DELETE FROM rate_limits');
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 10; j++) await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'errada123' }).then(() => i < 2 && j === 9 && q("DELETE FROM rate_limits WHERE n = 10"));
+  assert.equal((await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'SenhaBoa123' })).status, 429, 'passou de 30 no dia: bloqueado mesmo com a senha certa');
+  await q('DELETE FROM rate_limits');
+
+  // WhatsApp: escondido sem configuração; só número confirmado entra; um número por conta; código 1x; 5 erros invalidam.
   assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, false);
   assert.equal((await call(null, 'POST', '/api/auth/phone/start', { phone: '11999990000' })).status, 503);
   const sent = [];
@@ -1030,44 +1044,54 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
     req.on('end', () => { sent.push({ url: req.url, key: req.headers.apikey, body: JSON.parse(b) }); res.end('{}'); });
   }).listen(0);
   Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}/`, EVOLUTION_API_KEY: 'chave-teste', EVOLUTION_INSTANCE: 'upservice' });
-  const w2 = (await userByEmail('w2@test.dev')).id;
+  const waA = await login('wa-a@test.dev');
+  const waB = await login('wa-b@test.dev');
+  const w2 = (await userByEmail('wa-a@test.dev')).id;
+  const lastCode = () => /(\d{6})/.exec(sent.at(-1).body.text)[1];
   try {
     assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, true);
-    const dup = await call(null, 'POST', '/api/auth/phone/start', { phone: '(11) 99999-0000' });
-    const none = await call(null, 'POST', '/api/auth/phone/start', { phone: '11900000000' });
-    assert.deepEqual(dup.body, none.body);
+
+    // O telefone do cadastro (não confirmado) não dá acesso: nada é enviado.
+    const none = await call(null, 'POST', '/api/auth/phone/start', { phone: '(11) 99999-0000' });
+    assert.equal(none.body.ok, true);
     await new Promise((r) => setTimeout(r, 300));
-    assert.equal(sent.length, 0, 'w1 e w2 têm o mesmo telefone: ninguém recebe');
-    await q("UPDATE worker_profiles SET phone = '11977776666' WHERE user_id = ?", [w2]);
-    await call(null, 'POST', '/api/auth/phone/start', { phone: '+55 11 97777-6666' });
-    await waitFor(() => sent.length);
-    assert.equal(sent.length, 1);
-    assert.deepEqual([sent[0].url, sent[0].key, sent[0].body.number], ['/message/sendText/upservice', 'chave-teste', '5511977776666']);
-    const otp = /(\d{6})/.exec(sent[0].body.text)[1];
-    const [row] = await q("SELECT * FROM auth_tokens WHERE kind = 'OTP' AND target = '11977776666'");
-    assert.ok(!JSON.stringify(row).includes(otp), 'código guardado só como hash');
-    const wrongCode = otp === '000000' ? '111111' : '000000';
-    assert.equal((await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: wrongCode })).status, 401);
+    assert.equal(sent.length, 0, 'número só do cadastro não recebe código de login');
+
+    // Confirmar o número na conta (logado).
+    assert.equal((await call(null, 'POST', '/api/me/whatsapp/start', { phone: '11977776666' })).status, 401);
+    assert.equal((await call(waA, 'POST', '/api/me/whatsapp/start', { phone: '+55 11 97777-6666' })).status, 200);
+    assert.deepEqual([sent.at(-1).url, sent.at(-1).key, sent.at(-1).body.number], ['/message/sendText/upservice', 'chave-teste', '5511977776666']);
+    assert.equal((await call(waA, 'POST', '/api/me/whatsapp/verify', { code: lastCode() === '000000' ? '111111' : '000000' })).status, 400);
+    assert.equal((await call(waA, 'POST', '/api/me/whatsapp/verify', { code: lastCode() })).status, 200);
+    assert.equal((await call(waA, 'GET', '/api/me')).body.user.whatsapp, '11977776666');
+    const [vrow] = await q("SELECT * FROM auth_tokens WHERE kind = 'VERIFY' AND user_id = ?", [w2]);
+    assert.ok(!JSON.stringify(vrow).includes(lastCode()), 'código guardado só como hash');
+    assert.equal((await call(waB, 'POST', '/api/me/whatsapp/start', { phone: '11977776666' })).status, 409, 'um número, uma conta');
+
+    // Login por código no número confirmado.
+    await call(null, 'POST', '/api/auth/phone/start', { phone: '11977776666' });
+    const waitFor = async (n) => { for (let i = 0; i < 40 && sent.length < n; i++) await new Promise((r) => setTimeout(r, 50)); };
+    await waitFor(2);
+    assert.equal(sent.length, 2);
+    const otp = lastCode();
+    assert.equal((await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp === '000000' ? '111111' : '000000' })).status, 401);
     const v = await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp });
     assert.equal(v.status, 200);
-    assert.equal((await call(cookieOf(v.res, 'sid'), 'GET', '/api/me')).body.user.email, 'w2@test.dev');
+    assert.equal((await call(cookieOf(v.res, 'sid'), 'GET', '/api/me')).body.user.email, 'wa-a@test.dev');
     assert.equal((await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp })).status, 401, 'uso único');
 
-    const newCode = async (n) => {
-      await call(null, 'POST', '/api/auth/phone/start', { phone: '11977776666' });
-      await waitFor(() => sent.length >= n);
-      const c = /(\d{6})/.exec(sent[n - 1].body.text)[1];
-      return [c, c === '000000' ? '111111' : '000000'];
-    };
-    const [otp2, wrong2] = await newCode(2);
-    for (let i = 0; i < 4; i++) await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: wrong2 });
-    assert.equal((await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp2 })).status, 200, '4 erros ainda permitem');
-    const [otp3, wrong3] = await newCode(3);
-    for (let i = 0; i < 5; i++) await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: wrong3 });
+    await call(null, 'POST', '/api/auth/phone/start', { phone: '11977776666' });
+    await waitFor(3);
+    const otp3 = lastCode();
+    for (let i = 0; i < 5; i++) await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp3 === '000000' ? '111111' : '000000' });
     assert.equal((await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp3 })).status, 401, '5 erros invalidam');
+    // Teto por número, qualquer IP: mais conferências no mesmo número são recusadas.
+    let lim;
+    for (let i = 0; i < 6; i++) lim = await call(null, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: '123456' });
+    assert.equal(lim.status, 429);
   } finally {
     for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
     mock.close();
-    await q("UPDATE worker_profiles SET phone = '11999990000' WHERE user_id = ?", [w2]);
+    await q('DELETE FROM rate_limits');
   }
 });
