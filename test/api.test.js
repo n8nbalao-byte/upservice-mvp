@@ -1118,3 +1118,23 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
     await q('DELETE FROM rate_limits');
   }
 });
+
+test('estrelas (prévia): profissional só vê com o interruptor ligado; principal liga; gestor confere a ficha', { skip }, async () => {
+  assert.equal((await call(null, 'GET', '/api/config')).body.gamification, false);
+  assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).status, 403, 'desligado: profissional não vê');
+  assert.equal((await call(s.gestor, 'PUT', '/api/admin/settings/gamification', { enabled: true })).status, 403);
+  await q("UPDATE users SET is_owner = 1 WHERE email = 'admin@test.dev'");
+  const w1 = (await userByEmail('w1@test.dev')).id;
+  const preview = await call(s.admin, 'GET', `/api/manage/workers/${w1}/estrelas`);
+  assert.equal(preview.status, 200, 'admin confere mesmo desligado');
+  assert.ok(Array.isArray(preview.body.months) && preview.body.months.length >= 1);
+  assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/gamification', { enabled: true })).status, 200);
+  assert.equal((await call(null, 'GET', '/api/config')).body.gamification, true);
+  const mine = await call(s.w1, 'GET', '/api/me/estrelas');
+  assert.equal(mine.status, 200);
+  assert.deepEqual(mine.body.total, preview.body.total);
+  assert.ok(mine.body.months.some((m) => m.month === mine.body.current), 'mês atual sempre aparece');
+  for (const m of mine.body.months) for (const d of m.diaries) assert.ok(d.stars === null || (d.stars >= 0 && d.stars <= 3));
+  assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/gamification', { enabled: false })).status, 200);
+  assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).status, 403);
+});
