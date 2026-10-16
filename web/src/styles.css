@@ -763,6 +763,39 @@ img.avatar { object-fit: cover; }
 [data-theme-brand='atacadao'] .hold-fill { background: rgba(194, 65, 12, 0.18); }
 [data-theme-brand='atacadao'] .jclock .fill, [data-theme-brand='atacadao'] .jbar-track span { stroke: var(--nav); background: var(--nav); }
 
+/* Perfil 3 — UP Service (cores do site: azul-marinho #07152D e dourado #D6A63B). Contraste AA: dourado só como fundo
+   com texto azul (≈8:1) ou como faixa decorativa; textos e ícones de destaque ficam no azul. */
+:root[data-theme-brand='upservice'], [data-theme-brand='upservice'] {
+  --bg: #f5f7fa;
+  --nav: #07152d;
+  --nav-deep: #020c1d;
+  --nav-2: rgba(255, 255, 255, 0.08);
+  --nav-active: #d6a63b;
+  --nav-ink: #e8edf6;
+  --nav-line: rgba(255, 255, 255, 0.14);
+  --graphite: #07152d;
+  --graphite-2: #0d274f;
+  --accent: #0d274f;
+  --accent-hover: #07152d;
+  --accent-soft: #fbf3df;
+  --accent-dark: #0d274f;
+  --brand-stripe: #d6a63b;
+  font-family: Poppins, Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+[data-theme-brand='upservice'] .sidebar { border-right-color: var(--nav-deep); }
+[data-theme-brand='upservice'] .nav-link.active, [data-theme-brand='upservice'] .tp-item.active { color: #07152d; }
+[data-theme-brand='upservice'] .help-card { background: rgba(255, 255, 255, 0.08); border-color: var(--nav-line); color: #fff; }
+[data-theme-brand='upservice'] .help-card:hover { background: rgba(255, 255, 255, 0.14); }
+[data-theme-brand='upservice'] .help-card small { color: rgba(255, 255, 255, 0.8); }
+[data-theme-brand='upservice'] .topbar { box-shadow: inset 0 4px 0 var(--brand-stripe); }
+[data-theme-brand='upservice'] .topbar .topbar-brand { color: var(--nav); }
+[data-theme-brand='upservice'] button.primary, [data-theme-brand='upservice'] .btn.primary { background: #d6a63b; border-color: #d6a63b; color: #07152d; }
+[data-theme-brand='upservice'] button.primary:hover, [data-theme-brand='upservice'] .btn.primary:hover { background: #e5bb56; border-color: #e5bb56; color: #07152d; }
+[data-theme-brand='upservice'] .hold-fill { background: rgba(214, 166, 59, 0.28); }
+[data-theme-brand='upservice'] .auth-visual { background: radial-gradient(900px 500px at 85% 15%, rgba(214, 166, 59, 0.22), transparent 60%), linear-gradient(135deg, #07152d 0%, #0d274f 70%, #13305f 100%); }
+[data-theme-brand='upservice'] .auth-kicker { color: #e5bb56; opacity: 1; }
+[data-theme-brand='upservice'] .auth-dots button[aria-current='true'] { background: #d6a63b; }
+
 /* ---------- Configurações: prévia dos perfis de cores ---------- */
 .theme-card.current { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
 .theme-preview { display: grid; grid-template-columns: 110px minmax(0, 1fr); height: 160px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--ink); font-family: inherit; }
@@ -771,5 +804,5 @@ img.avatar { object-fit: cover; }
 .tp-item.active { background: var(--nav-active); color: #fff; }
 .tp-main { display: grid; align-content: start; gap: 10px; padding: 0 12px 12px; }
 .tp-top { height: 18px; margin: 0 -12px; background: var(--surface); border-bottom: 1px solid var(--line); }
-.theme-preview[data-theme-brand='atacadao'] .tp-top { box-shadow: inset 0 3px 0 var(--brand-stripe); }
+.theme-preview[data-theme-brand='atacadao'] .tp-top, .theme-preview[data-theme-brand='upservice'] .tp-top { box-shadow: inset 0 3px 0 var(--brand-stripe); }
 .tp-row { display: flex; flex-wrap: wrap; gap: 6px; }

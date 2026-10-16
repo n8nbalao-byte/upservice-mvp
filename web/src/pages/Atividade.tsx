@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { Icon } from '../components/icons';
-import { Alert, Loading, PageHeader, Stat, StatusBadge, HoldButton } from '../components/ui';
-import { ApiError, api, fmtDateTime, fmtMinutes, fmtTime, label, toLocalInput } from '../lib/api';
+import { Alert, Loading, PageHeader, HoldButton } from '../components/ui';
+import { ApiError, api, fmtDateTime, fmtTime, label, toLocalInput } from '../lib/api';
 import { GeoError, Selfie, alertBreakOver, distanceMeters, getPosition } from '../lib/device';
 
 type EventType = 'CHECK_IN' | 'PAUSE_START' | 'PAUSE_END' | 'CHECK_OUT';
@@ -247,29 +247,7 @@ export default function Atividade() {
         </div>
       )}
 
-      {data.worked && (
-        <div className="stats">
-          <Stat label="Tempo trabalhado" value={fmtMinutes(data.worked.workedMin)} tone="success" hint={`Origem: ${data.worked.sources.map(label).join(', ')}`} />
-          <Stat label="Pausas" value={fmtMinutes(data.worked.breakMin)} tone="info" />
-        </div>
-      )}
-
-      {data.events.length > 0 && (
-        <div className="card tight">
-          <div className="card-header"><h2>Registros</h2><span className="sub">Horário oficial do servidor</span></div>
-          <table>
-            <tbody>
-              {data.events.map((e) => (
-                <tr key={e.id}>
-                  <td className="strong">{label(e.type)}</td>
-                  <td className="tabular">{fmtTime(e.occurred_at)}</td>
-                  <td className="num"><StatusBadge status={e.validation} />{e.distance_m != null && <span className="muted">{Math.round(e.distance_m)} m da loja</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* Horas, pausas e registros de presença: só gestor e administrador veem (telas de gestão). */}
     </div>
   );
 }
