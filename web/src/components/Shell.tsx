@@ -16,12 +16,13 @@ const store = {
 /** Cadastro completo e os 4 documentos (CPF, RG, comprovante e selfie) aprovados: o Cadastro sai da barra e fica no menu do usuário. */
 const cadastroAprovado = (me: Me) => me.complete && ['CPF', 'RG', 'COMPROVANTE', 'SELFIE'].every((t) => me.documents.some((d) => d.type === t && d.status === 'APROVADO'));
 
-function groupsFor(me: Me, inboxCount: number): Group[] {
+function groupsFor(me: Me, inboxCount: number, gamification = false): Group[] {
   const role = me.user.role;
   if (role === 'PROFISSIONAL') {
     if (isBlocked(me.user.status)) return [{ items: [{ to: '/ocorrencias', text: 'Ocorrências', icon: 'alert' }] }];
     return [{ items: [
       { to: '/minhas', text: 'Minhas diárias', icon: 'home' },
+      ...(gamification ? [{ to: '/estrelas', text: 'Estrelas', icon: 'star' as const }] : []),
       { to: '/vagas', text: 'Vagas', icon: 'briefcase' },
       ...(cadastroAprovado(me) ? [] : [{ to: '/cadastro', text: 'Cadastro', icon: 'user' as const }]),
       { to: '/ocorrencias', text: 'Ocorrências', icon: 'alert' },
@@ -92,7 +93,8 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
   useEffect(() => { setDrawer(false); userMenu.current?.removeAttribute('open'); }, [pathname]);
 
   const [whatsapp, setWhatsapp] = useState<string | null>(null);
-  useEffect(() => { api<{ supportWhatsapp: string | null }>('/config').then((c) => setWhatsapp(c.supportWhatsapp), () => {}); }, []);
+  const [gamification, setGamification] = useState(false);
+  useEffect(() => { api<{ supportWhatsapp: string | null; gamification?: boolean }>('/config').then((c) => { setWhatsapp(c.supportWhatsapp); setGamification(!!c.gamification); }, () => {}); }, []);
   // WhatsApp do suporte (SUPPORT_WHATSAPP no servidor); enquanto não for definido, abre o e-mail.
   const help = whatsapp
     ? `https://wa.me/${whatsapp}?text=${encodeURIComponent('Olá! Preciso de ajuda com o app UP Service.')}`
@@ -100,7 +102,7 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
 
   const worker = me.user.role === 'PROFISSIONAL';
   const selfie = me.documents.find((d) => d.type === 'SELFIE' && d.status !== 'REJEITADO');
-  const groups = groupsFor(me, inboxCount);
+  const groups = groupsFor(me, inboxCount, gamification);
   // Desktop: recolhe a barra (preferência lembrada). Celular/tablet: abre a gaveta.
   const menu = () => {
     if (window.matchMedia('(max-width: 1023px)').matches) return setDrawer(true);

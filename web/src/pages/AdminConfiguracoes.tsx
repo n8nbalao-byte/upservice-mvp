@@ -29,7 +29,12 @@ function Preview({ theme }: { theme: Theme }) {
 export default function AdminConfiguracoes() {
   const { busy, run } = useAction();
   const [theme, setTheme] = useState<Theme>();
-  useEffect(() => { api<{ theme: Theme }>('/config').then((c) => setTheme(c.theme)); }, []);
+  const [gamification, setGamification] = useState<boolean>();
+  useEffect(() => { api<{ theme: Theme; gamification?: boolean }>('/config').then((c) => { setTheme(c.theme); setGamification(!!c.gamification); }); }, []);
+  const toggleGamification = async () => {
+    const next = !gamification;
+    if (await run('gamification', () => api('/admin/settings/gamification', { method: 'PUT', body: { enabled: next } }), next ? 'Estrelas ligadas para os profissionais.' : 'Estrelas desligadas para os profissionais.')) setGamification(next);
+  };
 
   async function choose(t: Theme) {
     if (await run(t, () => api('/admin/settings/theme', { method: 'PUT', body: { theme: t } }), 'Perfil de cores aplicado para todos os usuários.')) {
@@ -56,6 +61,16 @@ export default function AdminConfiguracoes() {
             ))}
           </div>
         )}
+      </section>
+      <section className="stack" style={{ marginTop: 32 }}>
+        <h2 className="section-title">Estrelas do profissional (prévia)</h2>
+        <div className="card stack">
+          <div className="row between wrap">
+            <p style={{ maxWidth: 640 }}>Tela "como um joguinho": cada diária vale até 3 estrelas, com nível e bônus do mês. <strong>Os valores dos bônus são de exemplo</strong> e as regras ainda serão definidas. Enquanto estiver desligada, só gestores e administradores veem (pela ficha do profissional, em "Ver estrelas").</p>
+            {gamification !== undefined && <button className={gamification ? 'danger' : 'primary'} disabled={busy === 'gamification'} onClick={toggleGamification}>{gamification ? 'Desligar para os profissionais' : 'Ligar para os profissionais'}</button>}
+          </div>
+          {gamification && <StatusBadge status="ATIVA">Ligada: os profissionais veem "Estrelas" no menu</StatusBadge>}
+        </div>
       </section>
       <section className="stack" style={{ marginTop: 32 }}>
         <h2 className="section-title">WhatsApp</h2>

@@ -29,6 +29,7 @@ import QrAprovar from './pages/QrAprovar';
 import RedefinirSenha from './pages/RedefinirSenha';
 import Relatorios from './pages/Relatorios';
 import Vagas from './pages/Vagas';
+import Estrelas, { GestaoEstrelas } from './pages/Estrelas';
 import { ConfirmarWhatsapp } from './components/ConfirmarWhatsapp';
 
 const MeContext = createContext<{ me: Me; reload: () => Promise<void> }>(null!);
@@ -118,6 +119,7 @@ export default function App() {
                   <Route path="/cadastro" element={<Cadastro />} />
                   <Route path="/vagas" element={me.complete ? <Vagas /> : <Navigate to="/cadastro" />} />
                   <Route path="/minhas" element={<Minhas />} />
+                  <Route path="/estrelas" element={<Estrelas />} />
                   <Route path="/atividade/:id" element={<Atividade />} />
                   <Route path="/ocorrencias" element={<Ocorrencias />} />
                   <Route path="/perfil" element={<Perfil />} />
@@ -135,6 +137,7 @@ export default function App() {
                 <Route path="/gestao/atividades" element={<GestaoAtividades />} />
                 <Route path="/gestao/calendario" element={<Calendario />} />
                 <Route path="/gestao/profissionais/:id" element={<GestaoProfissional />} />
+                <Route path="/gestao/profissionais/:id/estrelas" element={<GestaoEstrelas />} />
                 <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
                 <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />
                 <Route path="/gestao/relatorios" element={<Relatorios />} />

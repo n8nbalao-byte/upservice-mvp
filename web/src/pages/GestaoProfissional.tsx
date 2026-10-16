@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useInbox } from '../App';
 import { Icon } from '../components/icons';
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
@@ -169,7 +169,7 @@ export default function GestaoProfissional() {
         back={{ to: '/gestao/documentos', label: 'Documentos' }}
         title={data.user.name}
         description={data.user.email}
-        actions={<StatusBadge status={data.user.status} />}
+        actions={<><StatusBadge status={data.user.status} /><Link className="btn sm" to={`/gestao/profissionais/${id}/estrelas`}>Ver estrelas</Link></>}
       />
       <Alert kind="info">Dados pessoais e documentos: todo acesso fica registrado na auditoria.</Alert>
       <div className="grid-2">

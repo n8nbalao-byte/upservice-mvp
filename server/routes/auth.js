@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { audit } from '../audit.js';
 import { devLoginEnabled, endSession, findOrCreateUser, requireOwner, startSession } from '../auth.js';
 import { q } from '../db.js';
+import { gamificationOn } from './estrelas.js';
 import { phoneLoginEnabled } from './login.js';
 import { fail, text } from '../http.js';
 
@@ -20,6 +21,8 @@ r.get('/config', async (req, res) => {
     // Com o WhatsApp da UP Service no ar: entrar por código e confirmar o número (obrigatório para todos).
     phoneLogin: await phoneLoginEnabled(),
     theme: await currentTheme(),
+    // Estrelas do profissional (prévia): só aparece para ele quando o principal liga em Configurações.
+    gamification: await gamificationOn(),
   });
 });
 
@@ -39,6 +42,13 @@ r.get('/public/stats', async (req, res) => {
   }
   res.set('Cache-Control', 'public, max-age=600');
   res.json(stats.body);
+});
+
+r.put('/admin/settings/gamification', requireOwner, async (req, res) => {
+  const on = req.body.enabled === true;
+  await q("INSERT INTO app_settings (name, value, updated_by) VALUES ('gamification', ?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value), updated_by = VALUES(updated_by)", [on ? 'on' : 'off', req.user.id]);
+  await audit(q, req, 'SETTING_GAMIFICATION', 'app_settings', 'gamification', { after: { enabled: on } });
+  res.json({ enabled: on });
 });
 
 r.put('/admin/settings/theme', requireOwner, async (req, res) => {
