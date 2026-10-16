@@ -54,6 +54,7 @@ export function WhatsappConfig() {
         </div>
         <p className="muted">Usado para enviar o código de acesso por WhatsApp e avisos. A conexão é feita pela Evolution API, lendo o QR Code ou digitando um código no celular do número oficial.</p>
         {st.message && <Alert kind="warning">{st.message}</Alert>}
+        {st.url?.startsWith('http://') && <Alert kind="warning">A Evolution está num endereço sem HTTPS: a chave e o texto das mensagens (inclusive códigos de acesso) trafegam sem criptografia. Prefira um endereço https://.</Alert>}
 
         {st.configured && st.state === 'SEM_INSTANCIA' && (
           <div><button className="primary" disabled={!!busy} onClick={() => run('create', async () => { await api('/admin/whatsapp/create', { body: {} }); await load(); }, 'Instância criada.')}>Criar a instância "{st.instance}"</button></div>
