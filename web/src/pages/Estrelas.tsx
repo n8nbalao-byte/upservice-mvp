@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
+import { Icon } from '../components/icons';
 import { EstrelasMapa, type StarsData } from '../components/Estrelas';
 import { Alert, EmptyState, Loading, PageHeader, Stat } from '../components/ui';
 import { api, fmtDateTime, fmtMoney } from '../lib/api';
 
-/** Profissional: a tela colorida "como um joguinho" (só com "Estrelas" ligado em Configurações). */
+/** Profissional: a tela "como um joguinho", em tela cheia (só com "Estrelas" ligado em Configurações). */
 export default function Estrelas() {
   const [data, setData] = useState<StarsData>();
   const [error, setError] = useState('');
   useEffect(() => { api<StarsData>('/me/estrelas').then(setData, (e) => setError(e.message)); }, []);
   return (
-    <div className="page" style={{ maxWidth: 760 }}>
-      <PageHeader title="Minhas estrelas" description="Cada dia do mês é uma fase. Nas diárias que você faz, ganhe até 3 estrelas, suba de nível e desbloqueie os bônus." />
-      {error ? <Alert kind="info">{error}</Alert> : !data ? <Loading /> : <EstrelasMapa data={data} />}
+    <div className="game-full">
+      <header className="game-full-bar">
+        <Link to="/minhas" className="g-pill sm" aria-label="Voltar para Minhas diárias"><Icon name="chevronLeft" size={18} />Voltar</Link>
+        <h1>Minhas estrelas</h1>
+      </header>
+      <div className="game-full-body">
+        {error ? <Alert kind="info">{error}</Alert> : !data ? <Loading /> : <EstrelasMapa data={data} />}
+      </div>
     </div>
   );
 }

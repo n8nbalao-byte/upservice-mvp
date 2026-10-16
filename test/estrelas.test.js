@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildMonth, diaryStars, levelOf } from '../server/estrelas.js';
+import { buildMonth, diaryReport, diaryStars, levelOf } from '../server/estrelas.js';
 
 const ended = '2026-10-01T20:00:00Z';
 const now = Date.parse('2026-10-15T12:00:00Z');
@@ -38,4 +38,19 @@ test('mês: bônus abrem com as estrelas; mês perfeito só sem falta e com tudo
   assert.deepEqual(nov.days.filter((d) => d.diaries.length).map((d) => d.day), [3, 20]);
   assert.equal(buildMonth('2026-10', []).days.length, 31);
   assert.deepEqual(nov.bonuses.map((b) => b.afterDay), [9, 17, 24]);
+});
+
+test('resumo do dia (sem horários): o que deu certo, o que pesou e como ganhar mais estrelas', () => {
+  const perfeito = diaryReport({ stars: 3, steps: { CHECK_IN: 'GPS_VALIDADO', PAUSE_START: 'GPS_VALIDADO', PAUSE_END: 'GPS_VALIDADO', CHECK_OUT: 'GPS_VALIDADO' } });
+  assert.equal(perfeito.items.length, 4);
+  assert.ok(perfeito.items.every((i) => i.tone === 'ok'));
+  assert.match(perfeito.tips[0], /Perfeito/);
+  const excecao = diaryReport({ stars: 2, steps: { CHECK_IN: 'EXCECAO_APROVADA', CHECK_OUT: 'GPS_VALIDADO' }, occurrences: ['PAUSA_EXCEDIDA'] });
+  assert.deepEqual(excecao.items.map((i) => i.tone), ['warn', 'ok', 'warn']);
+  assert.equal(excecao.tips.length, 2);
+  const esqueceu = diaryReport({ stars: 1, steps: { CHECK_IN: 'GPS_VALIDADO', CHECK_OUT: 'FECHAMENTO_ADMINISTRATIVO' } });
+  assert.equal(esqueceu.items[1].tone, 'bad');
+  assert.match(esqueceu.tips[0], /checkout/);
+  assert.match(diaryReport({ stars: 0 }).tips[0], /desista pelo app/);
+  for (const r of [perfeito, excecao, esqueceu]) assert.ok(!JSON.stringify(r).match(/\d{1,2}:\d{2}/), 'sem horários');
 });
