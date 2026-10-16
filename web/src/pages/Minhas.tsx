@@ -195,7 +195,6 @@ export default function Minhas() {
                   <span className="next-day">{when(a.starts_at)}</span>
                   <span className="next-what"><b>{a.title}</b><small>{a.unit_name}</small></span>
                   <StatusBadge status={a.confirmation ?? a.session_status ?? a.status} />
-                  {a.session_id && <Link className="btn sm ghost" to={`/atividade/${a.session_id}`}>Registros</Link>}
                 </li>
               ))}
             </ul>

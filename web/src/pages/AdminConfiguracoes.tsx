@@ -7,6 +7,7 @@ import { WhatsappConfig } from '../components/WhatsappConfig';
 const THEMES: { key: Theme; name: string; text: string }[] = [
   { key: 'padrao', name: 'Perfil 1 — Prata', text: 'Identidade atual do sistema: barra lateral prata, destaques e botões em grafite.' },
   { key: 'atacadao', name: 'Perfil 2 — Atacadão', text: 'Inspirado nas cores do Atacadão: barra verde, destaques em laranja e fonte Lato. Sem logotipo nem marca.' },
+  { key: 'upservice', name: 'Perfil 3 — UP Service', text: 'As cores da UP Service, as mesmas do site: azul-marinho com destaques em dourado e fonte Poppins.' },
 ];
 
 /** Prévia em miniatura: o atributo data-theme-brand aplica os tokens do perfil só dentro deste bloco. */

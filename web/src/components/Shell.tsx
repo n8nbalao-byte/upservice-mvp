@@ -13,6 +13,9 @@ const store = {
   set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento: só não lembra */ } },
 };
 
+/** Cadastro completo e os 4 documentos (CPF, RG, comprovante e selfie) aprovados: o Cadastro sai da barra e fica no menu do usuário. */
+const cadastroAprovado = (me: Me) => me.complete && ['CPF', 'RG', 'COMPROVANTE', 'SELFIE'].every((t) => me.documents.some((d) => d.type === t && d.status === 'APROVADO'));
+
 function groupsFor(me: Me, inboxCount: number): Group[] {
   const role = me.user.role;
   if (role === 'PROFISSIONAL') {
@@ -20,7 +23,7 @@ function groupsFor(me: Me, inboxCount: number): Group[] {
     return [{ items: [
       { to: '/minhas', text: 'Minhas diárias', icon: 'home' },
       { to: '/vagas', text: 'Vagas', icon: 'briefcase' },
-      { to: '/cadastro', text: 'Cadastro', icon: 'user' },
+      ...(cadastroAprovado(me) ? [] : [{ to: '/cadastro', text: 'Cadastro', icon: 'user' as const }]),
       { to: '/ocorrencias', text: 'Ocorrências', icon: 'alert' },
     ] }];
   }
@@ -151,6 +154,7 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
             <div className="menu">
               <div className="email">{me.user.email}</div>
               {!(worker && isBlocked(me.user.status)) && <Link className="menu-link" to="/perfil"><Icon name="user" size={18} />Meu perfil</Link>}
+              {worker && !isBlocked(me.user.status) && <Link className="menu-link" to="/cadastro"><Icon name="file" size={18} />Cadastro e documentos</Link>}
               {!worker && <Link className="menu-link" to="/gestao/ajustes"><Icon name="bell" size={18} />Ajustes de notificação</Link>}
               <button className="ghost" onClick={onLogout}><Icon name="logout" size={18} />Sair</button>
             </div>

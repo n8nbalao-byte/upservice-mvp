@@ -852,9 +852,11 @@ test('perfil de cores: global, só o administrador principal troca', { skip }, a
   assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/theme', { theme: 'roxo' })).status, 400);
   assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/theme', { theme: 'atacadao' })).status, 200);
   assert.equal((await call(s.w1, 'GET', '/api/config')).body.theme, 'atacadao', 'vale para todos');
+  assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/theme', { theme: 'upservice' })).status, 200);
+  assert.equal((await call(s.w1, 'GET', '/api/config')).body.theme, 'upservice', 'perfil 3 (UP Service)');
   assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/theme', { theme: 'padrao' })).status, 200);
   const [log] = await q("SELECT COUNT(*) AS n FROM audit_events WHERE action = 'SETTING_THEME'");
-  assert.equal(Number(log.n), 2);
+  assert.equal(Number(log.n), 3);
 });
 
 test('Configurações → WhatsApp: só o principal, chave nunca volta, instância, QR/código, teste e desconexão', { skip }, async () => {

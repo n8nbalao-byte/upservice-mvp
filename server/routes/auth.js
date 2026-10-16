@@ -7,8 +7,8 @@ import { fail, text } from '../http.js';
 
 const r = Router();
 
-/** Perfis de cores do app: 1 = atual (prata e grafite), 2 = inspirado no Atacadão. Escolha global, só do principal. */
-export const THEMES = ['padrao', 'atacadao'];
+/** Perfis de cores do app: 1 = prata e grafite, 2 = inspirado no Atacadão, 3 = UP Service (azul e dourado). Escolha global, só do principal. */
+export const THEMES = ['padrao', 'atacadao', 'upservice'];
 const currentTheme = async () => (await q("SELECT value FROM app_settings WHERE name = 'theme'"))[0]?.value ?? 'padrao';
 
 r.get('/config', async (req, res) => {
