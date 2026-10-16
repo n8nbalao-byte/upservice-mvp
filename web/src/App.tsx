@@ -22,6 +22,7 @@ import Login from './pages/Login';
 import Minhas from './pages/Minhas';
 import Ocorrencias from './pages/Ocorrencias';
 import Pendencias from './pages/Pendencias';
+import Perfil from './pages/Perfil';
 import Relatorios from './pages/Relatorios';
 import Vagas from './pages/Vagas';
 
@@ -103,6 +104,7 @@ export default function App() {
                   <Route path="/minhas" element={<Minhas />} />
                   <Route path="/atividade/:id" element={<Atividade />} />
                   <Route path="/ocorrencias" element={<Ocorrencias />} />
+                  <Route path="/perfil" element={<Perfil />} />
                   <Route path="*" element={<Navigate to="/minhas" />} />
                 </Routes>
               )
@@ -120,6 +122,7 @@ export default function App() {
                 <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />
                 <Route path="/gestao/relatorios" element={<Relatorios />} />
                 <Route path="/gestao/ajustes" element={<Ajustes />} />
+                <Route path="/perfil" element={<Perfil />} />
                 {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
                 <Route path="*" element={<Navigate to="/gestao/inicio" />} />

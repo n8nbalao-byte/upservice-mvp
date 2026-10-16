@@ -100,4 +100,14 @@ export const unitScope = (user, col) => (user.role === 'ADMINISTRADOR'
   ? ['1 = 1', []]
   : [`${col} IN (SELECT unit_id FROM unit_managers WHERE user_id = ? AND active = 1)`, [user.id]]);
 
-export const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status });
+export const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, isOwner: !!u.is_owner });
+
+/**
+ * Administrador principal: papel ADMINISTRADOR + users.is_owner = 1. A flag só é gravada por SSH para a conta com
+ * identidade Google confirmada (google_sub); nunca por e-mail em tempo de execução, então cadastrar o e-mail não basta.
+ */
+export const requireOwner = (req, res, next) => {
+  if (!req.user) fail(401, 'Faça login para continuar.');
+  if (req.user.role !== 'ADMINISTRADOR' || !req.user.is_owner) fail(403, 'Somente o administrador principal pode fazer isto.');
+  next();
+};

@@ -30,6 +30,14 @@ r.get('/me', requireLogin, async (req, res) => {
 
 const digits = (v) => String(v ?? '').replace(/\D/g, '');
 
+// Gestor e admin: no perfil só o nome é editável. E-mail (vem do Google) e CPF não têm rota de alteração.
+r.put('/me/name', requireRole('GESTOR', 'ADMINISTRADOR'), async (req, res) => {
+  const name = text(req.body.name, 'nome', { min: 3, max: 200 });
+  await q('UPDATE users SET name = ? WHERE id = ?', [name, req.user.id]);
+  await audit(q, req, 'PROFILE_NAME', 'user', req.user.id, { before: { name: req.user.name }, after: { name } });
+  res.json({ ok: true });
+});
+
 r.put('/me/profile', requireRole('PROFISSIONAL'), async (req, res) => {
   const b = req.body;
   const cpf = digits(b.cpf);

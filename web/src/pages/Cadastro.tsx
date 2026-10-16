@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMe } from '../App';
+import { DadosPessoais } from '../components/DadosPessoais';
 import { Icon } from '../components/icons';
 import { Alert, PageHeader, StatusBadge, useDialog } from '../components/ui';
 import { api, type Doc } from '../lib/api';
@@ -39,11 +40,6 @@ export default function Cadastro() {
     }
   }
 
-  function saveProfile(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    run('profile', () => api('/me/profile', { method: 'PUT', body: Object.fromEntries(new FormData(e.currentTarget)) }), 'Dados salvos.');
-  }
-
   function sendSelfie(file: string) {
     setCamera(false);
     run('SELFIE', () => api('/me/documents', { body: { type: 'SELFIE', file } }), 'Selfie enviada.');
@@ -61,25 +57,7 @@ export default function Cadastro() {
       </div>
       {error && <Alert kind="danger">{error}</Alert>}
 
-      <form className="card form" onSubmit={saveProfile}>
-        <h2>1. Dados pessoais</h2>
-        <div className="cols">
-          <label>Nome completo<input name="name" defaultValue={me.user.name} required autoComplete="name" /></label>
-          <label>CPF<input name="cpf" defaultValue={p.cpf} inputMode="numeric" required readOnly={!!p.cpf} placeholder="000.000.000-00" />{p.cpf && <span className="hint">O CPF não pode ser alterado</span>}</label>
-          <label>RG<input name="rg" defaultValue={p.rg} required /></label>
-          <label>Telefone (com DDD)<input name="phone" defaultValue={p.phone} inputMode="tel" required autoComplete="tel" placeholder="(11) 90000-0000" /></label>
-        </div>
-        <div className="cols">
-          <label>Endereço<input name="address" defaultValue={p.address} required autoComplete="street-address" placeholder="Rua, número, complemento" /></label>
-          <label>Cidade<input name="city" defaultValue={p.city} required /></label>
-          <label>UF<input name="uf" defaultValue={p.uf ?? 'SP'} maxLength={2} required /></label>
-        </div>
-        <div className="cols">
-          <label>Contato de emergência (nome)<input name="emergencyName" defaultValue={p.emergency_name} required /></label>
-          <label>Telefone de emergência<input name="emergencyPhone" defaultValue={p.emergency_phone} inputMode="tel" required /></label>
-        </div>
-        <div><button className="primary" disabled={busy === 'profile'}>{busy === 'profile' ? 'Salvando…' : me.profile ? 'Atualizar dados' : 'Salvar e continuar'}</button></div>
-      </form>
+      <DadosPessoais title="1. Dados pessoais" />
 
       {step >= 2 && (
         <div className="card stack">

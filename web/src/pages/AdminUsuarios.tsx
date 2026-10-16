@@ -4,7 +4,7 @@ import { useMe } from '../App';
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
 import { api, label, type Unit } from '../lib/api';
 
-type User = { id: string; name: string; email: string; role: string; status: string; unitIds: string[] };
+type User = { id: string; name: string; email: string; role: string; status: string; isOwner: boolean; unitIds: string[] };
 const ROLES = ['PROFISSIONAL', 'GESTOR', 'ADMINISTRADOR'];
 const STATUS = ['ATIVO', 'EM_ANALISE', 'BLOQUEADO_TEMPORARIAMENTE', 'BLOQUEADO_PERMANENTEMENTE', 'INATIVO'];
 const FILTERS = [{ key: '', text: 'Todos' }, { key: 'PROFISSIONAL', text: 'Profissionais' }, { key: 'GESTOR', text: 'Gestores' }, { key: 'ADMINISTRADOR', text: 'Administradores' }];
@@ -59,6 +59,18 @@ export default function AdminUsuarios() {
     if (await run(u.id, () => api(`/admin/users/${u.id}`, { method: 'PATCH', body: { ...change, reason } }), 'Usuário atualizado.')) load();
   }
 
+  // Exclusão: só o administrador principal (o servidor confere de novo). Duas confirmações: justificativa e "EXCLUIR".
+  async function remove(u: User) {
+    const reason = await ask(reasonOpts(`Excluir ${u.name}?`, {
+      message: 'O acesso acaba na hora e os dados pessoais (nome, e-mail, CPF, documentos e selfies) são apagados. Diárias e registros de presença ficam anonimizados pelo prazo de retenção. Não dá para desfazer.',
+      confirmText: 'Continuar', tone: 'danger',
+    }));
+    if (!reason) return;
+    const typed = await ask({ title: 'Confirme a exclusão', label: 'Digite EXCLUIR para confirmar', requireText: 'EXCLUIR', confirmText: 'Excluir usuário', tone: 'danger' });
+    if (!typed) return;
+    if (await run(u.id, () => api(`/admin/users/${u.id}`, { method: 'DELETE', body: { reason } }), 'Usuário excluído.')) load();
+  }
+
   const shown = (users ?? []).filter((u) => !role || u.role === role);
   return (
     <div className="page">
@@ -81,26 +93,34 @@ export default function AdminUsuarios() {
               <thead><tr><th>Usuário</th><th>Papel</th><th>Status</th><th>Lojas</th><th>Ações</th></tr></thead>
               <tbody>
                 {shown.map((u) => {
-                  const self = u.id === me.user.id;
+                  // O principal e a própria conta não são alterados por aqui (o servidor também recusa).
+                  const isMe = u.id === me.user.id;
+                  const locked = isMe || u.isOwner;
                   return [
                     <tr key={u.id}>
-                      <td data-label="Usuário"><span className="strong">{u.name}{self && ' (você)'}</span><span className="muted">{u.email}</span></td>
+                      <td data-label="Usuário"><span className="strong">{u.name}{isMe && ' (você)'}</span><span className="muted">{u.email}</span></td>
                       <td data-label="Papel">
-                        {self ? label(u.role) : (
+                        {locked ? label(u.role) : (
                           <select value={u.role} onChange={(e) => update(u, { role: e.target.value })} aria-label={`Papel de ${u.name}`}>
-                            {ROLES.map((r) => <option key={r} value={r}>{label(r)}</option>)}
+                            {ROLES.map((r) => <option key={r} value={r} disabled={r === 'ADMINISTRADOR' && u.role !== 'ADMINISTRADOR' && !me.user.isOwner}>{label(r)}</option>)}
                           </select>
                         )}
                       </td>
                       <td data-label="Status">
-                        {self ? <StatusBadge status={u.status} /> : (
+                        {locked ? <StatusBadge status={u.status} /> : (
                           <select value={u.status} onChange={(e) => update(u, { status: e.target.value })} aria-label={`Status de ${u.name}`}>
                             {STATUS.map((s) => <option key={s} value={s}>{label(s)}</option>)}
                           </select>
                         )}
                       </td>
                       <td data-label="Lojas">{u.role === 'GESTOR' ? <button className="sm" onClick={() => setEditing(editing === u.id ? '' : u.id)}>{u.unitIds.length} loja(s) · {editing === u.id ? 'fechar' : 'editar'}</button> : <span className="muted">—</span>}</td>
-                      <td data-label="Ações">{u.role === 'PROFISSIONAL' ? <Link className="btn sm" to={`/gestao/profissionais/${u.id}`}>Ver perfil</Link> : <span className="muted">—</span>}</td>
+                      <td data-label="Ações">
+                        <div className="row">
+                          {u.role === 'PROFISSIONAL' && <Link className="btn sm" to={`/gestao/profissionais/${u.id}`}>Ver perfil</Link>}
+                          {u.isOwner && <span className="badge tone-accent plain">Administrador principal</span>}
+                          {me.user.isOwner && !locked && <button className="sm ghost text-danger" onClick={() => remove(u)}>Excluir</button>}
+                        </div>
+                      </td>
                     </tr>,
                     editing === u.id && (
                       <tr key={`${u.id}-units`}><td colSpan={5}><UnitLinks user={u} units={units} onSaved={load} /></td></tr>
