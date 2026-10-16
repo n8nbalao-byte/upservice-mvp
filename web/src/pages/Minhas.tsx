@@ -5,7 +5,8 @@ import { useFit, useMedia } from '../components/fit';
 import { Icon } from '../components/icons';
 import { Alert, EmptyState, Loading, StatusBadge, useAction, useDialog } from '../components/ui';
 import { api, fmtMoney, fmtTime, todayBR } from '../lib/api';
-import { hms, jornadaStatus, minutesLeft, type JornadaEvent, type JornadaSession } from '../lib/jornada';
+import { JornadaBars } from '../components/JornadaBars';
+import { hms, jornadaStatus, type JornadaEvent, type JornadaSession } from '../lib/jornada';
 
 type App = {
   id: string; status: string; title: string; starts_at: string; ends_at: string; unit_name: string; reserve_position: number;
@@ -28,16 +29,6 @@ function when(iso: string) {
   if (day === new Date(Date.now() + 86400e3).toLocaleDateString('sv-SE', { timeZone: TZ })) return 'Amanhã';
   const s = new Date(iso).toLocaleDateString('pt-BR', { timeZone: TZ, weekday: 'short', day: '2-digit', month: '2-digit' });
   return s.charAt(0).toUpperCase() + s.slice(1).replace('.', '');
-}
-
-function Bar({ label: text, pct, note, tone }: { label: string; pct: number; note: string; tone?: string }) {
-  return (
-    <div className={`jbar${tone ? ` tone-${tone}` : ''}`}>
-      <div className="jbar-head"><span>{text}</span><b>{pct}%</b></div>
-      <div className="jbar-track" role="progressbar" aria-label={text} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${pct}%` }} /></div>
-      <small>{note}</small>
-    </div>
-  );
 }
 
 /** Relógio em anel + barras da jornada de hoje. Relógio do servidor; recarrega a sessão a cada 30 s. */
@@ -82,17 +73,7 @@ function Jornada({ app }: { app: App }) {
           {j.phase === 'antes' ? (
             <p className="muted">O check-in abre 15 minutos antes do início. Na loja, toque em "Fazer check-in" e segure o botão.</p>
           ) : (
-            <>
-              <Bar label="Jornada" pct={j.total} note={j.clock && j.clock.ms > 0 ? `faltam ${minutesLeft(j.clock.ms)}` : 'concluída'} />
-              {j.part && (
-                <Bar
-                  label={j.part.label}
-                  pct={j.part.pct}
-                  tone={j.phase === 'pausa' ? 'warning' : j.part.ready ? 'success' : undefined}
-                  note={j.part.ready ? 'Você já pode fazer sua pausa' : j.part.msLeft >= 0 ? `faltam ${minutesLeft(j.part.msLeft)}` : 'tempo encerrado'}
-                />
-              )}
-            </>
+            <JornadaBars j={j} />
           )}
         </div>
       </div>

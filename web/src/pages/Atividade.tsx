@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { Icon } from '../components/icons';
-import { Alert, Loading, PageHeader, HoldButton } from '../components/ui';
+import { JornadaBars } from '../components/JornadaBars';
+import { Alert, Loading, PageHeader, HoldButton, useDialog } from '../components/ui';
+import { jornadaStatus } from '../lib/jornada';
 import { ApiError, api, fmtDateTime, fmtTime, label, toLocalInput } from '../lib/api';
 import { GeoError, Selfie, alertBreakOver, distanceMeters, getPosition } from '../lib/device';
 
@@ -22,6 +24,8 @@ export default function Atividade() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
+  const [skipBreak, setSkipBreak] = useState(false);
+  const { confirm } = useDialog();
   const clockOffset = useRef(0);
   const alerted = useRef(false);
 
@@ -183,6 +187,11 @@ export default function Atividade() {
         )}
       </section>
 
+      {/* Barra da jornada (e do trecho até a pausa / da pausa) enquanto ele está trabalhando. */}
+      {['EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA'].includes(s.status) && (
+        <section className="card jbars" aria-label="Andamento da jornada"><JornadaBars j={jornadaStatus(s, data.events, now)} /></section>
+      )}
+
       {error && <Alert kind="danger">{error}</Alert>}
       {busy && <div className="loading"><span className="spinner" />{busy}</div>}
       {failure && !busy && (
@@ -221,12 +230,15 @@ export default function Atividade() {
               )
                 : <div className="hold-row">{action('CHECK_IN', 'Fazer check-in')}</div>
           )}
-          {s.status === 'EM_ATIVIDADE' && (
-            <div className="hold-row">
-              {s.breaks_used < s.break_count && action('PAUSE_START', 'Iniciar pausa', false)}
-              {action('CHECK_OUT', 'Fazer checkout')}
+          {/* Um botão por vez, conforme o andamento: pausa primeiro; depois do retorno (ou sem pausa na vaga), o checkout. */}
+          {s.status === 'EM_ATIVIDADE' && (s.breaks_used < s.break_count && !skipBreak ? (
+            <div className="stack" style={{ alignItems: 'center' }}>
+              <div className="hold-row">{action('PAUSE_START', 'Iniciar pausa')}</div>
+              <button type="button" className="link" onClick={async () => { if (await confirm({ title: 'Sair sem fazer a pausa?', message: 'O botão de checkout vai aparecer. Use só se você precisar ir embora antes da pausa.', confirmText: 'Mostrar checkout' })) setSkipBreak(true); }}>Preciso sair sem fazer a pausa</button>
             </div>
-          )}
+          ) : (
+            <div className="hold-row">{action('CHECK_OUT', 'Fazer checkout')}</div>
+          ))}
           {onBreak && <div className="hold-row">{action('PAUSE_END', 'Retornar da pausa')}</div>}
           {ACTIVE.includes(s.status) && now > endsAt && (
             <Alert kind="warning">Checkout pendente: o horário da vaga terminou. Após 30 minutos sem checkout, a atividade fica pendente para o gestor encerrar.</Alert>
