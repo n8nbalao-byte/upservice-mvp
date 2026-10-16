@@ -195,6 +195,7 @@ r.delete('/admin/users/:id', requireOwner, async (req, res) => {
     }
     await tq('DELETE FROM sessions WHERE user_id = ?', [u.id]);
     await tq('DELETE FROM auth_tokens WHERE user_id = ?', [u.id]);
+    await tq('DELETE FROM notifications WHERE user_id = ?', [u.id]);
     files.push(...(await tq('SELECT storage_key FROM worker_documents WHERE user_id = ?', [u.id])).map((d) => d.storage_key));
 
     const [h] = await tq(

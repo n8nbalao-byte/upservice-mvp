@@ -1,7 +1,7 @@
 // Estrutura do app: barra lateral (desktop, recolhível), gaveta (celular), abas inferiores do profissional e barra superior com busca.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { api, fmtDate, isBlocked, label, type Me } from '../lib/api';
+import { CHANGED, api, fmtDate, isBlocked, label, type Me } from '../lib/api';
 import { Icon, type IconName } from './icons';
 
 type Item = { to: string; text: string; icon: IconName; count?: number };
@@ -16,12 +16,12 @@ const store = {
 /** Cadastro completo e os 4 documentos (CPF, RG, comprovante e selfie) aprovados: o Cadastro sai da barra e fica no menu do usuário. */
 const cadastroAprovado = (me: Me) => me.complete && ['CPF', 'RG', 'COMPROVANTE', 'SELFIE'].every((t) => me.documents.some((d) => d.type === t && d.status === 'APROVADO'));
 
-function groupsFor(me: Me, inboxCount: number, gamification = false): Group[] {
+function groupsFor(me: Me, inboxCount: number, gamification = false, upcoming = 0): Group[] {
   const role = me.user.role;
   if (role === 'PROFISSIONAL') {
     if (isBlocked(me.user.status)) return [{ items: [{ to: '/ocorrencias', text: 'Ocorrências', icon: 'alert' }] }];
     return [{ items: [
-      { to: '/minhas', text: 'Minhas diárias', icon: 'home' },
+      { to: '/minhas', text: 'Minhas diárias', icon: 'home', count: upcoming },
       ...(gamification ? [{ to: '/estrelas', text: 'Estrelas', icon: 'star' as const }] : []),
       { to: '/vagas', text: 'Vagas', icon: 'briefcase' },
       ...(cadastroAprovado(me) ? [] : [{ to: '/cadastro', text: 'Cadastro', icon: 'user' as const }]),
@@ -102,7 +102,18 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
 
   const worker = me.user.role === 'PROFISSIONAL';
   const selfie = me.documents.find((d) => d.type === 'SELFIE' && d.status !== 'REJEITADO');
-  const groups = groupsFor(me, inboxCount, gamification);
+  // Profissional: avisos não lidos (sino) e diárias que vêm pela frente (número no botão "Diárias").
+  const [avisos, setAvisos] = useState({ unread: 0, upcoming: 0 });
+  const workerActive = worker && !isBlocked(me.user.status);
+  useEffect(() => {
+    if (!workerActive) return;
+    const load = () => api<{ unread: number; upcoming: number }>('/me/avisos').then((a) => setAvisos({ unread: a.unread, upcoming: a.upcoming }), () => {});
+    load();
+    const t = setInterval(load, 30000);
+    window.addEventListener(CHANGED, load);
+    return () => { clearInterval(t); window.removeEventListener(CHANGED, load); };
+  }, [workerActive, pathname]);
+  const groups = groupsFor(me, inboxCount, gamification, avisos.upcoming);
   // Desktop: recolhe a barra (preferência lembrada). Celular/tablet: abre a gaveta.
   const menu = () => {
     if (window.matchMedia('(max-width: 1023px)').matches) return setDrawer(true);
@@ -140,6 +151,12 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
           <span className="topbar-brand">UP Service</span>
           {!worker && <Search />}
           <div className="spacer" />
+          {workerActive && (
+            <NavLink to="/avisos" className="icon-btn" aria-label={`Avisos: ${avisos.unread} não lido(s)`} title="Avisos">
+              <Icon name="bell" size={22} />
+              {avisos.unread > 0 && <span className="dot">{avisos.unread}</span>}
+            </NavLink>
+          )}
           {!worker && (
             <NavLink to="/gestao/pendencias" className="icon-btn" aria-label={`Pendências: ${inboxCount}`} title="Pendências">
               <Icon name="bell" size={22} />
@@ -168,7 +185,10 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
       {worker && groups[0].items.length > 1 && (
         <nav className="bottom-nav" aria-label="Navegação">
           {groups[0].items.map((it) => (
-            <NavLink key={it.to} to={it.to}><Icon name={it.icon} size={22} />{it.text.replace('Minhas diárias', 'Diárias')}</NavLink>
+            <NavLink key={it.to} to={it.to} aria-label={it.count ? `${it.text.replace('Minhas diárias', 'Diárias')}: ${it.count}` : undefined}>
+              <Icon name={it.icon} size={22} />{it.text.replace('Minhas diárias', 'Diárias')}
+              {!!it.count && <span className="nav-count" aria-hidden="true">{it.count}</span>}
+            </NavLink>
           ))}
         </nav>
       )}

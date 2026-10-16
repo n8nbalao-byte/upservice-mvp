@@ -50,3 +50,15 @@ export async function sendWhatsapp(phone, text) {
   const digits = String(phone).replace(/\D/g, '');
   await evolution('/message/sendText/{instance}', { method: 'POST', body: { number: digits.startsWith('55') ? digits : `55${digits}`, text } });
 }
+
+/** Aviso que nunca derruba a operação: sem WhatsApp configurado não envia; falha só vai para o log. */
+export async function sendWhatsappSafe(phone, text) {
+  try {
+    if (!(await whatsappConfig())) return false;
+    await sendWhatsapp(phone, text);
+    return true;
+  } catch (e) {
+    console.error('falha ao enviar WhatsApp', e.message);
+    return false;
+  }
+}

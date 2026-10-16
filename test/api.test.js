@@ -1128,6 +1128,70 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
   }
 });
 
+test('reserva chamada recebe WhatsApp (se tiver número confirmado), só depois de gravar', { skip }, async () => {
+  const http = await import('node:http');
+  // CPF válido a partir de 9 dígitos (dígitos verificadores calculados).
+  const cpf = (base) => {
+    const d = base.split('').map(Number);
+    for (const n of [9, 10]) { const s = d.reduce((t, v, i) => t + v * (n + 1 - i), 0); d.push(((s * 10) % 11) % 10); }
+    return d.join('');
+  };
+  const sent = [];
+  const mock = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (c) => { b += c; });
+    req.on('end', () => { sent.push({ url: req.url, body: JSON.parse(b || '{}') }); res.end('{}'); });
+  }).listen(0);
+  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  try {
+    const [ana, beto] = [await login('ana-res@test.dev'), await login('beto-res@test.dev')];
+    await completeWorker(ana, cpf('184720593'));
+    await completeWorker(beto, cpf('293861047'));
+    await q("UPDATE users SET whatsapp = '11966665555', whatsapp_verified_at = ? WHERE email = 'beto-res@test.dev'", [new Date()]);
+    const starts = new Date(Date.now() + 3 * 86400e3);
+    const job = (await call(s.gestor, 'POST', '/api/manage/jobs', {
+      unitId: s.unitA, title: 'Repositor reserva WhatsApp', startsAt: starts, endsAt: new Date(starts.getTime() + 8 * 3600e3), positions: 1, dailyValue: 130, breakCount: 1, breakMinutes: 15, publish: true,
+    })).body.id;
+    const a = (await call(ana, 'POST', `/api/jobs/${job}/apply`, {})).body;
+    const b = (await call(beto, 'POST', `/api/jobs/${job}/apply`, {})).body;
+    assert.deepEqual([a.status, b.status], ['APROVADA', 'RESERVA']);
+    assert.equal(sent.length, 0, 'entrar na reserva não manda nada');
+
+    // Ana desiste: Beto é aprovado e recebe o WhatsApp no número confirmado.
+    assert.equal((await call(ana, 'POST', `/api/me/applications/${a.id}/cancel`, {})).status, 200);
+    assert.equal((await q('SELECT status FROM applications WHERE id = ?', [b.id]))[0].status, 'APROVADA');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].url, '/message/sendText/upservice');
+    assert.equal(sent[0].body.number, '5511966665555');
+    assert.match(sent[0].body.text, /saiu da reserva/);
+    assert.match(sent[0].body.text, /Repositor reserva WhatsApp/);
+    // Também dentro do app: aviso não lido e a diária contada no botão "Diárias".
+    const av = (await call(beto, 'GET', '/api/me/avisos')).body;
+    assert.equal(av.unread, 1);
+    assert.equal(av.items[0].title, 'Você saiu da reserva!');
+    assert.match(av.items[0].body, /Repositor reserva WhatsApp/);
+    assert.equal(av.upcoming, 1);
+    assert.equal((await call(ana, 'GET', '/api/me/avisos')).body.unread, 0, 'quem desistiu não recebe aviso');
+    assert.equal((await call(beto, 'POST', '/api/me/avisos/lidos', {})).status, 200);
+    assert.equal((await call(beto, 'GET', '/api/me/avisos')).body.unread, 0);
+
+    // Sem WhatsApp confirmado: a chamada acontece igual, só sem mensagem.
+    const cris = await login('cris-res@test.dev');
+    await completeWorker(cris, cpf('381946205'));
+    const job2 = (await call(s.gestor, 'POST', '/api/manage/jobs', {
+      unitId: s.unitA, title: 'Repositor sem WhatsApp', startsAt: new Date(starts.getTime() + 86400e3), endsAt: new Date(starts.getTime() + 86400e3 + 8 * 3600e3), positions: 1, dailyValue: 130, breakCount: 1, breakMinutes: 15, publish: true,
+    })).body.id;
+    const a2 = (await call(beto, 'POST', `/api/jobs/${job2}/apply`, {})).body;
+    const c2 = (await call(cris, 'POST', `/api/jobs/${job2}/apply`, {})).body;
+    assert.equal((await call(beto, 'POST', `/api/me/applications/${a2.id}/cancel`, {})).status, 200);
+    assert.equal((await q('SELECT status FROM applications WHERE id = ?', [c2.id]))[0].status, 'APROVADA');
+    assert.equal(sent.length, 1, 'sem número confirmado, nada é enviado');
+  } finally {
+    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
+    mock.close();
+  }
+});
+
 test('estrelas (prévia): profissional só vê com o interruptor ligado; principal liga; gestor confere a ficha', { skip }, async () => {
   assert.equal((await call(null, 'GET', '/api/config')).body.gamification, false);
   assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).status, 403, 'desligado: profissional não vê');

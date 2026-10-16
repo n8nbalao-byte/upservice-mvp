@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMe } from '../App';
-import { useFit, useMedia } from '../components/fit';
 import { Icon } from '../components/icons';
 import { Alert, EmptyState, Loading, StatusBadge, useAction, useDialog } from '../components/ui';
 import { api, fmtMoney, fmtTime, todayBR } from '../lib/api';
 import { JornadaBars } from '../components/JornadaBars';
 import { hms, jornadaStatus, type JornadaEvent, type JornadaSession } from '../lib/jornada';
+import type { Aviso } from './Avisos';
 
 type App = {
   id: string; status: string; title: string; starts_at: string; ends_at: string; unit_name: string; reserve_position: number;
@@ -18,9 +18,6 @@ const TZ = 'America/Sao_Paulo';
 const WITHDRAW_LIMIT_MS = 2 * 3600e3;
 const OPEN = ['AGUARDANDO_CHECKIN', 'EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA', 'PENDENTE_DE_EXCECAO', 'PENDENTE_DE_FECHAMENTO'];
 const REQUIRED_DOCS = ['SELFIE', 'CPF', 'RG', 'COMPROVANTE'];
-/** Tela que ocupa exatamente o celular: a lista mostra só as linhas que cabem. */
-const FIT = '(max-width: 1023px) and (min-height: 540px)';
-const ROW = 61;
 
 const dayOf = (iso: string) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: TZ });
 function when(iso: string) {
@@ -91,14 +88,18 @@ export default function Minhas() {
   const [apps, setApps] = useState<App[]>();
   const [history, setHistory] = useState(false);
   const [error, setError] = useState('');
-  const fit = useMedia(FIT) && !history;
-  const [listRef, rows] = useFit(ROW);
+  const [avisos, setAvisos] = useState<Aviso[]>([]);
 
   const load = () => Promise.all([
     api<{ valor: number }>('/me/summary').then((s) => setValor(s.valor)),
     api<App[]>('/me/applications').then(setApps),
+    api<{ items: Aviso[] }>('/me/avisos').then((a) => setAvisos(a.items.filter((i) => !i.read_at).slice(0, 3)), () => {}),
   ]).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
+  const dismiss = (id: string) => {
+    setAvisos((list) => list.filter((a) => a.id !== id));
+    api('/me/avisos/lidos', { body: { ids: [id] } }).catch(() => {});
+  };
 
   async function cancel(a: App) {
     const approved = a.status === 'APROVADA';
@@ -120,14 +121,14 @@ export default function Minhas() {
   const next = [...open.filter((a) => a !== today), ...apps.filter((a) => a.status === 'PENDENTE')]
     .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at));
   const past = apps.filter((a) => a !== today && !next.includes(a));
-  const shown = fit && rows ? next.slice(0, rows) : next;
   const docsPending = !REQUIRED_DOCS.every((t) => me.documents.some((d) => d.type === t && d.status === 'APROVADO'));
   const day = new Date().toLocaleDateString('pt-BR', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' });
 
+  // Cada próxima diária num cartão pequeno: dia, horário e loja, com a ação ao lado.
   const item = (a: App) => (
-    <li key={a.id} className="next-item">
+    <li key={a.id} className="card mini-card">
       <span className="next-day">{when(a.starts_at)}</span>
-      <span className="next-what"><b>{fmtTime(a.starts_at)}–{fmtTime(a.ends_at)}</b><small>{a.unit_name}</small></span>
+      <span className="next-what"><b>{fmtTime(a.starts_at)}–{fmtTime(a.ends_at)}</b><small>{a.title} · {a.unit_name}</small></span>
       {a.status === 'PENDENTE' ? (
         <>
           <StatusBadge tone="info">Reserva nº {a.reserve_position}</StatusBadge>
@@ -140,12 +141,19 @@ export default function Minhas() {
   );
 
   return (
-    <div className={`page diarias${fit ? ' fit' : ''}`}>
+    <div className="page diarias">
       <header className="diarias-head">
         <h1>Olá, {me.user.name.split(/\s+/)[0]}!</h1>
         <p className="muted">{day.charAt(0).toUpperCase() + day.slice(1)}</p>
       </header>
       {error && <Alert kind="danger">{error}</Alert>}
+      {avisos.map((a) => (
+        <div key={a.id} className="aviso-banner" role="status">
+          <Icon name="bell" size={20} />
+          <div><b>{a.title}</b>{a.body && <p>{a.body}</p>}</div>
+          <button type="button" className="sm" onClick={() => dismiss(a.id)}>Entendi</button>
+        </div>
+      ))}
       {(!me.complete || docsPending) && (
         <Link to="/cadastro" className="diarias-warn"><Icon name="alert" size={18} />{!me.complete ? 'Complete seu cadastro para pegar vagas' : 'Documentos em análise pela UP Service'}<Icon name="chevronRight" size={16} /></Link>
       )}
@@ -157,14 +165,16 @@ export default function Minhas() {
 
       {today && <Jornada key={today.id} app={today} />}
 
-      <section className="card tight next">
-        <div className="card-header"><h2>Próximas diárias</h2>{next.length > shown.length && <button className="link" onClick={() => setHistory(true)}>Ver todas ({next.length})</button>}</div>
-        {next.length === 0 ? <p className="next-empty">Nenhuma diária marcada.</p> : <ul className="next-list" ref={listRef}>{shown.map(item)}</ul>}
-        <div className="card-footer">
-          <button className="link" onClick={() => setHistory(!history)}>{history ? 'Esconder histórico' : 'Ver histórico'}</button>
-          <Link className="link" to="/vagas">Ver vagas</Link>
-        </div>
+      <section className="next-section" aria-label="Próximas diárias">
+        <h2 className="section-title">Próximas diárias{next.length > 0 && ` (${next.length})`}</h2>
+        {next.length === 0 ? <p className="card next-empty">Nenhuma diária marcada. Toque em "Ver vagas" para escolher.</p> : <ul className="mini-list">{next.map(item)}</ul>}
       </section>
+
+      {/* Sempre à mão: fixos no pé da tela (acima das abas no celular). */}
+      <div className="diarias-actions">
+        <button type="button" onClick={() => setHistory(!history)}>{history ? 'Esconder histórico' : 'Ver histórico'}</button>
+        <Link className="btn primary" to="/vagas">Ver vagas</Link>
+      </div>
 
       {history && (
         <section className="card tight">
