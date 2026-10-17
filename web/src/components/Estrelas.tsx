@@ -31,7 +31,7 @@ function Stars({ n, of = 3, big = false }: { n: number; of?: number; big?: boole
   );
 }
 
-export type Open = { kind: 'diary'; d: Diary } | { kind: 'bonus'; key: string; b: Bonus; d?: Diary };
+export type Open = { kind: 'diary'; d: Diary } | { kind: 'bonus'; key: string; b: Bonus; d?: Diary } | { kind: 'livre'; key: string; b?: Bonus };
 
 /** Uma fase = um dia do mês, pela situação vinda do servidor: feita (estrelas), agendada, hoje, em análise,
  *  livre (cadeado: desbloqueia agendando uma vaga nesse dia) ou passou (apagado). Dia de bônus: selo de presente (ou TV). */
@@ -42,13 +42,13 @@ function DayTile({ month, day, onOpen, isToday }: { month: string; day: Day; onO
   const badge = b && <span className={`g-badge${b.kind === 'SORTEIO' ? ' tv' : ''}${b.earned ? ' won' : ''}`} aria-hidden="true"><Icon name={b.kind === 'SORTEIO' ? 'tv' : 'gift'} size={14} /></span>;
   const bonusText = b ? (b.kind === 'SORTEIO' ? ', dia do sorteio' : `, dia de bônus${b.earned ? ' ganho' : ''}`) : '';
   const cls = ['g-tile', `s-${day.status}`, d?.stars === 0 && 'zero', isToday && 'is-today', b?.kind === 'SORTEIO' && 'tv'].filter(Boolean).join(' ');
-  // Dia livre (cadeado): desbloqueia candidatando-se a uma vaga desse dia, então o toque leva direto às vagas do dia.
+  // Dia livre (cadeado): o toque abre o cartão explicando como desbloquear (candidatar-se a uma vaga nesse dia).
   if (day.status === 'livre') {
     return (
       <li className={cls}>
-        <Link className="g-hit" to={`/vagas?dia=${key}`} aria-label={`Dia ${day.day}: bloqueado${bonusText}. Ver vagas deste dia para desbloquear`}>
+        <button type="button" className="g-hit" onClick={() => onOpen({ kind: 'livre', key, b })} aria-label={`Dia ${day.day}: bloqueado${bonusText}. Ver como desbloquear`}>
           <span className="g-lock"><Icon name="lock" size={18} /></span><small className="g-date">{day.day}</small>
-        </Link>
+        </button>
         {badge}
       </li>
     );
@@ -139,6 +139,29 @@ function BonusDetail({ o, sorteio, onDiary, onClose }: { o: Extract<Open, { kind
         <div className="g-celebrate-actions">
           {d && <button type="button" className="g-pill sm" onClick={() => onDiary(d)}>Ver a diária</button>}
           <button type="button" className="g-pill sm" onClick={onClose}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Dia bloqueado (cadeado): sem vaga neste dia. Para ganhar as estrelas, candidate-se a uma vaga nele. */
+function LivreDetail({ o, sorteio, onClose }: { o: Extract<Open, { kind: 'livre' }>; sorteio: Sorteio | null; onClose: () => void }) {
+  return (
+    <div className="g-overlay" role="dialog" aria-modal="true" aria-label={`Dia ${dayMonth(o.key)} bloqueado`} onClick={onClose}>
+      <div className="g-sheet" onClick={(e) => e.stopPropagation()}>
+        <span className="g-gift lock" aria-hidden="true"><Icon name="lock" size={36} /></span>
+        <p className="g-sheet-day">{longDay(`${o.key}T12:00:00-03:00`)}</p>
+        <h2>Dia bloqueado</h2>
+        <div className="g-tips">
+          <p>Você ainda não tem vaga neste dia. Para ganhar as estrelas dele, <b>candidate-se a uma vaga neste dia</b>: a fase desbloqueia e vale até 3 estrelas.</p>
+          {o.b?.kind === 'BONUS' && <p><b>Dia de bônus!</b> Quem fizer 3 estrelas neste dia ganha o bônus em dinheiro.</p>}
+          {o.b?.kind === 'SORTEIO' && <p><b>Dia do sorteio!</b> {o.b.label ?? ''}: concorre quem tiver {sorteio?.need ?? 15} dias com 3 estrelas no ano e fizer 3 estrelas neste dia.{sorteio && ` Você tem ${sorteio.threeStarDays} de ${sorteio.need}.`}</p>}
+          <p>{HOW_TO}</p>
+        </div>
+        <div className="g-celebrate-actions">
+          <button type="button" className="g-pill sm" onClick={onClose}>Fechar</button>
+          <Link className="g-pill sm" to={`/vagas?dia=${o.key}`}>Procurar uma vaga neste dia</Link>
         </div>
       </div>
     </div>
@@ -300,6 +323,7 @@ export function EstrelasMapa({ data, back }: { data: StarsData; back?: ReactNode
       {createPortal(<>
       {open?.kind === 'diary' && <DayDetail d={open.d} onClose={() => setOpen(null)} />}
       {open?.kind === 'bonus' && <BonusDetail o={open} sorteio={data.sorteio} onDiary={(d) => setOpen({ kind: 'diary', d })} onClose={() => setOpen(null)} />}
+      {open?.kind === 'livre' && <LivreDetail o={open} sorteio={data.sorteio} onClose={() => setOpen(null)} />}
       {party && <Celebrate title={party.title} n={party.n} text={party.text} onDetails={party.d ? () => { setOpen({ kind: 'diary', d: party.d! }); setParty(null); } : undefined} onClose={() => setParty(null)} />}
       </>, document.body)}
     </>
