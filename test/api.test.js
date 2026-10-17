@@ -1513,12 +1513,14 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
 
   const sent = [];
   let polls = 0;
+  let webhook = {};
   const mock = http.createServer((req, res) => {
     let b = '';
     req.on('data', (c) => { b += c; });
     req.on('end', () => {
       sent.push({ url: req.url, body: JSON.parse(b || '{}') });
-      res.end(JSON.stringify(req.url.includes('sendPoll') ? { key: { id: `poll-${++polls}` } } : {}));
+      if (req.url === '/webhook/set/upservice') webhook = JSON.parse(b).webhook;
+      res.end(JSON.stringify(req.url.includes('sendPoll') ? { key: { id: `poll-${++polls}` } } : req.url === '/webhook/find/upservice' ? webhook : {}));
     });
   }).listen(0);
   Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
@@ -1528,10 +1530,13 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
     assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: true })).status, 200);
     const set = sent.find((x) => x.url === '/webhook/set/upservice');
     assert.ok(set?.body.webhook.enabled && set.body.webhook.events.includes('MESSAGES_UPSERT'));
-    const hookUrl = new URL(set.body.webhook.url);
-    const hook = hookUrl.pathname + hookUrl.search;
-    assert.match(hook, /^\/api\/whatsapp\/webhook\?token=[0-9a-f]{48}$/);
-    assert.equal((await call(null, 'POST', '/api/whatsapp/webhook?token=errado', {})).status, 401);
+    // Token no cabeçalho (fora da URL, que vai para logs); com o cabeçalho guardado, token na URL não vale.
+    const token = set.body.webhook.headers['x-webhook-token'];
+    assert.match(token, /^[0-9a-f]{64}$/);
+    assert.equal(new URL(set.body.webhook.url).search, '', 'token fora da URL');
+    const post = (body, tk = token) => fetch(`${base}/api/whatsapp/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-webhook-token': tk }, body: JSON.stringify(body) });
+    assert.equal((await post({}, 'errado')).status, 401);
+    assert.equal((await call(null, 'POST', `/api/whatsapp/webhook?token=${token}`, {})).status, 401);
 
     // Profissional habilitado, com o WhatsApp confirmado; uma vaga amanhã na loja A.
     const bot = await login('bot1@test.dev');
@@ -1544,8 +1549,8 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
 
     const settle = async () => { let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 120)); } };
     const msg = (jid, message) => ({ event: 'messages.upsert', instance: 'upservice', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message } });
-    const say = async (text, jid = '5511977770123@s.whatsapp.net') => { assert.equal((await call(null, 'POST', hook, msg(jid, { conversation: text }))).status, 200); await settle(); };
-    const vote = async (name) => { await call(null, 'POST', hook, { event: 'messages.update', data: { keyId: `poll-${polls}`, remoteJid: '5511977770123@s.whatsapp.net', fromMe: false, pollUpdates: [{ vote: { selectedOptions: [name] } }] } }); await settle(); };
+    const say = async (text, jid = '5511977770123@s.whatsapp.net') => { assert.equal((await post(msg(jid, { conversation: text }))).status, 200); await settle(); };
+    const vote = async (name) => { await post({ event: 'messages.update', data: { keyId: `poll-${polls}`, remoteJid: '5511977770123@s.whatsapp.net', fromMe: false, pollUpdates: [{ vote: { selectedOptions: [name] } }] } }); await settle(); };
     const poll = () => sent.filter((x) => x.url === '/message/sendPoll/upservice').at(-1).body;
     const texts = () => sent.filter((x) => x.url === '/message/sendText/upservice').map((x) => x.body.text);
     const pick = (re) => { const i = poll().values.findIndex((v) => re.test(v)); assert.ok(i >= 0, `opção ${re} em ${poll().values}`); return String(i + 1); };
@@ -1593,7 +1598,7 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
     assert.match(texts().at(-1), /confirme este número/);
     await say('oi de novo', '5511900001111@s.whatsapp.net');
     assert.equal(sent.length, antes + 1);
-    await call(null, 'POST', hook, { event: 'messages.upsert', data: { key: { remoteJid: '5511977770123@s.whatsapp.net', fromMe: true, id: 'x' }, message: { conversation: 'oi' } } });
+    await post({ event: 'messages.upsert', data: { key: { remoteJid: '5511977770123@s.whatsapp.net', fromMe: true, id: 'x' }, message: { conversation: 'oi' } } });
     await settle();
     assert.equal(sent.length, antes + 1, 'mensagem enviada pela própria empresa não dispara o bot');
 
