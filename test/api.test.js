@@ -1631,23 +1631,28 @@ test('WhatsApp (bot): lembrete da véspera com Vou/Não vou, check-in abrindo, q
   const { lembretes } = await import('../server/bot.js');
   const sent = [];
   let polls = 0;
+  let webhook = {};
   const mock = http.createServer((req, res) => {
     let b = '';
     req.on('data', (c) => { b += c; });
-    req.on('end', () => { sent.push({ url: req.url, body: JSON.parse(b || '{}') }); res.end(JSON.stringify(req.url.includes('sendPoll') ? { key: { id: `poll-${++polls}` } } : {})); });
+    req.on('end', () => {
+      sent.push({ url: req.url, body: JSON.parse(b || '{}') });
+      if (req.url === '/webhook/set/upservice') webhook = JSON.parse(b).webhook;
+      res.end(JSON.stringify(req.url.includes('sendPoll') ? { key: { id: `poll-${++polls}` } } : req.url === '/webhook/find/upservice' ? webhook : {}));
+    });
   }).listen(0);
   Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
   try {
     assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: true })).status, 200);
-    const hookUrl = new URL(sent.find((x) => x.url === '/webhook/set/upservice').body.webhook.url);
-    const hook = hookUrl.pathname + hookUrl.search;
+    const token = webhook.headers['x-webhook-token'];
+    const post = (body) => fetch(`${base}/api/whatsapp/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-webhook-token': token }, body: JSON.stringify(body) });
     const bot = await login('bot2@test.dev');
     await completeWorker(bot, '583.026.147-26');
     const me = (await userByEmail('bot2@test.dev')).id;
     await q('UPDATE users SET whatsapp = ?, whatsapp_verified_at = ? WHERE id = ?', ['11977770456', new Date(), me]);
     const jid = '5511977770456@s.whatsapp.net';
     const settle = async () => { let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 120)); } };
-    const say = async (text) => { await call(null, 'POST', hook, { event: 'messages.upsert', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message: { conversation: text } } }); await settle(); };
+    const say = async (text) => { await post({ event: 'messages.upsert', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message: { conversation: text } } }); await settle(); };
     const poll = () => sent.filter((x) => x.url === '/message/sendPoll/upservice').at(-1).body;
     const texts = () => sent.filter((x) => x.url === '/message/sendText/upservice' && x.body.number === '5511977770456').map((x) => x.body.text);
     const pick = (re) => { const i = poll().values.findIndex((v) => re.test(v)); assert.ok(i >= 0, `opção ${re} em ${poll().values}`); return String(i + 1); };
