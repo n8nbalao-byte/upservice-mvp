@@ -9,7 +9,7 @@ import { q, tx } from '../db.js';
 import { fail, text } from '../http.js';
 import { PIX_TYPES, brCode, normalizePixKey } from '../pix.js';
 import { decodeBase64, loadFile, removeFile, saveFile, sniff } from '../storage.js';
-import { sendWhatsappMediaSafe } from '../whatsapp.js';
+import { sendWhatsappMediaSafe, sendWhatsappSafe } from '../whatsapp.js';
 import { earnedBonuses } from './estrelas.js';
 
 const r = Router();
@@ -51,9 +51,18 @@ r.put('/me/pix', requireRole('PROFISSIONAL'), async (req, res) => {
   if (!key) fail(400, { CPF: 'CPF inválido.', EMAIL: 'E-mail inválido.', TELEFONE: 'Celular inválido (DDD + número).', ALEATORIA: 'Chave aleatória inválida (formato 0000…-0000).' }[type]);
   const [p] = await q('SELECT pix_type, pix_key FROM worker_profiles WHERE user_id = ?', [req.user.id]);
   if (!p) fail(400, 'Preencha seus dados no Cadastro antes da chave Pix.');
-  await q('UPDATE worker_profiles SET pix_type = ?, pix_key = ? WHERE user_id = ?', [type, key, req.user.id]);
-  // Auditoria sem a chave em si (dado pessoal): só o tipo e se mudou.
-  await audit(q, req, 'PIX_KEY_SET', 'worker_profile', req.user.id, { before: { type: p.pix_type ?? null }, after: { type, changed: p.pix_key !== key } });
+  if (p.pix_key === key) return res.json({ pixType: type, pixKey: key });
+  const changed = !!p.pix_key;
+  await tx(async (tq) => {
+    await tq('UPDATE worker_profiles SET pix_type = ?, pix_key = ? WHERE user_id = ?', [type, key, req.user.id]);
+    // Auditoria sem a chave em si (dado pessoal): só o tipo. A troca (não o primeiro cadastro) fica marcada para o gestor.
+    await audit(tq, req, changed ? 'PIX_KEY_CHANGE' : 'PIX_KEY_SET', 'worker_profile', req.user.id, { before: { type: p.pix_type ?? null }, after: { type } });
+    if (changed) await tq('INSERT INTO notifications SET ?', [{ id: randomUUID(), user_id: req.user.id, kind: 'PIX_TROCADO', title: 'Sua chave Pix foi trocada', body: 'Se não foi você, fale com a UP Service agora.', link: '/carteira' }]);
+  });
+  // Troca de chave avisa pelo WhatsApp: quem invadir a conta não desvia o pagamento sem o dono saber.
+  if (changed && req.user.whatsapp_verified_at && req.user.whatsapp) {
+    setImmediate(() => sendWhatsappSafe(req.user.whatsapp, `UP Service: a chave Pix da sua conta foi trocada agora. Se não foi você, fale com a UP Service imediatamente (${APP_URL()}).`));
+  }
   res.json({ pixType: type, pixKey: key });
 });
 
@@ -78,8 +87,10 @@ r.get('/manage/workers/:id/pagamento', MANAGERS, async (req, res) => {
   const wl = await wallet(w.id);
   // Código Pix com o valor em aberto (o gestor pode pagar outro valor digitando no app do banco).
   const payload = w.pix_key && wl.aReceber > 0 ? brCode({ key: w.pix_key, amount: wl.aReceber, name: w.name, city: w.city }) : null;
+  // Troca recente de chave: o gestor confirma com o profissional antes de pagar (proteção contra conta invadida).
+  const [chg] = await q("SELECT created_at FROM audit_events WHERE action = 'PIX_KEY_CHANGE' AND entity = 'worker_profile' AND entity_id = ? ORDER BY created_at DESC LIMIT 1", [w.id]);
   await audit(q, req, 'PAYMENT_VIEW', 'user', w.id);
-  res.json({ name: w.name, pixType: w.pix_type, pixKey: w.pix_key, payload, ...wl });
+  res.json({ name: w.name, pixType: w.pix_type, pixKey: w.pix_key, pixChangedAt: chg?.created_at ?? null, payload, ...wl });
 });
 
 r.post('/manage/workers/:id/pagamentos', MANAGERS, async (req, res) => {

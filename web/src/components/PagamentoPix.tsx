@@ -5,7 +5,7 @@ import type { Wallet } from '../pages/Carteira';
 import { Icon } from './icons';
 import { Alert, EmptyState, Loading, useAction } from './ui';
 
-type Data = Wallet & { name: string; pixType: string | null; pixKey: string | null; payload: string | null };
+type Data = Wallet & { name: string; pixType: string | null; pixKey: string | null; pixChangedAt: string | null; payload: string | null };
 const PIX_NAME: Record<string, string> = { CPF: 'CPF', EMAIL: 'E-mail', TELEFONE: 'Celular', ALEATORIA: 'Chave aleatória' };
 const MAX = 5 * 1024 * 1024;
 const readFile = (f: File) => new Promise<string>((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => ko(new Error('Não foi possível ler o arquivo.')); r.readAsDataURL(f); });
@@ -43,6 +43,8 @@ export function PagamentoPix({ workerId }: { workerId: string }) {
 
   if (error) return <div className="card"><Alert kind="danger">{error}</Alert></div>;
   if (!data) return <div className="card"><Loading /></div>;
+  // Troca de chave nos últimos 7 dias: alerta no pagamento.
+  const recentChange = !!data.pixChangedAt && Date.now() - new Date(data.pixChangedAt).getTime() < 7 * 86400e3;
   return (
     <section className="card stack" aria-label="Pagamento">
       <div className="card-header" style={{ marginBottom: 0 }}><h2>Pagamento</h2><span className="sub">A receber: <strong>{fmtMoney(data.aReceber)}</strong></span></div>
@@ -74,6 +76,7 @@ export function PagamentoPix({ workerId }: { workerId: string }) {
       <dialog ref={dlg} className="dialog pix-dialog" aria-label={`Pagar ${data.name} com Pix`}>
         <form className="stack" onSubmit={pay}>
           <h2>Pagar {data.name.split(' ')[0]} com Pix</h2>
+          {recentChange && <Alert kind="warning">A chave Pix foi trocada em {fmtDateTime(data.pixChangedAt!)}. Confirme com o profissional (por telefone ou pessoalmente) antes de pagar.</Alert>}
           {data.payload ? (
             <>
               <p className="muted">1. No app do banco, escolha <b>Pix → Ler QR Code</b> (ou "Pix copia e cola") e confira o nome e o valor.</p>

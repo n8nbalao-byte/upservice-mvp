@@ -1294,6 +1294,16 @@ test('carteira: chave Pix obrigatória para pagar, código Pix, pagamento com co
     assert.equal(sent[0].body.mediatype, 'image');
     assert.equal(sent[0].body.media, Buffer.from(JPEG, 'base64').toString('base64'));
     assert.match(sent[0].body.caption, /R\$\s?100,00/);
+
+    // Troca de chave (conta invadida?): aviso no app e no WhatsApp confirmado; o gestor vê que a chave mudou.
+    assert.equal((await call(s.gestor, 'GET', `/api/manage/workers/${me.id}/pagamento`)).body.pixChangedAt, null, 'primeiro cadastro não é troca');
+    await q('UPDATE users SET whatsapp_verified_at = ? WHERE id = ?', [new Date(), me.id]);
+    assert.equal((await call(s.winner, 'PUT', '/api/me/pix', { type: 'EMAIL', key: 'novo@exemplo.com' })).status, 200);
+    for (let i = 0; i < 50 && sent.length < 2; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(sent[1].url, '/message/sendText/upservice');
+    assert.match(sent[1].body.text, /chave Pix da sua conta foi trocada/);
+    assert.match((await call(s.winner, 'GET', '/api/me/avisos')).body.items[0].title, /chave Pix foi trocada/);
+    assert.ok((await call(s.gestor, 'GET', `/api/manage/workers/${me.id}/pagamento`)).body.pixChangedAt, 'gestor vê a troca');
   } finally {
     for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
     mock.close();
