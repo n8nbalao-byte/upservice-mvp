@@ -3,6 +3,8 @@ import nodemailer from 'nodemailer';
 let transport;
 
 export async function sendMail(to, subject, text) {
+  // Domínio reservado (.invalid, RFC 2606): contas de teste nunca recebem e-mail.
+  if (/\.invalid$/i.test(String(to).trim())) return;
   if (!process.env.SMTP_USER) {
     console.log(`[e-mail não enviado: SMTP não configurado] para=${to} assunto="${subject}"`);
     return;
