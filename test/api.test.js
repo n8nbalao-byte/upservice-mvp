@@ -1495,3 +1495,127 @@ test('brinde do dia: só admin cadastra; sorteio às 9h do dia seguinte entre qu
     mock.close();
   }
 });
+
+test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candidatar, diárias → desistir, carteira; mesmas regras do app', { skip }, async () => {
+  const http = await import('node:http');
+  const { createHash, randomUUID } = await import('node:crypto');
+  const { escolha, phoneFromJid } = await import('../server/bot.js');
+  // Funções puras: número antigo sem o 9 e voto da enquete pelo nome, pelo número ou pelo hash da opção.
+  assert.equal(phoneFromJid('551187654321@s.whatsapp.net'), '11987654321');
+  assert.equal(phoneFromJid('5511987654321@s.whatsapp.net'), '11987654321');
+  assert.equal(phoneFromJid('120363@g.us'), null);
+  const labels = ['1. Procurar vagas', '2. Minhas diárias'];
+  assert.equal(escolha(labels, { text: '2' }), 1);
+  assert.equal(escolha(labels, { text: 'minhas diarias' }), 1);
+  assert.equal(escolha(labels, { votes: ['1. Procurar vagas'] }), 0);
+  assert.equal(escolha(labels, { votes: [{ type: 'Buffer', data: [...createHash('sha256').update(labels[1]).digest()] }] }), 1);
+  assert.equal(escolha(labels, { text: '9' }), -1);
+
+  const sent = [];
+  let polls = 0;
+  const mock = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (c) => { b += c; });
+    req.on('end', () => {
+      sent.push({ url: req.url, body: JSON.parse(b || '{}') });
+      res.end(JSON.stringify(req.url.includes('sendPoll') ? { key: { id: `poll-${++polls}` } } : {}));
+    });
+  }).listen(0);
+  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  try {
+    // Liga o atendimento: só o administrador principal; a Evolution recebe o webhook com o token.
+    assert.equal((await call(s.gestor, 'PUT', '/api/admin/whatsapp/bot', { enabled: true })).status, 403);
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: true })).status, 200);
+    const set = sent.find((x) => x.url === '/webhook/set/upservice');
+    assert.ok(set?.body.webhook.enabled && set.body.webhook.events.includes('MESSAGES_UPSERT'));
+    const hookUrl = new URL(set.body.webhook.url);
+    const hook = hookUrl.pathname + hookUrl.search;
+    assert.match(hook, /^\/api\/whatsapp\/webhook\?token=[0-9a-f]{48}$/);
+    assert.equal((await call(null, 'POST', '/api/whatsapp/webhook?token=errado', {})).status, 401);
+
+    // Profissional habilitado, com o WhatsApp confirmado; uma vaga amanhã na loja A.
+    const bot = await login('bot1@test.dev');
+    await completeWorker(bot, '472.915.368-55');
+    const me = (await userByEmail('bot1@test.dev')).id;
+    await q('UPDATE users SET whatsapp = ?, whatsapp_verified_at = ? WHERE id = ?', ['11977770123', new Date(), me]);
+    const amanha = new Date(Date.now() + 86400e3).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    const starts = new Date(`${amanha}T10:00:00-03:00`);
+    const job = (await call(s.gestor, 'POST', '/api/manage/jobs', { unitId: s.unitA, title: 'Repositor do bot', startsAt: starts, endsAt: new Date(starts.getTime() + 6 * 3600e3), positions: 1, dailyValue: 130, breakCount: 1, breakMinutes: 15, publish: true })).body.id;
+
+    const settle = async () => { let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 120)); } };
+    const msg = (jid, message) => ({ event: 'messages.upsert', instance: 'upservice', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message } });
+    const say = async (text, jid = '5511977770123@s.whatsapp.net') => { assert.equal((await call(null, 'POST', hook, msg(jid, { conversation: text }))).status, 200); await settle(); };
+    const vote = async (name) => { await call(null, 'POST', hook, { event: 'messages.update', data: { keyId: `poll-${polls}`, remoteJid: '5511977770123@s.whatsapp.net', fromMe: false, pollUpdates: [{ vote: { selectedOptions: [name] } }] } }); await settle(); };
+    const poll = () => sent.filter((x) => x.url === '/message/sendPoll/upservice').at(-1).body;
+    const texts = () => sent.filter((x) => x.url === '/message/sendText/upservice').map((x) => x.body.text);
+    const pick = (re) => { const i = poll().values.findIndex((v) => re.test(v)); assert.ok(i >= 0, `opção ${re} em ${poll().values}`); return String(i + 1); };
+
+    await say('oi');
+    assert.equal(poll().number, '5511977770123');
+    assert.equal(poll().selectableCount, 1);
+    assert.ok(poll().values.includes('1. Procurar vagas'));
+    await say(pick(/Procurar vagas/));
+    await vote(poll().values.find((v) => /Amanhã/.test(v))); // voto da enquete pelo nome
+    assert.match(poll().name, /Vagas em/);
+    await say(pick(/Repositor do bot/));
+    assert.match(texts().at(-1), /Repositor do bot[\s\S]*R\$\s?130,00/);
+    await say(pick(/Quero esta vaga/));
+    assert.match(poll().name, /Confirma a candidatura/);
+    await say(pick(/Sim/));
+    assert.match(texts().at(-1), /A diária é sua/);
+    const [app] = await q('SELECT id, status FROM applications WHERE job_id = ? AND user_id = ?', [job, me]);
+    assert.equal(app.status, 'APROVADA', 'mesma candidatura do app');
+    assert.ok((await q("SELECT 1 FROM audit_events WHERE action = 'WHATSAPP_CANDIDATURA' AND actor_id = ?", [me])).length);
+
+    // Resposta que não está nas opções: explica e repete a pergunta.
+    await say('banana');
+    assert.ok(texts().some((t) => /Não entendi/.test(t)));
+
+    // Minhas diárias → desistir (mais de 2 h antes).
+    await say('menu');
+    await say(pick(/Minhas diárias/));
+    await say(pick(/Repositor do bot/));
+    await say(pick(/Desistir desta diária/));
+    await say(pick(/Sim/));
+    assert.equal((await q('SELECT status FROM applications WHERE id = ?', [app.id]))[0].status, 'CANCELADA');
+    await say('menu');
+    await say(pick(/Minhas diárias/));
+    assert.match(texts().at(-1), /não tem diárias marcadas/);
+
+    // Carteira.
+    await say('menu');
+    await say(pick(/Carteira/));
+    assert.match(texts().at(-1), /A receber: R\$/);
+
+    // Número desconhecido: um aviso com o link (e só um a cada 12 h); mensagem da própria empresa é ignorada.
+    const antes = sent.length;
+    await say('oi', '5511900001111@s.whatsapp.net');
+    assert.match(texts().at(-1), /confirme este número/);
+    await say('oi de novo', '5511900001111@s.whatsapp.net');
+    assert.equal(sent.length, antes + 1);
+    await call(null, 'POST', hook, { event: 'messages.upsert', data: { key: { remoteJid: '5511977770123@s.whatsapp.net', fromMe: true, id: 'x' }, message: { conversation: 'oi' } } });
+    await settle();
+    assert.equal(sent.length, antes + 1, 'mensagem enviada pela própria empresa não dispara o bot');
+
+    // Bloqueado: só o Menu restrito; opção guardada de antes do bloqueio (Carteira) volta ao Menu. Inativo não é atendido.
+    await q("UPDATE users SET status = 'BLOQUEADO_TEMPORARIAMENTE' WHERE id = ?", [me]);
+    await q("UPDATE whatsapp_conversas SET options = ?, updated_at = ? WHERE phone = '11977770123'", [JSON.stringify([['Carteira (pagamentos)', 'carteira']]), new Date()]);
+    const n0 = texts().length;
+    await say('1');
+    assert.ok(!texts().slice(n0).some((t) => /A receber/.test(t)), 'bloqueado não vê a Carteira');
+    assert.ok(poll().values.every((v) => !/vagas|diárias|Carteira/i.test(v)), 'menu do bloqueado sem vagas, diárias e carteira');
+    await q("UPDATE users SET status = 'INATIVO' WHERE id = ?", [me]);
+    await say('menu');
+    assert.match(texts().at(-1), /não está ativa/);
+    await q("UPDATE users SET status = 'ATIVO' WHERE id = ?", [me]);
+
+    // Desligado: o webhook responde, mas o bot não atende.
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: false })).status, 200);
+    const n = sent.length;
+    await say('menu');
+    assert.equal(sent.length, n);
+  } finally {
+    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
+    mock.close();
+  }
+});

@@ -38,20 +38,24 @@ r.get('/jobs', requireRole('PROFISSIONAL'), async (req, res) => {
   res.json(jobs);
 });
 
-// Sem aprovação manual: habilitado (documentos aprovados) entra direto; vaga cheia = reserva (ver staffing.js).
-r.post('/jobs/:id/apply', requireRole('PROFISSIONAL'), async (req, res) => {
+/** Candidatura (app e WhatsApp, mesmas regras). Sem aprovação manual: habilitado (documentos aprovados) entra direto;
+ *  vaga cheia = reserva (ver staffing.js). `req` precisa de `user` e `id` (o bot monta um). */
+export async function candidatar(req, jobId) {
   try {
-    const result = await tx(async (tq) => {
+    return await tx(async (tq) => {
       // Trava a vaga: candidaturas simultâneas entram em fila e o limite de posições é respeitado.
-      const [job] = await tq('SELECT j.id, j.status, j.positions, j.starts_at, j.ends_at, u.status AS unit_status FROM jobs j JOIN units u ON u.id = j.unit_id WHERE j.id = ? FOR UPDATE', [req.params.id]);
+      const [job] = await tq('SELECT j.id, j.status, j.positions, j.starts_at, j.ends_at, u.status AS unit_status FROM jobs j JOIN units u ON u.id = j.unit_id WHERE j.id = ? FOR UPDATE', [jobId]);
       if (!job || job.status !== 'ABERTA' || job.unit_status !== 'ATIVA' || new Date(job.starts_at) <= new Date()) fail(400, 'Vaga indisponível.');
       return applyToJob(ctx(tq, req), job, req.user.id);
     });
-    res.status(201).json(result);
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') fail(409, 'Você já se candidatou a esta vaga.');
     throw e;
   }
+}
+
+r.post('/jobs/:id/apply', requireRole('PROFISSIONAL'), async (req, res) => {
+  res.status(201).json(await candidatar(req, req.params.id));
 });
 
 r.get('/me/applications', requireRole('PROFISSIONAL'), async (req, res) => {
@@ -68,17 +72,18 @@ r.get('/me/applications', requireRole('PROFISSIONAL'), async (req, res) => {
   ));
 });
 
-const WITHDRAW_LIMIT_MS = 2 * 3600e3;
+export const WITHDRAW_LIMIT_MS = 2 * 3600e3;
 
-// Desistência: reserva a qualquer momento; diária aprovada até 2 h antes do início (a vaga vai para a reserva).
-r.post('/me/applications/:id/cancel', requireRole('PROFISSIONAL'), async (req, res) => {
+/** Desistência (app e WhatsApp): reserva a qualquer momento; diária aprovada até 2 h antes do início (a vaga vai
+ *  para a reserva). */
+export async function desistir(req, appId) {
   const c = await tx(async (tq) => {
     const c = ctx(tq, req);
     const [a] = await tq(
       `SELECT a.id, a.status, a.job_id, j.starts_at, ws.id AS session_id, ws.status AS session_status
        FROM applications a JOIN jobs j ON j.id = a.job_id LEFT JOIN work_sessions ws ON ws.application_id = a.id
        WHERE a.id = ? AND a.user_id = ? FOR UPDATE`,
-      [req.params.id, req.user.id],
+      [appId, req.user.id],
     );
     if (!a || !['PENDENTE', 'APROVADA'].includes(a.status)) fail(409, 'Esta candidatura não pode mais ser cancelada.');
     if (a.status === 'APROVADA') {
@@ -93,6 +98,10 @@ r.post('/me/applications/:id/cancel', requireRole('PROFISSIONAL'), async (req, r
     return c;
   });
   await flush(c);
+}
+
+r.post('/me/applications/:id/cancel', requireRole('PROFISSIONAL'), async (req, res) => {
+  await desistir(req, req.params.id);
   res.json({ ok: true });
 });
 

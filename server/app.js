@@ -18,6 +18,7 @@ import penalties from './routes/penalties.js';
 import presence from './routes/presence.js';
 import reports from './routes/reports.js';
 import whatsapp from './routes/whatsapp.js';
+import whatsappBot from './routes/whatsappBot.js';
 import worker from './routes/worker.js';
 
 const dist = fileURLToPath(new URL('../web/dist/', import.meta.url));
@@ -41,6 +42,7 @@ app.use((req, res, next) => {
 app.post('/api/me/documents', express.json({ limit: '8mb' }));
 app.post('/api/sessions/:id/events', express.json({ limit: '1mb' }));
 app.post('/api/sessions/:id/exceptions', express.json({ limit: '1mb' }));
+app.post('/api/whatsapp/webhook', express.json({ limit: '2mb' })); // mensagens podem trazer miniaturas
 app.use(express.json({ limit: '100kb' }));
 
 // Bloqueado só vê o próprio histórico, contesta e sai; todo o resto é recusado.
@@ -52,7 +54,7 @@ const restrictBlocked = (req, res, next) => {
 
 // Respostas da API nunca ficam em cache (navegador nem CDN da Hostinger): depois de salvar, a tela recarrega dados novos.
 app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-app.use('/api', loadUser, restrictBlocked, auth, login, avisos, worker, jobs, presence, penalties, reports, dashboard, estrelas, brindes, carteira, quebra, admin, whatsapp, files);
+app.use('/api', loadUser, restrictBlocked, auth, login, avisos, worker, jobs, presence, penalties, reports, dashboard, estrelas, brindes, carteira, quebra, admin, whatsapp, whatsappBot, files);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Não encontrado.' }));
 
 app.use(express.static(dist));
