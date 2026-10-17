@@ -11,13 +11,17 @@ export const ctx = (tq, req) => ({ tq, req, outbox: [], whatsapp: [] });
 
 export async function flush(c) {
   for (const [to, subject, text] of c.outbox) await sendMailSafe(to, subject, text);
-  for (const [phone, text] of c.whatsapp) await sendWhatsappSafe(phone, text);
+  // Com { userId, step }: aviso do atendimento (já com as opções, se o bot estiver ligado). Import tardio: bot.js usa este arquivo.
+  for (const [phone, text, bot] of c.whatsapp) {
+    if (bot) await (await import('./bot.js')).avisar(bot.userId, { text, step: bot.step, ctx: bot.ctx });
+    else await sendWhatsappSafe(phone, text);
+  }
 }
 
 export const managerEmails = async (tq, unitId) =>
   (await tq("SELECT u.email FROM unit_managers m JOIN users u ON u.id = m.user_id WHERE m.unit_id = ? AND m.active = 1 AND u.status = 'ATIVO'", [unitId])).map((r) => r.email);
 
-const OCC_LABEL = {
+export const OCC_LABEL = {
   FALTA: 'Falta', CHECKOUT_AUSENTE: 'Checkout ausente', PAUSA_EXCEDIDA: 'Pausa excedida',
   ABANDONO: 'Abandono de atividade', FRAUDE: 'Tentativa de fraude', REGRA_OPERACIONAL: 'Descumprimento de regra operacional',
 };

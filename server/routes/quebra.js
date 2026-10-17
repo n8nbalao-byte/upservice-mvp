@@ -7,7 +7,6 @@ import { audit } from '../audit.js';
 import { assertUnit, requireRole } from '../auth.js';
 import { q, tx } from '../db.js';
 import { fail, requireReason, text } from '../http.js';
-import { sendWhatsappSafe } from '../whatsapp.js';
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
@@ -17,8 +16,8 @@ const day = (d) => new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/
 /** Avisa o profissional no app (na mesma transação) e, depois, pelo WhatsApp confirmado. */
 export async function notifyBreak(tq, userId, title, body) {
   await tq('INSERT INTO notifications SET ?', [{ id: randomUUID(), user_id: userId, kind: 'QUEBRA_CAIXA', title, body, link: '/carteira' }]);
-  const [u] = await tq('SELECT whatsapp, whatsapp_verified_at FROM users WHERE id = ?', [userId]);
-  return u?.whatsapp_verified_at && u.whatsapp ? () => sendWhatsappSafe(u.whatsapp, `UP Service: ${title}. ${body}`) : null;
+  // Depois do commit: pelo WhatsApp confirmado, já com a opção de ver as quebras e pedir revisão (bot ligado).
+  return async () => (await import('../bot.js')).avisar(userId, { text: `UP Service: ${title}. ${body}`, step: 'quebras' });
 }
 
 r.post('/manage/applications/:id/quebra-caixa', MANAGERS, async (req, res) => {

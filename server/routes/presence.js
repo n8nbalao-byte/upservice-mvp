@@ -13,6 +13,9 @@ import {
 } from '../rules.js';
 import { decodeBase64, removeFile, saveFile, sniff } from '../storage.js';
 import { sortearBrindes } from './brindes.js';
+import { avisar, lembretes } from '../bot.js';
+
+const APP_URL = () => (process.env.APP_URL || 'https://app.upserviceintermed.com').replace(/\/+$/, '');
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
@@ -410,11 +413,13 @@ export async function sweep() {
      WHERE ws.status = 'PAUSA_EXCEDIDA'`,
   );
   const breaks = await q(
-    `SELECT ws.id, w.email, w.name FROM work_sessions ws JOIN applications a ON a.id = ws.application_id JOIN users w ON w.id = a.user_id
+    `SELECT ws.id, a.user_id, w.email, w.name FROM work_sessions ws JOIN applications a ON a.id = ws.application_id JOIN users w ON w.id = a.user_id
      WHERE ws.status = 'PAUSA_EXCEDIDA' AND ws.break_email_sent_at IS NULL`,
   );
   for (const d of breaks) {
-    if (await sendMailSafe(d.email, 'UpService: sua pausa terminou', `Olá, ${d.name}.\n\nO tempo da sua pausa terminou. Abra o app UpService e registre o retorno.\n\nEste é um aviso automático.`)) {
+    // E-mail e WhatsApp confirmado; conta como avisado se um dos dois saiu.
+    const zap = await avisar(d.user_id, { text: `⚠️ O tempo da sua pausa terminou. Registre o retorno agora pelo app: ${APP_URL()}/atividade/${d.id}` });
+    if (await sendMailSafe(d.email, 'UpService: sua pausa terminou', `Olá, ${d.name}.\n\nO tempo da sua pausa terminou. Abra o app UpService e registre o retorno.\n\nEste é um aviso automático.`) || zap) {
       await q('UPDATE work_sessions SET break_email_sent_at = ? WHERE id = ?', [now, d.id]);
     }
   }
@@ -426,6 +431,7 @@ export async function sweep() {
     [ACTIVE, now],
   );
   for (const s of late) {
+    await avisar(s.user_id, { text: `⚠️ O horário da diária de *${s.title}* em ${s.unit_name} terminou e o checkout não foi feito. Faça agora pelo app: ${APP_URL()}/atividade/${s.id}` });
     await sendMailSafe(s.email, 'UpService: faça seu checkout', `Olá, ${s.worker_name}.\n\nO horário da vaga "${s.title}" em ${s.unit_name} terminou e o checkout ainda não foi feito. Abra o app UpService e registre o checkout.\n\nEste é um aviso automático.`);
     for (const to of await managerEmails(q, s.unit_id)) {
       await sendMailSafe(to, `UpService: checkout pendente em ${s.unit_name}`, `${s.worker_name} ainda não fez checkout da vaga "${s.title}" em ${s.unit_name}. Após 30 minutos a atividade fica pendente de fechamento no painel Atividades.`);
@@ -458,6 +464,9 @@ export async function sweep() {
 
   // 5. Brindes do dia anterior: sorteio às 9h (Brasília) entre quem fez 3 estrelas.
   await sortearBrindes();
+
+  // 6. Lembretes pelo WhatsApp: véspera da diária (Vou / Não vou), check-in abrindo e pausa acabando.
+  await lembretes(now);
 }
 
 export default r;
