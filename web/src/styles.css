@@ -843,9 +843,9 @@ img.avatar { object-fit: cover; }
 .g-level small { font-weight: 600; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
 .g-total { display: inline-flex; align-items: center; gap: 4px; font-size: 1.8rem; font-weight: 900; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25); }
 .g-total svg, .g-count svg { fill: #ffd84d; stroke: #b07800; }
-.g-track { display: grid; grid-auto-flow: column; grid-auto-columns: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.g-track { display: grid; grid-auto-flow: column; grid-auto-columns: 100%; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; }
 .g-track::-webkit-scrollbar { display: none; }
-.g-month { scroll-snap-align: start; display: grid; gap: 10px; padding: 4px 2px; }
+.g-month { scroll-snap-align: start; scroll-snap-stop: always; display: grid; gap: 10px; padding: 4px 2px; }
 .g-month-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .g-month-head h2 { color: #fff; font-size: 1.1rem; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25); }
 .g-count { display: inline-flex; align-items: center; gap: 4px; font-weight: 800; }
