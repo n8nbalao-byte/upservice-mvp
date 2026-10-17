@@ -10,6 +10,8 @@ import { fail } from '../http.js';
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
+// Bônus do mês (valor em dinheiro): só o administrador define e vê.
+const ADMIN = requireRole('ADMINISTRADOR');
 const dateOf = (d) => new Date(d).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 const todayKey = () => dateOf(Date.now());
 export const gamificationOn = async () => (await q("SELECT value FROM app_settings WHERE name = 'gamification'"))[0]?.value === 'on';
@@ -83,12 +85,12 @@ r.get('/manage/workers/:id/estrelas', MANAGERS, async (req, res) => {
   res.json({ name: u.name, ...(await starsOf(req.params.id)) });
 });
 
-// ---------- Bônus do mês (gestor e administrador). Um calendário só, para todos os profissionais. ----------
+// ---------- Bônus do mês (só administrador). Um calendário só, para todos os profissionais. ----------
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const lastDay = (m) => { const [y, mo] = m.split('-').map(Number); return `${m}-${String(new Date(Date.UTC(y, mo, 0)).getUTCDate()).padStart(2, '0')}`; };
 const names = async (ids) => (ids.length ? q('SELECT id, name FROM users WHERE id IN (?)', [ids]) : []);
 
-r.get('/manage/bonus', MANAGERS, async (req, res) => {
+r.get('/manage/bonus', ADMIN, async (req, res) => {
   const month = MONTH.test(req.query.month ?? '') ? req.query.month : todayKey().slice(0, 7);
   const today = todayKey();
   const [set] = await q('SELECT total, set_at FROM bonus_months WHERE month = ?', [month]);
@@ -123,7 +125,7 @@ r.get('/manage/bonus', MANAGERS, async (req, res) => {
   });
 });
 
-r.put('/manage/bonus/:month', MANAGERS, async (req, res) => {
+r.put('/manage/bonus/:month', ADMIN, async (req, res) => {
   const { month } = req.params;
   if (!MONTH.test(month)) fail(400, 'Mês inválido.');
   const total = Number(req.body.total);

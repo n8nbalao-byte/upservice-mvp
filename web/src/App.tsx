@@ -151,7 +151,7 @@ export default function App() {
                 <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
                 <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />
                 <Route path="/gestao/relatorios" element={<Relatorios />} />
-                <Route path="/gestao/bonus" element={<GestaoBonus />} />
+                {role === 'ADMINISTRADOR' && <Route path="/gestao/bonus" element={<GestaoBonus />} />}
                 <Route path="/gestao/ajustes" element={<Ajustes />} />
                 <Route path="/perfil" element={<Perfil />} />
                 <Route path="/qr/:id" element={<QrAprovar />} />

@@ -10,8 +10,8 @@ const PAGE = 50;
 const UNITS_PREVIEW = 10;
 const SHORT: Record<string, string> = { GPS_VALIDADO: 'GPS', EXCECAO_APROVADA: 'Exceção', FECHAMENTO_ADMINISTRATIVO: 'Fech. adm.' };
 
-type UnitRow = { unitId: string; code: string; name: string; approved: number; concluded: number; absences: number; workedMin: number; value: number };
-type Report = { indicators: Record<string, any>; byUnit: UnitRow[]; rows: any[]; truncated: boolean; totalRows: number };
+type UnitRow = { unitId: string; code: string; name: string; approved: number; concluded: number; absences: number; workedMin: number; value?: number };
+type Report = { indicators: Record<string, any>; byUnit: UnitRow[]; rows: any[]; truncated: boolean; totalRows: number; money?: boolean };
 
 export default function Relatorios() {
   const { me } = useMe();
@@ -37,7 +37,7 @@ export default function Relatorios() {
   const ind = report?.indicators;
   const totalSources = ind ? SOURCES.reduce((t, [k]) => t + (ind.sources[k] ?? 0), 0) : 0;
   const pct = (n: number) => (totalSources ? Math.round((n / totalSources) * 100) : 0);
-  const totals = report?.byUnit.reduce((t, u) => ({ approved: t.approved + u.approved, concluded: t.concluded + u.concluded, absences: t.absences + u.absences, workedMin: t.workedMin + u.workedMin, value: t.value + u.value }), { approved: 0, concluded: 0, absences: 0, workedMin: 0, value: 0 });
+  const totals = report?.byUnit.reduce((t, u) => ({ approved: t.approved + u.approved, concluded: t.concluded + u.concluded, absences: t.absences + u.absences, workedMin: t.workedMin + u.workedMin, value: t.value + (u.value ?? 0) }), { approved: 0, concluded: 0, absences: 0, workedMin: 0, value: 0 });
 
   return (
     <div className="page">
@@ -81,7 +81,7 @@ export default function Relatorios() {
               <Stat label="Diárias concluídas" value={ind.concluded} tone="success" />
               <Stat label="Faltas" value={ind.absences} tone={ind.absences ? 'danger' : 'neutral'} />
               <Stat label="Horas trabalhadas" value={fmtMinutes(ind.workedMin)} tone="info" />
-              <Stat label="Valor das diárias concluídas" value={fmtMoney(ind.value)} tone="accent" />
+              {report.money && <Stat label="Valor das diárias concluídas" value={fmtMoney(ind.value)} tone="accent" />}
             </div>
           </section>
 
@@ -110,7 +110,7 @@ export default function Relatorios() {
               <div className="card-header"><h2>Por unidade</h2><span className="sub">{report.byUnit.length} unidades</span></div>
               <div className="table-wrap">
                 <table className="responsive">
-                  <thead><tr><th>Unidade</th><th className="num">Aprovadas</th><th className="num">Concluídas</th><th className="num">Faltas</th><th className="num">Horas</th><th className="num">Valor</th></tr></thead>
+                  <thead><tr><th>Unidade</th><th className="num">Aprovadas</th><th className="num">Concluídas</th><th className="num">Faltas</th><th className="num">Horas</th>{report.money && <th className="num">Valor</th>}</tr></thead>
                   <tbody>
                     {(allUnits ? report.byUnit : report.byUnit.slice(0, UNITS_PREVIEW)).map((u) => (
                       <tr key={u.unitId}>
@@ -119,12 +119,12 @@ export default function Relatorios() {
                         <td data-label="Concluídas" className="num">{u.concluded}</td>
                         <td data-label="Faltas" className={`num${u.absences ? ' text-danger' : ''}`}>{u.absences}</td>
                         <td data-label="Horas" className="num">{fmtMinutes(u.workedMin)}</td>
-                        <td data-label="Valor" className="num">{fmtMoney(u.value)}</td>
+                        {report.money && <td data-label="Valor" className="num">{fmtMoney(u.value ?? 0)}</td>}
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr><td>Total</td><td className="num">{totals.approved}</td><td className="num">{totals.concluded}</td><td className="num">{totals.absences}</td><td className="num">{fmtMinutes(totals.workedMin)}</td><td className="num">{fmtMoney(totals.value)}</td></tr>
+                    <tr><td>Total</td><td className="num">{totals.approved}</td><td className="num">{totals.concluded}</td><td className="num">{totals.absences}</td><td className="num">{fmtMinutes(totals.workedMin)}</td>{report.money && <td className="num">{fmtMoney(totals.value)}</td>}</tr>
                   </tfoot>
                 </table>
               </div>
@@ -142,7 +142,7 @@ export default function Relatorios() {
             {report.rows.length === 0 ? <EmptyState icon="chart" title="Nenhuma diária no período" text="Ajuste a unidade ou as datas e gere de novo." /> : (
               <div className="table-wrap">
                 <table className="responsive">
-                  <thead><tr><th>Data</th><th>Unidade</th><th>Profissional</th><th>Jornada</th><th>Entrada–saída</th><th className="num">Horas</th><th>Origem</th><th>Diária</th><th className="num">Valor</th></tr></thead>
+                  <thead><tr><th>Data</th><th>Unidade</th><th>Profissional</th><th>Jornada</th><th>Entrada–saída</th><th className="num">Horas</th><th>Origem</th><th>Diária</th>{report.money && <th className="num">Valor</th>}</tr></thead>
                   <tbody>
                     {report.rows.slice(0, visible).map((x) => (
                       <tr key={x.application_id}>
@@ -154,7 +154,7 @@ export default function Relatorios() {
                         <td data-label="Horas" className="num">{x.worked_min != null ? fmtMinutes(x.worked_min) : '—'}</td>
                         <td data-label="Origem">{x.sources ? x.sources.split(',').map((k: string) => SHORT[k] ?? k).join(' + ') : '—'}</td>
                         <td data-label="Diária">{x.result ? <StatusBadge status={x.result} /> : <span className="muted">a confirmar</span>}</td>
-                        <td data-label="Valor" className="num">{fmtMoney(x.daily_value)}</td>
+                        {report.money && <td data-label="Valor" className="num">{fmtMoney(x.daily_value)}</td>}
                       </tr>
                     ))}
                   </tbody>
