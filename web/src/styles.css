@@ -368,7 +368,7 @@ dialog.dialog .counter { justify-self: end; color: var(--muted); font-size: 0.78
 .auth-panel { position: relative; margin-top: -22px; border-radius: 22px 22px 0 0; background: var(--surface); padding: 24px 16px 32px; display: grid; justify-items: center; align-content: start; }
 .auth-box { width: min(420px, 100%); display: grid; gap: 18px; }
 .auth-box h1 { font-size: 1.6rem; }
-.auth-logo { display: block; width: 130px; }
+.auth-logo { display: block; width: 130px; margin-inline: auto; }
 @media (max-height: 500px) { .auth-visual h2 { display: none; } .auth-logo { width: 104px; } }
 .auth-tabs { display: flex; gap: 4px; padding: 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-lg); }
 .auth-tabs button { flex: 1; min-height: 42px; border: 0; background: transparent; color: var(--muted); border-radius: 10px; }
