@@ -10,9 +10,11 @@ import { canLogin, isBlocked } from './auth.js';
 import { q } from './db.js';
 import { byNearThenSoon, distanceMeters } from './rules.js';
 import { loadFile } from './storage.js';
-import { sendOptions, sendWhatsapp, sendWhatsappMediaSafe } from './whatsapp.js';
+import { OCC_LABEL as OCORRENCIA } from './penalties.js';
+import { sendOptions, sendWhatsapp, sendWhatsappMediaSafe, whatsappConfig } from './whatsapp.js';
 import { wallet } from './routes/carteira.js';
 import { candidatar, desistir, WITHDRAW_LIMIT_MS } from './routes/jobs.js';
+import { history, openContestation } from './routes/penalties.js';
 
 const TZ = 'America/Sao_Paulo';
 const EXPIRA_MS = 30 * 60e3; // conversa parada volta ao Menu
@@ -28,7 +30,14 @@ const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', curren
 const first = (name) => String(name).trim().split(/\s+/)[0];
 const MENU = ['Menu', 'menu'];
 // Conta bloqueada: como no app, só o que o bloqueado pode fazer (sem vagas, diárias nem carteira).
-const BLOQUEADO_PODE = new Set(['menu', 'humano']);
+const BLOQUEADO_PODE = new Set(['menu', 'humano', 'ocorrencias', 'ocorrencia', 'contestar_motivo', 'contestar_confirma', 'contestar_ok']);
+
+/** Passo em que o profissional escreve (só para contar um motivo): o texto vira ctx.input e segue para `next`. */
+function textoLivre(prompt, next, back) {
+  const step = async () => ({ question: prompt, options: [['Cancelar', back]] });
+  step.input = next;
+  return step;
+}
 
 /** Telefone (11 dígitos, com DDD) a partir do número do WhatsApp; celular antigo sem o 9 ganha o 9. */
 export function phoneFromJid(jid) {
@@ -47,12 +56,12 @@ const STEPS = {
       return {
         text: `Olá, ${first(u.name)}. Sua conta está bloqueada no momento. Veja o motivo e conteste no app: ${APP_URL()}/ocorrencias`,
         question: 'O que você quer fazer?',
-        options: [['Falar com uma pessoa da UP Service', 'humano']],
+        options: [['Ocorrências e contestação', 'ocorrencias'], ['Falar com uma pessoa da UP Service', 'humano']],
       };
     }
     return {
       question: `Olá, ${first(u.name)}! Sou o atendimento da UP Service. O que você quer fazer?`,
-      options: [['Procurar vagas', 'vagas_dia'], ['Minhas diárias', 'diarias'], ['Carteira (pagamentos)', 'carteira'], ['Falar com uma pessoa da UP Service', 'humano']],
+      options: [['Procurar vagas', 'vagas_dia'], ['Minhas diárias', 'diarias'], ['Carteira (pagamentos)', 'carteira'], ['Avisos', 'avisos'], ['Ocorrências e contestação', 'ocorrencias'], ['Falar com uma pessoa da UP Service', 'humano']],
     };
   },
 
@@ -170,8 +179,97 @@ const STEPS = {
       p?.pix_key ? `Chave Pix: ${p.pix_key}` : 'Você ainda não cadastrou a chave Pix.',
       `Para cadastrar ou trocar a chave: ${APP_URL()}/cadastro`,
     ].filter((x) => x !== null).join('\n');
-    const options = w.pagamentos.length ? [['Recebidos e comprovantes', 'recebidos'], MENU] : [MENU];
+    const options = [w.pagamentos.length && ['Recebidos e comprovantes', 'recebidos'], w.abatimentos.length && ['Quebras de caixa', 'quebras'], MENU].filter(Boolean);
     return { text, question: w.pagamentos.length ? 'Quer ver os pagamentos recebidos?' : 'Nenhum pagamento recebido ainda.', options };
+  },
+
+  // ----- quebra de caixa: ver e pedir revisão (uma por quebra, decisão final) -----
+  async quebras(u) {
+    const w = await wallet(u.id);
+    if (!w.abatimentos.length) return { text: 'Você não tem quebra de caixa.', question: 'E agora?', options: [['Carteira', 'carteira'], MENU] };
+    const options = w.abatimentos.slice(0, 10).map((a) => [`${fmtDia(a.date)} · ${brl(a.finalAmount ?? a.amount)}${a.status === 'CANCELADA' ? ' · cancelada' : a.review ? ' · revisão' : ''}`, 'quebra', { breakId: a.id }]);
+    return { question: 'Quebras de caixa. Toque numa para ver o motivo ou pedir revisão:', options: [...options, ['Carteira', 'carteira'], MENU] };
+  },
+
+  async quebra(u, c) {
+    const a = (await wallet(u.id)).abatimentos.find((x) => x.id === c.breakId);
+    if (!a) return { text: 'Essa quebra de caixa não está mais na sua lista.', question: 'E agora?', options: [['Carteira', 'carteira'], MENU] };
+    const text = [
+      `*Quebra de caixa: ${brl(a.finalAmount ?? a.amount)}*${a.finalAmount != null && a.finalAmount !== a.amount ? ` (era ${brl(a.amount)})` : ''}`,
+      `${fmtDia(a.date)} · ${a.text}`,
+      `Motivo: ${a.reason}`,
+      a.status === 'CANCELADA' ? `Cancelada${a.cancelReason ? `: ${a.cancelReason}` : ''}. O valor voltou para o seu A receber.` : null,
+      a.review ? `Revisão ${a.review.protocol}: ${a.review.status === 'ABERTA' ? 'em análise' : 'decidida'}${a.review.reason ? ` · ${a.review.reason}` : ''}` : null,
+    ].filter(Boolean).join('\n');
+    const pode = a.status === 'ATIVA' && !a.review;
+    return { text, question: pode ? 'Não concorda? Você pode pedir uma revisão (uma vez só).' : 'E agora?', options: [pode && ['Pedir revisão', 'quebra_motivo'], ['Quebras de caixa', 'quebras'], MENU].filter(Boolean) };
+  },
+
+  quebra_motivo: textoLivre('Escreva numa mensagem por que você não concorda com a quebra de caixa (pelo menos 10 letras).', 'quebra_confirma', 'quebra'),
+
+  async quebra_confirma(u, c) {
+    return { text: `Seu pedido de revisão:\n"${c.input}"`, question: 'Enviar o pedido de revisão?', options: [['Sim, enviar', 'quebra_ok'], ['Não, cancelar', 'quebra']] };
+  },
+
+  async quebra_ok(u, c) {
+    const r = await acao(u, 'WHATSAPP_REVISAO_QUEBRA', 'cash_break', c.breakId, (req) => openContestation(req, { userId: u.id, cashBreakId: c.breakId, message: c.input, channel: 'WHATSAPP' }));
+    return { text: r.erro ? `⚠️ ${r.erro}` : `✅ Pedido de revisão enviado (protocolo ${r.protocol}). Você recebe a decisão por aqui e no app.`, question: 'E agora?', options: [['Carteira', 'carteira'], MENU] };
+  },
+
+  // ----- ocorrências, bloqueios e contestação (o bloqueado também usa) -----
+  async ocorrencias(u) {
+    const h = await history(u.id);
+    const itens = [
+      ...h.penalties.filter((p) => p.status === 'ATIVA').map((p) => [`Bloqueio ${p.type === 'BLOQUEIO_PERMANENTE' ? 'permanente' : `até ${fmtDia(p.ends_at)}`}`, 'ocorrencia', { penaltyId: p.id }]),
+      ...h.occurrences.filter((o) => o.status === 'CONFIRMADA').slice(0, 9).map((o) => [`${fmtDia(o.created_at)} · ${OCORRENCIA[o.type] ?? o.type}`, 'ocorrencia', { occurrenceId: o.id }]),
+    ];
+    const text = `Faltas e ocorrências que contam: ${h.strikes} de ${h.strikesToBlock} (com ${h.strikesToBlock}, a conta é bloqueada por 15 dias).`;
+    if (!itens.length) return { text: `${text}\nVocê não tem ocorrências. 👏`, question: 'E agora?', options: [MENU] };
+    return { text, question: 'Toque numa para ver o detalhe ou contestar:', options: [...itens, MENU] };
+  },
+
+  async ocorrencia(u, c) {
+    const h = await history(u.id);
+    const p = c.penaltyId && h.penalties.find((x) => x.id === c.penaltyId);
+    const o = c.occurrenceId && h.occurrences.find((x) => x.id === c.occurrenceId);
+    if (!p && !o) return { text: 'Não encontrei esse item.', question: 'E agora?', options: [['Ocorrências', 'ocorrencias'], MENU] };
+    const contest = h.contestations.find((x) => (p && x.penalty_id === p.id) || (o && x.occurrence_id === o.id));
+    const text = [
+      p ? `*Bloqueio ${p.type === 'BLOQUEIO_PERMANENTE' ? 'permanente' : `de ${fmtDia(p.starts_at)} a ${fmtDia(p.ends_at)}`}*` : `*${OCORRENCIA[o.type] ?? o.type}* · ${fmtDia(o.created_at)}${o.unit_name ? ` · ${o.unit_name}` : ''}`,
+      p ? `Motivo: ${p.reason}` : o.description,
+      contest ? `Contestação ${contest.protocol}: ${contest.status === 'ABERTA' ? 'em análise' : `decidida${contest.decision_reason ? ` · ${contest.decision_reason}` : ''}`}` : null,
+    ].filter(Boolean).join('\n');
+    const pode = !contest && (p ? p.status === 'ATIVA' : o.status === 'CONFIRMADA');
+    return { text, question: pode ? 'Quer contestar? A UP Service analisa e responde.' : 'E agora?', options: [pode && ['Contestar', 'contestar_motivo'], ['Ocorrências', 'ocorrencias'], MENU].filter(Boolean) };
+  },
+
+  contestar_motivo: textoLivre('Escreva numa mensagem o que aconteceu e por que você contesta (pelo menos 10 letras). Se tiver atestado, diga aqui e envie pelo e-mail contato@upserviceintermed.com.', 'contestar_confirma', 'ocorrencia'),
+
+  async contestar_confirma(u, c) {
+    return { text: `Sua contestação:\n"${c.input}"`, question: 'Enviar a contestação?', options: [['Sim, enviar', 'contestar_ok'], ['Não, cancelar', 'ocorrencia']] };
+  },
+
+  async contestar_ok(u, c) {
+    const r = await acao(u, 'WHATSAPP_CONTESTACAO', c.penaltyId ? 'penalty' : 'occurrence', c.penaltyId ?? c.occurrenceId,
+      (req) => openContestation(req, { userId: u.id, penaltyId: c.penaltyId, occurrenceId: c.occurrenceId, message: c.input, channel: 'WHATSAPP' }));
+    return { text: r.erro ? `⚠️ ${r.erro}` : `✅ Contestação enviada (protocolo ${r.protocol}). A UP Service analisa e você recebe a resposta no app.`, question: 'E agora?', options: [['Ocorrências', 'ocorrencias'], MENU] };
+  },
+
+  // ----- avisos do app -----
+  async avisos(u) {
+    const rows = await q('SELECT id, title, body, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5', [u.id]);
+    if (!rows.length) return { text: 'Você não tem avisos.', question: 'E agora?', options: [MENU] };
+    await q('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL', [new Date(), u.id]);
+    return { text: rows.map((n) => `*${n.title}* (${fmtDia(n.created_at)})${n.body ? `\n${n.body}` : ''}`).join('\n\n'), question: 'Seus últimos avisos. E agora?', options: [MENU] };
+  },
+
+  // ----- lembrete da véspera (enviado pelo sistema) -----
+  async vespera() {
+    return { question: 'Você vai?', options: [['Vou, está confirmado', 'vou'], ['Não vou, quero desistir', 'diaria_confirma'], MENU] };
+  },
+
+  async vou() {
+    return { text: 'Combinado! 👍 No dia, chegue um pouco antes: o check-in abre 15 minutos antes do início, pelo app, dentro da loja. Eu aviso você quando abrir.' };
   },
 
   async recebidos(u) {
@@ -363,7 +461,14 @@ async function responder(phone, msg) {
   if (!conv || age > EXPIRA_MS || (msg.text != null && RESET.has(t))) return show(phone, u, 'menu', {});
 
   const options = JSON.parse(conv.options ?? '[]');
+  if (!options.length) return show(phone, u, 'menu', {}); // passo sem pergunta (ex.: "Combinado!"): recomeça
   const i = escolha(numbered(options), msg);
+  // Passo de escrever: o que não for uma das opções é o texto (o motivo).
+  const input = STEPS[conv.step]?.input;
+  if (i < 0 && input && msg.text != null) {
+    if (isBlocked(u) && !BLOQUEADO_PODE.has(input)) return show(phone, u, 'menu', {});
+    return show(phone, u, input, { ...JSON.parse(conv.ctx ?? '{}'), input: msg.text.trim().slice(0, 1000) });
+  }
   if (i < 0) {
     // Voto numa enquete antiga (ou em formato que ainda não reconhecemos): não responde, só registra para conferir.
     if (msg.votes) { console.log('whatsapp-bot: voto não reconhecido', JSON.stringify(msg.votes).slice(0, 200)); return; }
@@ -375,4 +480,71 @@ async function responder(phone, msg) {
   if (isBlocked(u) && !BLOQUEADO_PODE.has(next)) return show(phone, u, 'menu', {});
   const ctx = next === 'menu' ? {} : { ...JSON.parse(conv.ctx ?? '{}'), ...(extra ?? {}) };
   return show(phone, u, next, ctx);
+}
+
+// ---------- avisos e lembretes (o sistema fala primeiro) ----------
+
+export async function botConfig() {
+  const [row] = await q("SELECT value FROM app_settings WHERE name = 'whatsapp_bot'");
+  return row ? JSON.parse(row.value) : { enabled: false, secret: null };
+}
+
+/** Aviso pelo WhatsApp confirmado. Com o atendimento ligado, já deixa as opções do passo `step` (ex.: "saiu da reserva"
+ *  → ver a diária ou desistir); sem ele, ou com a conversa com uma pessoa, vai só o texto. Nunca derruba a operação. */
+export async function avisar(userId, { text, step, ctx = {} }) {
+  try {
+    const [u] = await q('SELECT id, name, role, status, whatsapp FROM users WHERE id = ? AND whatsapp IS NOT NULL AND whatsapp_verified_at IS NOT NULL', [userId]);
+    if (!u || !(await whatsappConfig())) return false;
+    await sendWhatsapp(u.whatsapp, text);
+    if (step && u.role === 'PROFISSIONAL' && canLogin(u) && (!isBlocked(u) || BLOQUEADO_PODE.has(step)) && (await botConfig()).enabled) {
+      const [conv] = await q('SELECT step, updated_at FROM whatsapp_conversas WHERE phone = ?', [u.whatsapp]);
+      if (!(conv?.step === 'humano' && Date.now() - new Date(conv.updated_at).getTime() < HUMANO_MS)) await show(u.whatsapp, u, step, ctx);
+    }
+    return true;
+  } catch (e) {
+    console.error('falha ao avisar pelo WhatsApp', e.message);
+    return false;
+  }
+}
+
+/** Marca o lembrete como enviado; devolve false se já tinha ido (um por diária e tipo, mesmo com várias varreduras). */
+const marcar = async (appId, kind) => (await q('INSERT IGNORE INTO whatsapp_lembretes (application_id, kind) VALUES (?, ?)', [appId, kind])).affectedRows === 1;
+const quando = (d) => (dayOf(d) === dayOf(Date.now()) ? 'Hoje' : dayOf(d) === addDays(dayOf(Date.now()), 1) ? 'Amanhã' : fmtDia(d));
+
+/** Lembretes pela varredura periódica: véspera (Vou / Não vou), check-in abrindo e pausa acabando. */
+export async function lembretes(now = new Date()) {
+  if (!(await whatsappConfig())) return;
+  const t = now.getTime();
+  const base = `FROM applications a JOIN jobs j ON j.id = a.job_id JOIN units un ON un.id = j.unit_id JOIN work_sessions ws ON ws.application_id = a.id
+                JOIN users u ON u.id = a.user_id AND u.whatsapp_verified_at IS NOT NULL`;
+  // Véspera: de 24 h a 2 h antes, entre 8h e 21h (sem acordar ninguém), para quem pegou a vaga há mais de 6 h.
+  const hora = Number(now.toLocaleString('en-US', { timeZone: TZ, hour: 'numeric', hour12: false }));
+  if (hora >= 8 && hora < 21) {
+    const rows = await q(
+      `SELECT a.id, a.user_id, j.title, j.starts_at, un.code, un.name AS unit_name ${base}
+       WHERE a.status = 'APROVADA' AND ws.status = 'AGUARDANDO_CHECKIN' AND j.starts_at BETWEEN ? AND ? AND a.created_at < ?
+         AND NOT EXISTS (SELECT 1 FROM whatsapp_lembretes l WHERE l.application_id = a.id AND l.kind = 'VESPERA')`,
+      [new Date(t + 2 * 3600e3), new Date(t + 24 * 3600e3), new Date(t - 6 * 3600e3)],
+    );
+    for (const r of rows) {
+      if (await marcar(r.id, 'VESPERA')) await avisar(r.user_id, { text: `Lembrete da UP Service: ${quando(r.starts_at)} às ${fmtHora(r.starts_at)} você tem diária de *${r.title}* em ${r.code} · ${r.unit_name}.`, step: 'vespera', ctx: { appId: r.id } });
+    }
+  }
+  // Check-in abrindo: 15 min antes do início (até o fim da janela, 15 min depois).
+  for (const r of await q(
+    `SELECT a.id, a.user_id, ws.id AS session_id, j.title, j.starts_at, un.code ${base}
+     WHERE a.status = 'APROVADA' AND ws.status = 'AGUARDANDO_CHECKIN' AND j.starts_at BETWEEN ? AND ?
+       AND NOT EXISTS (SELECT 1 FROM whatsapp_lembretes l WHERE l.application_id = a.id AND l.kind = 'CHECKIN')`,
+    [new Date(t - 15 * 60e3), new Date(t + 15 * 60e3)],
+  )) {
+    if (await marcar(r.id, 'CHECKIN')) await avisar(r.user_id, { text: `O check-in da sua diária de *${r.title}* (${r.code}, ${fmtHora(r.starts_at)}) já está aberto. Faça pelo app, dentro da loja: ${APP_URL()}/atividade/${r.session_id}` });
+  }
+  // Pausa acabando: 2 min antes do fim (uma vez por pausa).
+  for (const r of await q(
+    `SELECT a.id, a.user_id, ws.id AS session_id, ws.breaks_used, ws.break_ends_at ${base}
+     WHERE ws.status = 'EM_PAUSA' AND ws.break_ends_at BETWEEN ? AND ?`,
+    [new Date(t - 60e3), new Date(t + 2 * 60e3)],
+  )) {
+    if (await marcar(r.id, `PAUSA${r.breaks_used}`)) await avisar(r.user_id, { text: `Sua pausa termina às ${fmtHora(r.break_ends_at)}. Volte e registre o retorno pelo app: ${APP_URL()}/atividade/${r.session_id}` });
+  }
 }

@@ -98,7 +98,7 @@ export function WhatsappConfig() {
             <h2>Atendimento automático (bot)</h2>
             <StatusBadge tone={bot ? 'success' : 'neutral'}>{bot ? 'Ligado' : 'Desligado'}</StatusBadge>
           </div>
-          <p className="muted">O profissional manda qualquer mensagem para o número oficial e o bot responde com enquetes: procurar vagas e se candidatar, ver e desistir das diárias, ver a Carteira e os comprovantes. Só atende quem confirmou o WhatsApp no app. "Falar com uma pessoa" deixa o bot quieto naquela conversa por 4 horas.</p>
+          <p className="muted">O profissional manda qualquer mensagem para o número oficial e o bot responde com enquetes: procurar vagas e se candidatar, ver e desistir das diárias, Carteira e comprovantes, quebra de caixa (pedir revisão), ocorrências (contestar) e avisos. Também lembra a véspera da diária (Vou / Não vou), avisa quando o check-in abre, quando a pausa está acabando e quando o checkout foi esquecido. Só atende quem confirmou o WhatsApp no app. "Falar com uma pessoa" deixa o bot quieto naquela conversa por 4 horas.</p>
           <div><button className={bot ? 'danger' : 'primary'} disabled={busy === 'bot'} onClick={() => toggleBot(!bot)}>{busy === 'bot' ? 'Salvando…' : bot ? 'Desligar o atendimento' : 'Ligar o atendimento'}</button></div>
         </div>
       )}

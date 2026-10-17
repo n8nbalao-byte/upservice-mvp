@@ -109,7 +109,7 @@ export async function promoteFromWaitlist(c, jobId) {
 Você está confirmado(a) em "${job.title}" — ${job.unit_name}, ${fmt(job.starts_at)}.
 
 No dia, faça o check-in pelo app: ${APP_URL()}/minhas
-Se não puder ir, desista pelo app para chamar o próximo da reserva.`]);
+Se não puder ir, desista aqui ou pelo app, para chamar o próximo da reserva.`, { userId: r.user_id, step: 'diaria', ctx: { appId: r.id } }]);
     }
     promoted.push(r.id);
     free -= 1;

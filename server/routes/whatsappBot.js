@@ -4,7 +4,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
 import { audit } from '../audit.js';
 import { requireOwner } from '../auth.js';
-import { handleWebhook } from '../bot.js';
+import { botConfig, handleWebhook } from '../bot.js';
 import { q } from '../db.js';
 import { fail } from '../http.js';
 import { evolution } from '../whatsapp.js';
@@ -12,10 +12,6 @@ import { evolution } from '../whatsapp.js';
 const r = Router();
 const APP_URL = () => (process.env.APP_URL || 'https://app.upserviceintermed.com').replace(/\/+$/, '');
 
-async function botConfig() {
-  const [row] = await q("SELECT value FROM app_settings WHERE name = 'whatsapp_bot'");
-  return row ? JSON.parse(row.value) : { enabled: false, secret: null };
-}
 const sameSecret = (a, b) => !!a && !!b && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 // Responde na hora (a Evolution não espera) e atende em segundo plano.

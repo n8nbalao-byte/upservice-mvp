@@ -1619,3 +1619,106 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
     mock.close();
   }
 });
+
+test('WhatsApp (bot): lembrete da véspera com Vou/Não vou, check-in abrindo, quebra de caixa com revisão escrita, contestação e avisos', { skip }, async () => {
+  const http = await import('node:http');
+  const { randomUUID } = await import('node:crypto');
+  const { lembretes } = await import('../server/bot.js');
+  const sent = [];
+  let polls = 0;
+  const mock = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (c) => { b += c; });
+    req.on('end', () => { sent.push({ url: req.url, body: JSON.parse(b || '{}') }); res.end(JSON.stringify(req.url.includes('sendPoll') ? { key: { id: `poll-${++polls}` } } : {})); });
+  }).listen(0);
+  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  try {
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: true })).status, 200);
+    const hookUrl = new URL(sent.find((x) => x.url === '/webhook/set/upservice').body.webhook.url);
+    const hook = hookUrl.pathname + hookUrl.search;
+    const bot = await login('bot2@test.dev');
+    await completeWorker(bot, '583.026.147-26');
+    const me = (await userByEmail('bot2@test.dev')).id;
+    await q('UPDATE users SET whatsapp = ?, whatsapp_verified_at = ? WHERE id = ?', ['11977770456', new Date(), me]);
+    const jid = '5511977770456@s.whatsapp.net';
+    const settle = async () => { let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 120)); } };
+    const say = async (text) => { await call(null, 'POST', hook, { event: 'messages.upsert', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message: { conversation: text } } }); await settle(); };
+    const poll = () => sent.filter((x) => x.url === '/message/sendPoll/upservice').at(-1).body;
+    const texts = () => sent.filter((x) => x.url === '/message/sendText/upservice' && x.body.number === '5511977770456').map((x) => x.body.text);
+    const pick = (re) => { const i = poll().values.findIndex((v) => re.test(v)); assert.ok(i >= 0, `opção ${re} em ${poll().values}`); return String(i + 1); };
+
+    // Véspera: diária amanhã às 10h, pega há mais de 6 h; a varredura (às 14h de hoje) manda o lembrete com Vou / Não vou.
+    const amanha = new Date(Date.now() + 86400e3).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    const starts = new Date(`${amanha}T10:00:00-03:00`);
+    const job = (await call(s.gestor, 'POST', '/api/manage/jobs', { unitId: s.unitA, title: 'Conferente do lembrete', startsAt: starts, endsAt: new Date(starts.getTime() + 6 * 3600e3), positions: 1, dailyValue: 120, breakCount: 1, breakMinutes: 15, publish: true })).body.id;
+    const app = (await call(bot, 'POST', `/api/jobs/${job}/apply`, {})).body;
+    assert.equal(app.status, 'APROVADA');
+    await q('UPDATE applications SET created_at = ? WHERE id = ?', [new Date(`${hoje}T07:00:00-03:00`), app.id]);
+    const as14h = new Date(`${hoje}T14:00:00-03:00`);
+    await lembretes(as14h);
+    await settle();
+    assert.match(texts().at(-1), /Lembrete da UP Service: .*Conferente do lembrete/);
+    assert.equal(poll().name, 'Você vai?');
+    const n1 = sent.length;
+    await lembretes(as14h);
+    await settle();
+    assert.equal(sent.length, n1, 'lembrete vai uma vez só');
+    await lembretes(new Date(`${hoje}T22:00:00-03:00`));
+    await say(pick(/Não vou/));
+    assert.match(poll().name, /desistir de Conferente do lembrete/);
+    await say(pick(/Sim/));
+    assert.equal((await q('SELECT status FROM applications WHERE id = ?', [app.id]))[0].status, 'CANCELADA');
+
+    // Check-in abrindo (15 min antes): link direto para a tela da atividade.
+    const a2 = await approvedSession(bot, 'Operador de Caixa do bot');
+    await lembretes(new Date());
+    await settle();
+    assert.match(texts().at(-1), new RegExp(`check-in .* já está aberto[\\s\\S]*/atividade/${a2.session}`));
+
+    // Quebra de caixa: o aviso já vem com as opções; revisão com o motivo escrito, canal WhatsApp.
+    const [g] = await q("SELECT id FROM users WHERE email = 'gestor@test.dev'");
+    await q("UPDATE work_sessions SET status = 'FINALIZADA' WHERE id = ?", [a2.session]);
+    await q("INSERT INTO daily_confirmations (application_id, result, confirmed_by) VALUES (?, 'CONCLUIDA', ?)", [a2.application, g.id]);
+    assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${a2.application}/quebra-caixa`, { amount: 20, reason: 'Faltou dinheiro no fechamento' })).status, 201);
+    await settle();
+    assert.match(texts().at(-1), /Quebra de caixa registrada/);
+    assert.match(poll().name, /Quebras de caixa/);
+    await say('1');
+    await say(pick(/Pedir revisão/));
+    assert.match(poll().name, /Escreva/);
+    await say('Conferi o caixa com o fiscal e estava certo');
+    await say(pick(/Sim, enviar/));
+    assert.match(texts().at(-1), /Pedido de revisão enviado \(protocolo CT-/);
+    const [rev] = await q('SELECT channel, message FROM contestations WHERE user_id = ? AND cash_break_id IS NOT NULL', [me]);
+    assert.deepEqual([rev.channel, rev.message], ['WHATSAPP', 'Conferi o caixa com o fiscal e estava certo']);
+
+    // Ocorrência confirmada → contestar pelo WhatsApp.
+    assert.equal((await call(s.gestor, 'POST', '/api/manage/occurrences', { userId: me, unitId: s.unitA, type: 'REGRA_OPERACIONAL', description: 'Uso do celular no caixa' })).status, 201);
+    await say('menu');
+    await say(pick(/Ocorrências/));
+    await say(pick(/Descumprimento de regra operacional/));
+    await say(pick(/Contestar/));
+    await say('curto');
+    await say(pick(/Sim, enviar/));
+    assert.match(texts().at(-1), /⚠️/, 'mensagem curta: a regra do app recusa e o bot explica');
+    await say('menu');
+    await say(pick(/Ocorrências/));
+    await say(pick(/Descumprimento de regra operacional/));
+    await say(pick(/Contestar/));
+    await say('O gestor me pediu para atender o telefone da loja');
+    await say(pick(/Sim, enviar/));
+    assert.match(texts().at(-1), /Contestação enviada/);
+    assert.equal((await q("SELECT channel FROM contestations WHERE user_id = ? AND occurrence_id IS NOT NULL", [me]))[0].channel, 'WHATSAPP');
+
+    // Avisos: os do app aparecem e ficam lidos.
+    await say('menu');
+    await say(pick(/Avisos/));
+    assert.match(texts().at(-1), /Quebra de caixa registrada/);
+    assert.equal((await q('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL', [me]))[0].n, 0);
+    await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: false });
+  } finally {
+    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
+    mock.close();
+  }
+});

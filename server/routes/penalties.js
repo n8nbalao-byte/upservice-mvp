@@ -34,7 +34,7 @@ async function assertPenaltyAuthority(tq, user, p) {
 }
 
 /** Tudo o que a pessoa vê sobre si: ocorrências confirmadas/canceladas, bloqueios e contestações. */
-async function history(userId, { includePending = false } = {}) {
+export async function history(userId, { includePending = false } = {}) {
   const [occurrences, penalties, contestations] = await Promise.all([
     q(`SELECT o.*, un.name AS unit_name FROM occurrences o JOIN units un ON un.id = o.unit_id
        WHERE o.user_id = ? ${includePending ? '' : "AND o.status <> 'PENDENTE'"} ORDER BY o.created_at DESC`, [userId]),
@@ -48,7 +48,7 @@ async function history(userId, { includePending = false } = {}) {
 const protocol = () => `CT-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomBytes(2).toString('hex').toUpperCase()}`;
 
 /** Valida o item contestado (do próprio profissional, ativo/confirmado, sem contestação aberta) e cria o protocolo. */
-async function openContestation(req, { userId, penaltyId, occurrenceId, cashBreakId, message, channel }) {
+export async function openContestation(req, { userId, penaltyId, occurrenceId, cashBreakId, message, channel }) {
   if ([penaltyId, occurrenceId, cashBreakId].filter(Boolean).length !== 1) fail(400, 'Informe o bloqueio, a ocorrência ou a quebra de caixa.');
   const msg = text(message, 'mensagem', { min: 10, max: 1000 });
   return tx(async (tq) => {
