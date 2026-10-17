@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/icons';
-import { EstrelasMapa, monthName, type StarsData } from '../components/Estrelas';
+import { EstrelasMapa, Resumo, monthName, type StarsData } from '../components/Estrelas';
+import { MapaAno } from '../components/mapa/MapaAno';
 import { Alert, EmptyState, Loading, PageHeader, Stat } from '../components/ui';
 import { api, fmtDateTime, fmtMoney } from '../lib/api';
 
@@ -9,6 +10,7 @@ import { api, fmtDateTime, fmtMoney } from '../lib/api';
 export default function Estrelas() {
   const [data, setData] = useState<StarsData>();
   const [error, setError] = useState('');
+  const [mes, setMes] = useState<string | null>(null);
   useEffect(() => { api<StarsData>('/me/estrelas').then(setData, (e) => setError(e.message)); }, []);
   return (
     <div className="game-full">
@@ -20,7 +22,17 @@ export default function Estrelas() {
             <Link to="/minhas" className="g-back" aria-label="Voltar para Minhas diárias"><Icon name="chevronLeft" size={22} /></Link>
             {error ? <Alert kind="info">{error}</Alert> : <Loading />}
           </>
-        ) : <EstrelasMapa data={data} back={<Link to="/minhas" className="g-back" aria-label="Voltar para Minhas diárias"><Icon name="chevronLeft" size={22} /></Link>} />}
+        ) : mes ? (
+          // Calendário do mês tocado no mapa; o botão "Mapa" volta.
+          <EstrelasMapa key={mes} data={data} month={mes} back={<button type="button" className="g-tomapa" onClick={() => setMes(null)} aria-label="Voltar ao mapa do ano"><Icon name="map" size={18} /><span>Mapa</span></button>} />
+        ) : (
+          // Mapa do ano: um mês por fase; tocar abre o calendário daquele mês.
+          <div className="g-mapa-tela">
+            <Resumo data={data} m={data.months.find((x) => x.month === data.current) ?? data.months[0]} left={<Link to="/minhas" className="g-back" aria-label="Voltar para Minhas diárias"><Icon name="chevronLeft" size={22} /></Link>} />
+            <MapaAno data={data} onOpen={setMes} />
+            <p className="g-mapa-dica">Toque num mês para ver o calendário</p>
+          </div>
+        )}
       </div>
     </div>
   );

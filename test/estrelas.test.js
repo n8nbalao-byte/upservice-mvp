@@ -42,6 +42,16 @@ test('mês = nível: todas as fases (dias), máximo de 3 estrelas por dia e bôn
   assert.deepEqual([hoje.days[14].status, hoje.days[13].status], ['hoje', 'em_analise']);
 });
 
+test('nota do mês no mapa: média das diárias feitas, arredondada; sem diária feita, sem nota', () => {
+  const f = (stars) => ({ day: 1, stars, state: 'feita' });
+  assert.equal(buildMonth('2026-10', [f(3), f(3), f(2), f(3), f(2)]).rating, 3, 'média 2,6');
+  assert.equal(buildMonth('2026-10', [f(1), f(2), f(1), f(2), f(1)]).rating, 1, 'média 1,4');
+  assert.equal(buildMonth('2026-10', [{ day: 3, stars: null, state: 'proxima' }]).rating, null);
+  assert.equal(buildMonth('2026-10', []).hasBonus, false);
+  assert.equal(buildMonth('2026-12', [], [{ day: '2026-12-20', kind: 'SORTEIO' }]).hasDraw, true);
+  assert.equal(buildMonth('2026-10', [], [{ day: '2026-10-07', kind: 'BONUS', value: 10 }]).hasBonus, true);
+});
+
 test('bônus do mês: soma exata do valor definido, valores crescentes, fora do dia do sorteio', () => {
   let seed = 7;
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);

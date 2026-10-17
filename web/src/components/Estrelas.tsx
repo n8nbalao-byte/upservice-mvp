@@ -9,7 +9,7 @@ export type Diary = { id: string; title: string; unit: string; startsAt: string;
 export type Bonus = { kind: 'BONUS' | 'SORTEIO'; label: string | null; value: number | null; revealed: boolean; earned: boolean };
 export type DayStatus = 'feita' | 'hoje' | 'em_analise' | 'agendada' | 'livre' | 'passou';
 export type Day = { day: number; status: DayStatus; diaries: Diary[]; bonus?: Bonus };
-export type Month = { month: string; level: number; stars: number; maxStars: number; diaries: Diary[]; days: Day[]; bonusGanho: number; done: boolean };
+export type Month = { month: string; level: number; stars: number; maxStars: number; diaries: Diary[]; days: Day[]; bonusGanho: number; done: boolean; rating: number | null; hasBonus: boolean; hasDraw: boolean };
 export type Sorteio = { label: string | null; day: string; need: number; threeStarDays: number; dayDone: boolean; qualifies: boolean };
 export type StarsData = { current: string; year: number; today: string; total: number; bonusGanho: number; sorteio: Sorteio | null; months: Month[] };
 
@@ -168,6 +168,28 @@ function LivreDetail({ o, sorteio, onClose }: { o: Extract<Open, { kind: 'livre'
   );
 }
 
+/** Cartão de resumo do topo: estrelas do ano, nível e barra do mês, mês e "x de N". Usado no mapa e no calendário. */
+export function Resumo({ data, m, left }: { data: StarsData; m: Month; left?: ReactNode }) {
+  return (
+    <section className="g-summary" aria-label="Resumo">
+      {left}
+      <div className="g-summary-total" aria-label={`${data.total} estrelas no ano`}>
+        <BigStar />
+        <span><b>{data.total}</b><small>estrela{data.total === 1 ? '' : 's'}</small></span>
+      </div>
+      <div className="g-summary-level">
+        <span className="g-level-badge">Nível {m.level}</span>
+        <div className="g-level-bar" role="progressbar" aria-label={`Estrelas do nível ${m.level}`} aria-valuenow={m.stars} aria-valuemin={0} aria-valuemax={m.maxStars}><span style={{ width: `${(m.stars / m.maxStars) * 100}%` }} /></div>
+      </div>
+      {/* Mês visível (muda ao arrastar) e as estrelas dele, dentro do mesmo cartão. */}
+      <div className="g-summary-month">
+        <span><Icon name="calendar" size={15} />{monthName(m.month)}</span>
+        <span aria-label={`${m.stars} de ${m.maxStars} estrelas no mês`}><Icon name="star" size={14} /> {m.stars} de {m.maxStars}</span>
+      </div>
+    </section>
+  );
+}
+
 /** Estrela grande do resumo (desenho próprio, em SVG). */
 function BigStar() {
   return (
@@ -257,9 +279,9 @@ type Party = { title: string; n: number; text: string; d?: Diary };
 
 /** Tela "como um joguinho" (só o profissional vê): nível do mês, estrelas do ano, meses lado a lado (arrastando),
  *  regras no verso do cartão, resumo do dia, bônus e comemorações. */
-export function EstrelasMapa({ data, back }: { data: StarsData; back?: ReactNode }) {
+export function EstrelasMapa({ data, back, month }: { data: StarsData; back?: ReactNode; month?: string }) {
   const track = useRef<HTMLDivElement>(null);
-  const start = Math.max(0, data.months.findIndex((m) => m.month === data.current));
+  const start = Math.max(0, data.months.findIndex((m) => m.month === (month ?? data.current)));
   const [idx, setIdx] = useState(start);
   const [flipped, setFlipped] = useState(false);
   const [open, setOpen] = useState<Open | null>(null);
@@ -291,22 +313,7 @@ export function EstrelasMapa({ data, back }: { data: StarsData; back?: ReactNode
     <div className={`game g-flip${flipped ? ' flipped' : ''}`}>
       <div className="g-flip-inner">
         <div className="g-face g-front" inert={flipped}>
-          <section className="g-summary" aria-label="Resumo">
-            {back}
-            <div className="g-summary-total" aria-label={`${data.total} estrelas no ano`}>
-              <BigStar />
-              <span><b>{data.total}</b><small>estrela{data.total === 1 ? '' : 's'}</small></span>
-            </div>
-            <div className="g-summary-level">
-              <span className="g-level-badge">Nível {m.level}</span>
-              <div className="g-level-bar" role="progressbar" aria-label={`Estrelas do nível ${m.level}`} aria-valuenow={m.stars} aria-valuemin={0} aria-valuemax={m.maxStars}><span style={{ width: `${(m.stars / m.maxStars) * 100}%` }} /></div>
-            </div>
-            {/* Mês visível (muda ao arrastar) e as estrelas dele, dentro do mesmo cartão. */}
-            <div className="g-summary-month">
-              <span><Icon name="calendar" size={15} />{monthName(m.month)}</span>
-              <span aria-label={`${m.stars} de ${m.maxStars} estrelas no mês`}><Icon name="star" size={14} /> {m.stars} de {m.maxStars}</span>
-            </div>
-          </section>
+          <Resumo data={data} m={m} left={back} />
           <div className="g-track" ref={track} onScroll={onScroll}>{data.months.map((mm) => <MonthPage key={mm.month} m={mm} today={data.today} onOpen={setOpen} />)}</div>
           <div className="g-foot">
             <Chest />

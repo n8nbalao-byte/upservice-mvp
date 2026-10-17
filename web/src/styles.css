@@ -1148,3 +1148,44 @@ h2.g-pill-soft { font-size: clamp(0.95rem, min(4.4vw, 2.6vh), 1.25rem); }
   .app.worker .g-summary .g-back, .app.worker .game-full-body > .g-back { display: none; }
   .app.worker .g-summary { grid-template-columns: auto 1fr; }
 }
+
+/* ---------- Mapa do ano (12 meses), Explorador e animação de avanço de mês ---------- */
+.g-mapa-tela { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.g-mapa-tela > .g-summary { flex: none; }
+.g-mapa-wrap { position: relative; flex: 1; min-height: 0; border-radius: 18px; overflow: hidden; box-shadow: 0 3px 0 #dcb677, 0 8px 20px rgba(120, 70, 10, 0.15); }
+.g-mapa { height: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(90, 50, 16, 0.35) transparent; }
+.g-mapa-svg { display: block; }
+.g-mapa-mes { cursor: pointer; outline: none; }
+.g-mapa-mes:focus-visible > ellipse:nth-of-type(3), .g-mapa-mes:focus-visible > ellipse:last-of-type { stroke: #b8261a; stroke-width: 4; }
+.g-mapa-rotulo { font-family: 'Luckiest Guy', 'Poppins', sans-serif; font-size: 15px; fill: #4a2a0c; letter-spacing: 0.04em; pointer-events: none; }
+.g-mapa-mes.futuro .g-mapa-rotulo { fill: #3d2f62; }
+.g-mapa-mes path.on { fill: #ffd84d; stroke: #b07800; stroke-width: 1.2; }
+.g-mapa-mes path.off { fill: rgba(255, 255, 255, 0.55); stroke: rgba(90, 60, 20, 0.5); stroke-width: 1.2; }
+.g-mapa-brilho { animation: g-mapa-pulso 1.4s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+@keyframes g-mapa-pulso { from { opacity: 0.45; transform: scale(0.92); } to { opacity: 1; transform: scale(1.08); } }
+.g-mapa-presente { animation: g-mapa-balanca 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: bottom center; }
+@keyframes g-mapa-balanca { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+.g-explorador { pointer-events: none; }
+.g-explorador .corpo, .g-explorador .perna, .g-explorador .braco { transform-box: fill-box; }
+.g-explorador .corpo { transform-origin: bottom center; }
+.g-explorador .perna, .g-explorador .braco { transform-origin: top center; }
+.g-explorador.parado .corpo { animation: g-respira 1.6s ease-in-out infinite alternate; }
+@keyframes g-respira { from { transform: translateY(0) scaleY(1); } to { transform: translateY(-1.5px) scaleY(1.02); } }
+.g-explorador.andando .perna-a, .g-explorador.andando .braco-b { animation: g-passo 0.34s ease-in-out infinite alternate; }
+.g-explorador.andando .perna-b, .g-explorador.andando .braco-a { animation: g-passo 0.34s ease-in-out infinite alternate-reverse; }
+.g-explorador.andando .corpo { animation: g-balanco 0.34s ease-in-out infinite alternate; }
+@keyframes g-passo { from { transform: rotate(-24deg); } to { transform: rotate(24deg); } }
+@keyframes g-balanco { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+.g-explorador.comemorando .corpo { animation: g-pulo 0.5s ease-in-out 4; }
+.g-explorador.comemorando .braco { transform: rotate(160deg); }
+.g-explorador .brilhos { animation: g-pop 0.4s ease-out both; }
+@keyframes g-pulo { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+.g-mapa-titulo { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: auto; background: radial-gradient(ellipse at center, rgba(40, 24, 6, 0.28), transparent 70%); }
+.g-mapa-titulo span { padding: 10px 22px; border-radius: 99px; background: #fdf0d5; box-shadow: 0 4px 0 #dcb677, 0 10px 26px rgba(60, 30, 0, 0.35); font-family: 'Luckiest Guy', 'Poppins', sans-serif; font-size: clamp(1.3rem, 6vw, 1.9rem); color: #4a2a0c; animation: g-pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.g-mapa-dica { flex: none; margin: 0; text-align: center; font-size: 0.82rem; font-weight: 700; color: #5a3210; }
+.g-tomapa { display: inline-flex; align-items: center; gap: 4px; align-self: center; min-height: 32px; padding: 0 10px; border-radius: 99px; border: 1px solid #e3c48c; background: #f6e2bb; color: #4a2a0c; font-weight: 800; font-size: 0.82rem; cursor: pointer; }
+.g-tomapa:hover { background: #fff3da; color: #4a2a0c; border-color: #e3c48c; }
+.g-summary:has(.g-tomapa) { grid-template-columns: auto auto 1fr !important; }
+@media (prefers-reduced-motion: reduce) {
+  .g-mapa-brilho, .g-mapa-presente, .g-explorador .corpo, .g-explorador .perna, .g-explorador .braco, .g-mapa-titulo span { animation: none !important; }
+}
