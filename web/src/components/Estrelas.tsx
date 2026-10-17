@@ -308,6 +308,39 @@ export function EstrelasMapa({ data, back, month, onMonth }: { data: StarsData; 
     const el = track.current;
     if (el) el.scrollTo({ left: start * el.clientWidth, behavior: 'instant' as ScrollBehavior });
   }, [start]);
+  // Mês sempre inteiro na tela: ao soltar o dedo (ou parar a rolagem), se ficou entre dois meses, desliza até o mais
+  // perto. O scroll-snap do CSS já faz isso na maioria dos navegadores; aqui cobre os que param no meio ou deixam
+  // uma sobra de alguns pixels. Ao girar a tela, realinha o mês atual.
+  useEffect(() => {
+    const el = track.current;
+    if (!el) return;
+    let timer = 0;
+    let touching = false;
+    const align = (smooth: boolean) => {
+      if (touching) return;
+      const month = el.children[Math.round(el.scrollLeft / el.clientWidth)];
+      if (!month) return;
+      const off = month.getBoundingClientRect().left - el.getBoundingClientRect().left;
+      if (Math.abs(off) > 0.5) el.scrollBy({ left: off, behavior: (smooth ? 'smooth' : 'instant') as ScrollBehavior });
+    };
+    const settle = () => { clearTimeout(timer); timer = window.setTimeout(() => align(true), 150); };
+    const down = () => { touching = true; clearTimeout(timer); };
+    const up = () => { touching = false; settle(); };
+    const ro = new ResizeObserver(() => align(false));
+    el.addEventListener('scroll', settle, { passive: true });
+    el.addEventListener('touchstart', down, { passive: true });
+    el.addEventListener('touchend', up);
+    el.addEventListener('touchcancel', up);
+    ro.observe(el);
+    return () => {
+      clearTimeout(timer);
+      ro.disconnect();
+      el.removeEventListener('scroll', settle);
+      el.removeEventListener('touchstart', down);
+      el.removeEventListener('touchend', up);
+      el.removeEventListener('touchcancel', up);
+    };
+  }, []);
   // Comemora a diária concluída mais recente ainda não vista neste aparelho; senão, o último nível (mês) concluído.
   useEffect(() => {
     const done = data.months.flatMap((m) => m.diaries).filter((d) => d.state === 'feita');
