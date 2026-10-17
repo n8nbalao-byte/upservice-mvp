@@ -10,7 +10,7 @@ import { fail, text } from '../http.js';
 import { PIX_TYPES, brCode, normalizePixKey } from '../pix.js';
 import { decodeBase64, loadFile, removeFile, saveFile, sniff } from '../storage.js';
 import { sendWhatsappMediaSafe, sendWhatsappSafe } from '../whatsapp.js';
-import { earnedBonuses } from './estrelas.js';
+import { bonusGanhoPorUsuario, earnedBonuses } from './estrelas.js';
 import { breaksOf } from './quebra.js';
 
 const r = Router();
@@ -53,6 +53,61 @@ export async function wallet(userId, tq = q) {
     pagamentos: pagamentos.map((x) => ({ id: x.id, amount: Number(x.amount), paidAt: x.paid_at, receipt: !!x.receipt_mime, receiptMime: x.receipt_mime, note: x.note })),
   };
 }
+
+/** Todos os profissionais com valor a receber (mesma conta de wallet, agregada no banco para não somar um a um). */
+// ponytail: cópia de 30 s (o menu de cada admin consulta a cada minuto); limpa ao registrar pagamento. Guardar o saldo se crescer.
+let copia = { at: 0, items: null };
+export const limparPendentes = () => { copia = { at: 0, items: null }; };
+export async function pendentes() {
+  if (copia.items && Date.now() - copia.at < 30000) return copia.items;
+  const items = await calcularPendentes();
+  copia = { at: Date.now(), items };
+  return items;
+}
+
+async function calcularPendentes() {
+  const [diarias, pagos, quebras, bonus] = await Promise.all([
+    q(`SELECT a.user_id, SUM(j.daily_value) AS v, COUNT(*) AS n, MIN(j.starts_at) AS desde
+       FROM applications a JOIN jobs j ON j.id = a.job_id JOIN daily_confirmations dc ON dc.application_id = a.id AND dc.result = 'CONCLUIDA'
+       GROUP BY a.user_id`),
+    q('SELECT user_id, SUM(amount) AS v, MAX(paid_at) AS ultimo FROM worker_payments GROUP BY user_id'),
+    q(`SELECT cb.user_id, SUM(COALESCE(cb.final_amount, cb.amount)) AS v FROM cash_breaks cb
+       JOIN daily_confirmations dc ON dc.application_id = cb.application_id AND dc.result = 'CONCLUIDA'
+       WHERE cb.status = 'ATIVA' GROUP BY cb.user_id`),
+    bonusGanhoPorUsuario(),
+  ]);
+  const conta = new Map();
+  const de = (id) => { if (!conta.has(id)) conta.set(id, { d: 0, b: 0, q: 0, p: 0, n: 0, desde: null, ultimo: null }); return conta.get(id); };
+  for (const x of diarias) Object.assign(de(x.user_id), { d: cents(x.v), n: Number(x.n), desde: x.desde });
+  for (const x of pagos) Object.assign(de(x.user_id), { p: cents(x.v), ultimo: x.ultimo });
+  for (const x of quebras) de(x.user_id).q = cents(x.v);
+  for (const [id, v] of bonus) de(id).b = cents(v);
+  const abertos = [...conta].filter(([, c]) => c.d + c.b - c.q - c.p > 0);
+  if (!abertos.length) return [];
+  const pessoas = await q(
+    `SELECT u.id, u.name, u.status, p.pix_type, p.pix_key FROM users u LEFT JOIN worker_profiles p ON p.user_id = u.id
+     WHERE u.id IN (?) AND u.role = 'PROFISSIONAL' AND u.deleted_at IS NULL`,
+    [abertos.map(([id]) => id)],
+  );
+  const por = new Map(pessoas.map((u) => [u.id, u]));
+  return abertos.filter(([id]) => por.has(id)).map(([id, c]) => {
+    const u = por.get(id);
+    return {
+      id, name: u.name, status: u.status, pixType: u.pix_type, pixKey: u.pix_key,
+      aReceber: (c.d + c.b - c.q - c.p) / 100, diarias: c.d / 100, bonus: c.b / 100, quebras: c.q / 100, pago: c.p / 100,
+      diariasConcluidas: c.n, desde: c.desde, ultimoPagamento: c.ultimo,
+    };
+  }).sort((a, b) => b.aReceber - a.aReceber || a.name.localeCompare(b.name));
+}
+
+// Pagamentos (administrador): quem tem valor a receber, para pagar sem entrar na ficha de cada um.
+r.get('/admin/pagamentos', requireRole('ADMINISTRADOR'), async (req, res) => {
+  const items = await pendentes();
+  const total = items.reduce((t, x) => t + cents(x.aReceber), 0) / 100;
+  if (req.query.resumo) return res.json({ count: items.length, total });
+  await audit(q, req, 'PAYMENTS_LIST', 'worker_payment', null, { after: { count: items.length } });
+  res.json({ count: items.length, total, items });
+});
 
 r.put('/me/pix', requireRole('PROFISSIONAL'), async (req, res) => {
   const type = String(req.body.type ?? '');
@@ -131,6 +186,7 @@ r.post('/manage/workers/:id/pagamentos', MANAGERS, async (req, res) => {
     await removeFile(saved.key);
     throw e;
   }
+  limparPendentes(); // a lista de pagamentos do admin já reflete o pagamento
   // O mesmo comprovante vai pelo WhatsApp (em segundo plano; falha não desfaz o pagamento).
   const phone = w.whatsapp || w.phone;
   if (phone) {

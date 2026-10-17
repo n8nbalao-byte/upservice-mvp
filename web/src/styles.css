@@ -974,6 +974,35 @@ a.receber:hover { border-color: var(--line-strong, var(--line)); }
 .pix-copy { display: flex; gap: 8px; }
 .pix-copy input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: 0.8rem; }
 @media (max-width: 520px) { .wallet-parts { grid-template-columns: 1fr; } .wallet-items li { flex-wrap: wrap; } }
+
+/* ---------- Pagamentos (administrador): pendentes à esquerda, pagamento à direita ---------- */
+.pag-grid { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 16px; align-items: start; }
+.pag-lista { position: sticky; top: 12px; max-height: calc(100vh - 140px); display: flex; flex-direction: column; }
+.pag-lista ul { list-style: none; margin: 0; padding: 0 8px 8px; overflow-y: auto; }
+.pag-busca { display: flex; align-items: center; gap: 6px; margin: 0 12px 8px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius, 10px); color: var(--muted); }
+.pag-busca input { border: 0; outline: none; padding: 8px 0; flex: 1; min-width: 0; background: transparent; }
+.pag-item { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; cursor: pointer; }
+.pag-item:hover { background: var(--surface-2, #f3f5f6); }
+.pag-item.on { background: var(--accent-soft, #e9ecef); box-shadow: inset 3px 0 0 var(--accent); }
+.pag-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pag-nome { flex: 1; min-width: 0; display: grid; }
+.pag-nome b, .pag-nome small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pag-nome small { color: var(--muted); }
+.pag-valor { font-weight: 800; color: var(--success); white-space: nowrap; }
+.pag-vazio { padding: 12px; }
+.pag-detalhe { display: grid; gap: 12px; min-width: 0; }
+.pag-cabeca { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pag-cabeca > div { flex: 1; min-width: 0; }
+.pag-cabeca h2 { margin: 0; }
+.pag-cabeca p { margin: 2px 0 0; }
+.pag-voltar { display: none; }
+@media (max-width: 860px) {
+  .pag-grid { grid-template-columns: 1fr; }
+  .pag-lista { position: static; max-height: none; }
+  .pag-grid.com-sel .pag-lista { display: none; }
+  .pag-grid:not(.com-sel) .pag-detalhe { display: none; }
+  .pag-voltar { display: inline-flex; }
+}
 /* Quebra de caixa: tom neutro (abatimento, não punição). */
 .wallet-kind.cash { background: #eef1f3; color: #44505a; }
 .wallet-items li.is-canceled { opacity: 0.7; }

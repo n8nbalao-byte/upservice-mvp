@@ -12,7 +12,7 @@ const readFile = (f: File) => new Promise<string>((ok, ko) => { const r = new Fi
 
 /** Gestão: saldo do profissional, chave Pix e pagamento. Clicar na chave abre o QR Code do Pix com o valor em aberto;
  *  depois de pagar no app do banco, o gestor anexa o comprovante e marca como pago (o comprovante vai pelo WhatsApp). */
-export function PagamentoPix({ workerId }: { workerId: string }) {
+export function PagamentoPix({ workerId, onPaid }: { workerId: string; onPaid?: () => void }) {
   const { busy, run } = useAction();
   const [data, setData] = useState<Data>();
   const [error, setError] = useState('');
@@ -38,7 +38,7 @@ export function PagamentoPix({ workerId }: { workerId: string }) {
       if (file.size > MAX) throw new Error('Comprovante maior que 5 MB.');
       await api(`/manage/workers/${workerId}/pagamentos`, { body: { amount, receipt: await readFile(file), note: f.get('note') } });
     }, 'Pagamento registrado. O comprovante foi enviado ao profissional.');
-    if (ok) { dlg.current?.close(); load(); }
+    if (ok) { dlg.current?.close(); load(); onPaid?.(); }
   }
 
   if (error) return <div className="card"><Alert kind="danger">{error}</Alert></div>;
