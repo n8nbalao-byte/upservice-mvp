@@ -974,3 +974,8 @@ a.receber:hover { border-color: var(--line-strong, var(--line)); }
 .pix-copy { display: flex; gap: 8px; }
 .pix-copy input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: 0.8rem; }
 @media (max-width: 520px) { .wallet-parts { grid-template-columns: 1fr; } .wallet-items li { flex-wrap: wrap; } }
+/* Dia de bônus que ainda não chegou: "baú" dourado trancado (cadeado + presente); o valor só aparece no dia. */
+.g-tile.g-chest { background: linear-gradient(170deg, #ffe38a, #f2b318 60%, #d99a00); }
+.g-tile.g-chest.tv { background: linear-gradient(170deg, #fbc4da, #f08bb4); }
+.g-tile.g-chest .g-date { color: #3b2709; font-weight: 800; }
+.g-tile.locked .g-state { color: #3b2709; }
