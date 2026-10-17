@@ -7,7 +7,7 @@ import { getPosition } from '../lib/device';
 
 type Job = {
   id: string; title: string; description: string | null; starts_at: string; ends_at: string; daily_value: number;
-  break_count: number; break_minutes: number; unit_name: string; unit_address: string; available: number;
+  break_count: number; break_minutes: number; unit_name: string; unit_address: string; available: number; is_cashier?: number;
   distance_m: number | null; my_status: string | null;
 };
 const dayBR = (s: string) => new Date(s).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit' });
@@ -90,6 +90,7 @@ export default function Vagas() {
               <div className="muted">
                 {j.break_count ? `${j.break_count} pausa(s) de ${j.break_minutes} min` : 'Sem pausas'} · {j.available ? `${j.available} vaga(s) livre(s)` : 'Sem vagas livres'}
               </div>
+              {!!j.is_cashier && <p className="cashier-note"><Icon name="wallet" size={14} /> Função de caixa: se faltar dinheiro no caixa ao fim do expediente, a diferença é abatida da sua diária. Você pode pedir revisão uma vez, pela Carteira.</p>}
               {j.description && <p className="muted">{j.description}</p>}
               {j.my_status ? (
                 <StatusBadge status={j.my_status} tone={j.my_status === 'PENDENTE' ? 'info' : undefined}>{j.my_status === 'PENDENTE' ? 'Você está na reserva' : `Sua candidatura: ${label(j.my_status)}`}</StatusBadge>

@@ -943,7 +943,7 @@ img.avatar { object-fit: cover; }
 /* ---------- Carteira: valor a receber, composição, recebidos com comprovante e pagamento por Pix ---------- */
 .nav-money { margin-left: auto; padding: 0 6px; border-radius: 6px; background: var(--success-soft); color: var(--success); font-size: 0.72rem; font-weight: 800; line-height: 20px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .app.collapsed .nav-money { display: none; }
-.bottom-nav .nav-money { position: absolute; top: 0; left: 50%; transform: translateX(-2px); margin: 0; padding: 0 4px; line-height: 16px; font-size: 0.62rem; border-radius: 99px; border: 1px solid var(--surface); }
+.bottom-nav .nav-money { position: absolute; z-index: 2; top: 0; left: 50%; transform: translateX(-2px); margin: 0; padding: 0 4px; line-height: 16px; font-size: 0.62rem; border-radius: 99px; border: 1px solid var(--surface); }
 a.receber { color: inherit; text-decoration: none; align-items: center; }
 a.receber strong { margin-left: auto; }
 a.receber:hover { border-color: var(--line-strong, var(--line)); }
@@ -974,3 +974,8 @@ a.receber:hover { border-color: var(--line-strong, var(--line)); }
 .pix-copy { display: flex; gap: 8px; }
 .pix-copy input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: 0.8rem; }
 @media (max-width: 520px) { .wallet-parts { grid-template-columns: 1fr; } .wallet-items li { flex-wrap: wrap; } }
+/* Quebra de caixa: tom neutro (abatimento, não punição). */
+.wallet-kind.cash { background: #eef1f3; color: #44505a; }
+.wallet-items li.is-canceled { opacity: 0.7; }
+.cashier-note { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--surface-2, #f3f5f6); color: var(--text, #1d2b3a); font-size: 0.85rem; }
+.cashier-note svg { flex: none; margin-top: 2px; }

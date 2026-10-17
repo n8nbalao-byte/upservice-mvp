@@ -262,7 +262,11 @@ r.get('/manage/sessions', MANAGERS, async (req, res) => {
   // ponytail: dia operacional fixo em UTC-3 (Brasil sem horário de verão); usar fuso por unidade se houver lojas fora de Brasília.
   const dayStart = new Date(`${req.query.date}T00:00:00-03:00`);
   const sessions = await q(
-    `${sessionSql('w.name AS worker_name, dc.result AS confirmation,', 'JOIN users w ON w.id = a.user_id LEFT JOIN daily_confirmations dc ON dc.application_id = a.id')}
+    `${sessionSql(
+      `w.name AS worker_name, dc.result AS confirmation, j.is_cashier,
+       cb.id AS cash_break_id, cb.amount AS cash_break_amount, cb.final_amount AS cash_break_final, cb.status AS cash_break_status, cb.reason AS cash_break_reason,`,
+      'JOIN users w ON w.id = a.user_id LEFT JOIN daily_confirmations dc ON dc.application_id = a.id LEFT JOIN cash_breaks cb ON cb.application_id = a.id',
+    )}
      WHERE j.unit_id = ? AND j.starts_at >= ? AND j.starts_at < ?
      ORDER BY j.starts_at, w.name`,
     [req.query.unitId, dayStart, new Date(dayStart.getTime() + 24 * 3600e3)],

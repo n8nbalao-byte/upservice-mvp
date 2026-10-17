@@ -2,13 +2,53 @@ import { useEffect, useState } from 'react';
 import { useMe } from '../App';
 import { ChavePix } from '../components/ChavePix';
 import { Icon } from '../components/icons';
-import { Alert, EmptyState, Loading, PageHeader } from '../components/ui';
+import { Alert, EmptyState, Loading, PageHeader, useAction, useDialog } from '../components/ui';
 import { api, fmtDate, fmtDateTime, fmtMoney } from '../lib/api';
 
 type Item = { kind: 'DIARIA' | 'BONUS'; id: string; date: string; text: string; value: number };
 type Pagamento = { id: string; amount: number; paidAt: string; receipt: boolean; receiptMime: string | null; note: string | null };
-export type Wallet = { aReceber: number; diarias: number; bonus: number; pago: number; itens: Item[]; pagamentos: Pagamento[] };
+export type Abatimento = { id: string; date: string; text: string; reason: string; amount: number; finalAmount: number | null; status: 'ATIVA' | 'CANCELADA'; counts: boolean; cancelReason: string | null; review: { protocol: string; status: string; reason: string | null } | null };
+export type Wallet = { aReceber: number; diarias: number; bonus: number; quebras: number; pago: number; itens: Item[]; pagamentos: Pagamento[]; abatimentos: Abatimento[] };
 const PIX_NAME: Record<string, string> = { CPF: 'CPF', EMAIL: 'E-mail', TELEFONE: 'Celular', ALEATORIA: 'Chave aleatória' };
+
+const REVIEW: Record<string, string> = { ABERTA: 'Revisão em análise', MANTIDA: 'Revisão: mantida', AJUSTADA: 'Revisão: valor ajustado', CANCELADA: 'Revisão: cancelada' };
+
+/** Quebras de caixa: abatimento com o motivo (não é punição). Uma revisão por quebra; a decisão é final. */
+function Abatimentos({ items, onChange }: { items: Abatimento[]; onChange: () => void }) {
+  const { ask } = useDialog();
+  const { busy, run } = useAction();
+  async function review(a: Abatimento) {
+    const message = await ask({
+      title: 'Pedir revisão da quebra de caixa',
+      message: `${a.text} · ${fmtMoney(a.finalAmount ?? a.amount)}. Explique o que aconteceu. Você pode pedir revisão uma vez; a decisão do gestor é final.`,
+      label: 'O que aconteceu', minLength: 10, maxLength: 1000, multiline: true, confirmText: 'Enviar pedido',
+    });
+    if (message === null) return;
+    if (await run(a.id, () => api('/me/contestations', { body: { cashBreakId: a.id, message } }), 'Pedido de revisão enviado.')) onChange();
+  }
+  return (
+    <section className="card tight" aria-label="Abatimentos: quebra de caixa">
+      <div className="card-header"><h2>Abatimentos — quebra de caixa</h2></div>
+      <p className="muted" style={{ padding: '0 16px' }}>Em vagas de caixa, a diferença que faltou no caixa ao fim do expediente é abatida do seu A receber.</p>
+      <ul className="wallet-items">
+        {items.map((a) => (
+          <li key={a.id} className={a.status === 'CANCELADA' ? 'is-canceled' : ''}>
+            <span className="wallet-kind cash"><Icon name="wallet" size={16} /></span>
+            <span className="wallet-what">
+              <b>{a.status === 'CANCELADA' ? <s>{fmtMoney(a.finalAmount ?? a.amount)}</s> : `− ${fmtMoney(a.finalAmount ?? a.amount)}`}{a.finalAmount != null && a.status !== 'CANCELADA' && <small> (era {fmtMoney(a.amount)})</small>}</b>
+              <small>{fmtDate(a.date)} · {a.text}</small>
+              <small>Motivo: {a.reason}</small>
+              {a.status === 'CANCELADA' && <small>Cancelada{a.cancelReason ? `: ${a.cancelReason}` : ''}</small>}
+              {a.status === 'ATIVA' && !a.counts && <small>Entra no saldo quando a diária for confirmada.</small>}
+              {a.review && <small>{REVIEW[a.review.status] ?? 'Revisão'} (protocolo {a.review.protocol}){a.review.reason ? ` · ${a.review.reason}` : ''}</small>}
+            </span>
+            {a.status === 'ATIVA' && !a.review && <button type="button" className="sm" disabled={busy === a.id} onClick={() => review(a)}>Pedir revisão</button>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 /** Carteira do profissional: quanto tem a receber (e de onde vem), a chave Pix e os pagamentos com o comprovante. */
 export default function Carteira() {
@@ -30,6 +70,7 @@ export default function Carteira() {
         <dl className="wallet-parts">
           <div><dt>Diárias concluídas</dt><dd>{fmtMoney(data.diarias)}</dd></div>
           <div><dt>Bônus ganhos</dt><dd>{fmtMoney(data.bonus)}</dd></div>
+          {!!data.abatimentos.length && <div><dt>Quebra de caixa</dt><dd>− {fmtMoney(data.quebras)}</dd></div>}
           <div><dt>Já recebido</dt><dd>− {fmtMoney(data.pago)}</dd></div>
         </dl>
         <button type="button" className="ghost sm" aria-expanded={extrato} onClick={() => setExtrato(!extrato)}>{extrato ? 'Esconder o que compõe' : 'Ver o que compõe'}</button>
@@ -53,6 +94,8 @@ export default function Carteira() {
           <ChavePix initialType={data.pixType} cpf={me.profile?.cpf} onDone={async () => { setChanging(false); await Promise.all([load(), reload()]); }} />
         )}
       </section>
+
+      {!!data.abatimentos.length && <Abatimentos items={data.abatimentos} onChange={load} />}
 
       <section className="card tight" aria-label="Recebidos">
         <div className="card-header"><h2>Recebidos</h2></div>

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useInbox } from '../App';
 import { Icon } from '../components/icons';
 import { PagamentoPix } from '../components/PagamentoPix';
+import { QuebrasCaixa } from '../components/QuebrasCaixa';
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
 import { api, fmtDateTime, label, type Me, type Unit } from '../lib/api';
 
@@ -146,6 +147,7 @@ export default function GestaoProfissional() {
   const [data, setData] = useState<Me>();
   const [error, setError] = useState('');
 
+  const [rev, setRev] = useState(0);
   const load = () => api<Me>(`/manage/workers/${id}`).then(setData, (e) => setError(e.message));
   useEffect(() => { load(); }, [id]);
 
@@ -215,7 +217,8 @@ export default function GestaoProfissional() {
           )}
         </div>
       </div>
-      {id && <PagamentoPix workerId={id} />}
+      {id && <PagamentoPix key={rev} workerId={id} />}
+      {id && <QuebrasCaixa workerId={id} onChange={() => setRev((n) => n + 1)} />}
       {id && <Disciplina workerId={id} workerName={data.user.name} onChange={load} />}
     </div>
   );

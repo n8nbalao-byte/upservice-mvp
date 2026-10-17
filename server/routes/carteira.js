@@ -11,6 +11,7 @@ import { PIX_TYPES, brCode, normalizePixKey } from '../pix.js';
 import { decodeBase64, loadFile, removeFile, saveFile, sniff } from '../storage.js';
 import { sendWhatsappMediaSafe, sendWhatsappSafe } from '../whatsapp.js';
 import { earnedBonuses } from './estrelas.js';
+import { breaksOf } from './quebra.js';
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
@@ -30,12 +31,21 @@ export async function wallet(userId, tq = q) {
   );
   const bonus = await earnedBonuses(userId);
   const pagamentos = await tq('SELECT id, amount, paid_at, receipt_mime, note FROM worker_payments WHERE user_id = ? ORDER BY paid_at DESC', [userId]);
+  const quebras = await breaksOf(userId);
   const sum = (rows) => rows.reduce((t, x) => t + cents(x.amount ?? x.value), 0);
   const d = sum(diarias);
   const b = sum(bonus);
   const p = sum(pagamentos);
+  // Quebra de caixa: abate o valor final (depois da revisão) só quando a diária já entrou como concluída.
+  const counts = (x) => x.status === 'ATIVA' && x.diaria_result === 'CONCLUIDA';
+  const qb = quebras.filter(counts).reduce((t, x) => t + cents(x.final_amount ?? x.amount), 0);
   return {
-    aReceber: (d + b - p) / 100, diarias: d / 100, bonus: b / 100, pago: p / 100,
+    aReceber: (d + b - qb - p) / 100, diarias: d / 100, bonus: b / 100, quebras: qb / 100, pago: p / 100,
+    abatimentos: quebras.map((x) => ({
+      id: x.id, date: new Date(x.starts_at).toISOString(), text: `${x.title} · ${x.unit_name}`, reason: x.reason,
+      amount: Number(x.amount), finalAmount: x.final_amount == null ? null : Number(x.final_amount), status: x.status, counts: counts(x), cancelReason: x.cancel_reason,
+      review: x.review_id ? { protocol: x.review_protocol, status: x.review_status, reason: x.review_reason } : null,
+    })),
     itens: [
       ...diarias.map((x) => ({ kind: 'DIARIA', id: x.id, date: new Date(x.starts_at).toISOString(), text: `${x.title} · ${x.unit}`, value: Number(x.value) })),
       ...bonus.map((x) => ({ kind: 'BONUS', id: `bonus-${x.day}`, date: `${x.day}T15:00:00.000Z`, text: `Bônus do dia ${x.day.slice(8, 10)}/${x.day.slice(5, 7)} (3 estrelas)`, value: x.value })),
