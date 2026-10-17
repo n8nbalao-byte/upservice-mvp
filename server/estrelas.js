@@ -74,7 +74,12 @@ export function buildMonth(month, diaries, bonusDays = [], today = '9999-12-31')
   });
   const stars = diaries.reduce((s, d) => s + (d.stars ?? 0), 0);
   const bonusGanho = days.reduce((s, d) => s + (d.bonus?.kind === 'BONUS' && d.bonus.earned && d.bonus.value ? d.bonus.value : 0), 0);
-  return { month, level: Number(month.slice(5, 7)), days, diaries, stars, maxStars: daysIn * 3, bonusGanho, done: dayKey(month, daysIn) < today };
+  // Nota do mês no mapa (0 a 3 estrelas): a média das diárias feitas, arredondada; sem diária feita, sem nota.
+  const feitas = diaries.filter((d) => d.state === 'feita');
+  const rating = feitas.length ? Math.round(feitas.reduce((s, d) => s + (d.stars ?? 0), 0) / feitas.length) : null;
+  const hasBonus = bonusDays.some((b) => b.kind === 'BONUS');
+  const hasDraw = bonusDays.some((b) => b.kind === 'SORTEIO');
+  return { month, level: Number(month.slice(5, 7)), days, diaries, stars, maxStars: daysIn * 3, bonusGanho, done: dayKey(month, daysIn) < today, rating, hasBonus, hasDraw };
 }
 
 /** Sorteio (ex.: TV em 20/12): qualifica quem tem `need` dias com 3 estrelas no ano até o dia do sorteio,
