@@ -23,7 +23,7 @@ export default function Avisos() {
             <li key={a.id} className={`card aviso${a.read_at ? '' : ' new'}`}>
               <div className="row between"><b>{a.title}</b><small className="muted">{fmtDateTime(a.created_at)}</small></div>
               {a.body && <p>{a.body}</p>}
-              {a.link && <Link className="link" to={a.link}>Ver minhas diárias</Link>}
+              {a.link && <Link className="link" to={a.link}>{a.link === '/carteira' ? 'Ver na Carteira' : 'Ver minhas diárias'}</Link>}
             </li>
           ))}
         </ul>

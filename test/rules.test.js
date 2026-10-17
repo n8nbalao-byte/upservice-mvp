@@ -106,3 +106,19 @@ test('lista de vagas: primeiro as mais perto (por faixa) e, na mesma faixa, a qu
   assert.deepEqual(jobs.sort(byNearThenSoon).map((j) => j.id), ['perto-antes', 'perto-depois', 'medio', 'longe-hoje', 'muito-longe']);
   assert.deepEqual([distanceBand(2000), distanceBand(2001), distanceBand(50000), distanceBand(50001), distanceBand(null)], [1, 2, 5, 6, 0]);
 });
+
+test('Pix: CRC do exemplo do Banco Central e validação das chaves', async () => {
+  const { brCode, crc16, normalizePixKey } = await import('../server/pix.js');
+  assert.equal(crc16('00020126580014br.gov.bcb.pix0136123e4567-e12b-12d1-a456-4266554400005204000053039865802BR5913Fulano de Tal6008BRASILIA62070503***6304'), '1D3D');
+  const code = brCode({ key: '+5511955554444', amount: 150.5, name: 'José da Silva Ação', city: 'São Paulo' });
+  assert.match(code, /5406150\.50/);
+  assert.match(code, /5918JOSE DA SILVA ACAO/);
+  assert.equal(code.slice(-4), crc16(code.slice(0, -4)));
+  assert.equal(normalizePixKey('TELEFONE', '(11) 95555-4444'), '+5511955554444');
+  assert.equal(normalizePixKey('TELEFONE', '5511955554444'), '+5511955554444');
+  assert.equal(normalizePixKey('CPF', '529.982.247-25'), '52998224725');
+  assert.equal(normalizePixKey('CPF', '111.111.111-11'), null);
+  assert.equal(normalizePixKey('EMAIL', ' Ana@Exemplo.com '), 'ana@exemplo.com');
+  assert.equal(normalizePixKey('ALEATORIA', '123E4567-E12B-12D1-A456-426655440000'), '123e4567-e12b-12d1-a456-426655440000');
+  assert.equal(normalizePixKey('ALEATORIA', 'abc'), null);
+});

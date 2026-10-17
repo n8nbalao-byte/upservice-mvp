@@ -33,6 +33,8 @@ import Vagas from './pages/Vagas';
 import Avisos from './pages/Avisos';
 import Estrelas, { GestaoEstrelas } from './pages/Estrelas';
 import { ConfirmarWhatsapp } from './components/ConfirmarWhatsapp';
+import { ChavePix } from './components/ChavePix';
+import Carteira from './pages/Carteira';
 
 const MeContext = createContext<{ me: Me; reload: () => Promise<void> }>(null!);
 export const useMe = () => useContext(MeContext);
@@ -103,6 +105,10 @@ export default function App() {
   if (whatsappRequired && !me.user.whatsapp && !blocked && !whatsappLater) {
     return <DialogProvider><WhatsappObrigatorio me={me} onDone={reload} onLater={() => setWhatsappLater(true)} onLogout={logout} /></DialogProvider>;
   }
+  // Chave Pix obrigatória para o profissional que já preencheu os dados (antes disso, o Cadastro vem primeiro).
+  if (role === 'PROFISSIONAL' && !blocked && me.profile && !me.profile.pix_key) {
+    return <DialogProvider><PixObrigatorio me={me} onDone={reload} onLogout={logout} /></DialogProvider>;
+  }
   return (
     <MeContext.Provider value={{ me, reload }}>
       <InboxContext.Provider value={inbox}>
@@ -122,6 +128,7 @@ export default function App() {
                   <Route path="/vagas" element={me.complete ? <Vagas /> : <Navigate to="/cadastro" />} />
                   <Route path="/minhas" element={<Minhas />} />
                   <Route path="/avisos" element={<Avisos />} />
+                  <Route path="/carteira" element={<Carteira />} />
                   <Route path="/estrelas" element={<Estrelas />} />
                   <Route path="/atividade/:id" element={<Atividade />} />
                   <Route path="/ocorrencias" element={<Ocorrencias />} />
@@ -159,6 +166,23 @@ export default function App() {
         </DialogProvider>
       </InboxContext.Provider>
     </MeContext.Provider>
+  );
+}
+
+/** Chave Pix obrigatória para o profissional (é para ela que a UP Service paga). Sem "depois". */
+function PixObrigatorio({ me, onDone, onLogout }: { me: Me; onDone: () => void; onLogout: () => void }) {
+  return (
+    <div className="login-wrap">
+      <main className="login card">
+        <img className="logo" src="/logo.png" alt="UP Service Intermediações" />
+        <div className="stack" style={{ textAlign: 'center', gap: 6 }}>
+          <h1 style={{ fontSize: '1.3rem' }}>Cadastre sua chave Pix</h1>
+          <p className="muted">Olá, {me.user.name.split(' ')[0]}. Os pagamentos das diárias e dos bônus são feitos por Pix, nesta chave. Confira com cuidado: ela precisa ser sua.</p>
+        </div>
+        <ChavePix cpf={me.profile?.cpf} onDone={onDone} submitText="Salvar e continuar" />
+        <button type="button" className="ghost" onClick={onLogout}>Sair</button>
+      </main>
+    </div>
   );
 }
 

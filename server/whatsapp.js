@@ -51,6 +51,22 @@ export async function sendWhatsapp(phone, text) {
   await evolution('/message/sendText/{instance}', { method: 'POST', body: { number: digits.startsWith('55') ? digits : `55${digits}`, text } });
 }
 
+/** Envia um arquivo (foto ou PDF) com legenda; nunca derruba a operação: falha só vai para o log. */
+export async function sendWhatsappMediaSafe(phone, { buf, mime, fileName, caption }) {
+  try {
+    if (!(await whatsappConfig())) return false;
+    const digits = String(phone).replace(/\D/g, '');
+    await evolution('/message/sendMedia/{instance}', {
+      method: 'POST',
+      body: { number: digits.startsWith('55') ? digits : `55${digits}`, mediatype: mime === 'application/pdf' ? 'document' : 'image', mimetype: mime, caption, media: buf.toString('base64'), fileName },
+    });
+    return true;
+  } catch (e) {
+    console.error('falha ao enviar arquivo pelo WhatsApp', e.message);
+    return false;
+  }
+}
+
 /** Aviso que nunca derruba a operação: sem WhatsApp configurado não envia; falha só vai para o log. */
 export async function sendWhatsappSafe(phone, text) {
   try {
