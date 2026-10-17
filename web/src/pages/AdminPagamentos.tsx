@@ -11,22 +11,35 @@ type Pendente = {
 };
 type Lista = { count: number; total: number; items: Pendente[] };
 
-/** Pagamentos (administrador): à esquerda, todos com pagamento pendente; à direita, o pagamento do selecionado
- *  (QR Code do Pix, comprovante e "Marquei como pago"), sem precisar abrir a ficha de cada um. */
+/** Pagamentos (administrador): à esquerda, todos com pagamento pendente; à direita, o pagamento do selecionado já com o
+ *  QR Code do Pix, o comprovante e "Marquei como pago". É uma fila: abre no primeiro que tem chave Pix e, depois de cada
+ *  pagamento, passa sozinho para o próximo. Só fica sem QR quando ninguém pendente tem chave Pix. */
 export default function AdminPagamentos() {
   const [data, setData] = useState<Lista>();
   const [error, setError] = useState('');
   const [sel, setSel] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
-  const load = () => api<Lista>('/admin/pagamentos').then((d) => { setData(d); setError(''); }, (e) => setError(e.message));
-  useEffect(() => { load(); }, []);
+  /** Recarrega a lista; `proximo` escolhe o primeiro pendente com chave Pix (na ordem da lista, maior valor primeiro). */
+  const load = (proximo = false) => api<Lista>('/admin/pagamentos').then((d) => {
+    setData(d);
+    setError('');
+    setSel((cur) => (proximo || !d.items.some((x) => x.id === cur) ? d.items.find((x) => x.pixKey)?.id ?? null : cur));
+  }, (e) => setError(e.message));
+  useEffect(() => { load(true); }, []);
+  // Ao trocar de profissional (inclusive sozinho, depois de pagar): pagamento do topo e o nome dele visível na lista.
+  useEffect(() => {
+    if (!sel) return;
+    document.querySelector('.pag-item.on')?.scrollIntoView({ block: 'nearest' });
+    window.scrollTo({ top: 0 });
+  }, [sel]);
   const lista = useMemo(() => {
     const t = busca.trim().toLowerCase();
     return (data?.items ?? []).filter((x) => !t || x.name.toLowerCase().includes(t));
   }, [data, busca]);
   const atual = data?.items.find((x) => x.id === sel) ?? null;
-  // Depois de pagar: atualiza a lista e o número no menu; quem quitou sai da lista.
-  const pago = () => { load(); window.dispatchEvent(new Event(CHANGED)); };
+  // Depois de pagar: quem quitou sai da lista, abre o próximo com chave Pix e o número do menu atualiza.
+  const pago = () => { load(true); window.dispatchEvent(new Event(CHANGED)); };
+  const semPix = !!data && data.count > 0 && !data.items.some((x) => x.pixKey);
 
   return (
     <div className="page pagamentos" style={{ maxWidth: 1200 }}>
@@ -57,7 +70,9 @@ export default function AdminPagamentos() {
               </section>
               <section className="pag-detalhe" aria-label="Pagamento selecionado">
                 {!atual ? (
-                  <div className="card"><EmptyState icon="wallet" title="Escolha um profissional" text="O pagamento abre aqui, sem sair desta tela." /></div>
+                  <div className="card">{semPix
+                    ? <EmptyState icon="wallet" title="Ninguém pendente com chave Pix" text="Quando um profissional cadastrar a chave, o pagamento dele abre aqui com o QR Code." />
+                    : <EmptyState icon="wallet" title="Escolha um profissional" text="O pagamento abre aqui, sem sair desta tela." />}</div>
                 ) : (
                   <>
                     <div className="card pag-cabeca">
@@ -69,7 +84,7 @@ export default function AdminPagamentos() {
                       {!atual.pixKey && <StatusBadge tone="warning">Sem chave Pix</StatusBadge>}
                       <Link className="btn sm" to={`/gestao/profissionais/${atual.id}`}>Abrir ficha</Link>
                     </div>
-                    <PagamentoPix key={atual.id} workerId={atual.id} onPaid={pago} />
+                    <PagamentoPix key={atual.id} workerId={atual.id} onPaid={pago} inline />
                   </>
                 )}
               </section>
