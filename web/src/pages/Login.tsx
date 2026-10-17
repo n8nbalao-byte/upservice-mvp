@@ -12,8 +12,12 @@ declare global {
 type Config = { googleClientId: string | null; devLogin: boolean; phoneLogin?: boolean };
 type Method = 'email' | 'phone' | 'qr';
 
-// Fotos do carrossel: qualquer imagem colocada em web/src/assets/login entra sozinha no próximo build.
-const IMAGES = Object.values(import.meta.glob('../assets/login/*.{jpg,jpeg,png,webp,avif}', { eager: true, query: '?url', import: 'default' })) as string[];
+// Fotos do carrossel: qualquer imagem colocada em web/src/assets/login entra sozinha no próximo build. A versão de
+// mesmo nome em login/960 é usada no celular (srcset), para não baixar a foto grande.
+const byName = (m: Record<string, unknown>) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k.split('/').pop()!, v as string]));
+const BIG = byName(import.meta.glob('../assets/login/*.{jpg,jpeg,png,webp,avif}', { eager: true, query: '?url', import: 'default' }));
+const SMALL = byName(import.meta.glob('../assets/login/960/*.{jpg,jpeg,png,webp,avif}', { eager: true, query: '?url', import: 'default' }));
+const IMAGES = Object.keys(BIG).sort().map((f) => ({ src: BIG[f], small: SMALL[f] }));
 
 // Depoimentos criados para a tela (ilustrativos, a pedido da UP Service); trocar por depoimentos reais quando houver.
 const QUOTES = [
@@ -37,7 +41,9 @@ function Showcase() {
   const q = QUOTES[i % QUOTES.length];
   return (
     <aside className="auth-visual" aria-label="Depoimentos" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
-      {IMAGES.map((src, k) => <img key={src} src={src} alt="" className={k === i % IMAGES.length ? 'on' : ''} />)}
+      {IMAGES.map((im, k) => (
+        <img key={im.src} src={im.src} srcSet={im.small ? `${im.small} 960w, ${im.src} 1920w` : undefined} sizes="(max-width: 1023px) 100vw, 1400px" alt="" className={k === i % IMAGES.length ? 'on' : ''} loading={k === 0 ? 'eager' : 'lazy'} decoding="async" />
+      ))}
       <div className="auth-visual-shade" />
       <div className="auth-visual-body">
         <p className="auth-kicker">UP Service Intermediações</p>
