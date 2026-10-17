@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/icons';
 import { EstrelasMapa, Resumo, monthName, type StarsData } from '../components/Estrelas';
 import { fundoDoMes } from '../components/mapa/jogo';
+import { EscolhaPersonagem } from '../components/mapa/EscolhaPersonagem';
+import { imagemPersonagem } from '../components/mapa/jogo';
 import { MapaAno } from '../components/mapa/MapaAno';
 import { Alert, EmptyState, Loading, PageHeader, Stat } from '../components/ui';
 import { api, fmtDateTime, fmtMoney } from '../lib/api';
@@ -14,7 +16,10 @@ export default function Estrelas() {
   const [mes, setMes] = useState<string | null>(null);
   // Mês visível no calendário: o fundo da tela é a imagem dele.
   const [fundo, setFundo] = useState<string | null>(null);
+  // Troca de personagem pedida pelo botão do mapa (na primeira entrada a escolha abre sozinha).
+  const [trocando, setTrocando] = useState(false);
   useEffect(() => { api<StarsData>('/me/estrelas').then(setData, (e) => setError(e.message)); }, []);
+  const escolhido = (id: string) => { setData((d) => d && { ...d, personagem: id }); setTrocando(false); };
   return (
     <div className="game-full">
       {mes && fundo && <div key={fundo} className="g-fundo-mes" style={{ backgroundImage: `url(${fundoDoMes(Number(fundo.slice(5, 7)))})` }} aria-hidden="true" />}
@@ -26,6 +31,9 @@ export default function Estrelas() {
             <Link to="/minhas" className="g-back" aria-label="Voltar para Minhas diárias"><Icon name="chevronLeft" size={22} /></Link>
             {error ? <Alert kind="info">{error}</Alert> : <Loading />}
           </>
+        ) : !data.personagem || trocando ? (
+          // Primeira entrada no jogo (ou troca): escolher o personagem.
+          <EscolhaPersonagem atual={data.personagem} onDone={escolhido} onCancel={data.personagem ? () => setTrocando(false) : undefined} />
         ) : mes ? (
           // Calendário do mês tocado no mapa; o botão "Mapa" volta.
           <EstrelasMapa key={mes} data={data} month={mes} onMonth={setFundo} back={<button type="button" className="g-tomapa" onClick={() => { setMes(null); setFundo(null); }} aria-label="Voltar ao mapa do ano"><Icon name="map" size={18} /><span>Mapa</span></button>} />
@@ -33,8 +41,13 @@ export default function Estrelas() {
           // Mapa do ano: um mês por fase; tocar abre o calendário daquele mês.
           <div className="g-mapa-tela">
             <Resumo data={data} m={data.months.find((x) => x.month === data.current) ?? data.months[0]} left={<Link to="/minhas" className="g-back" aria-label="Voltar para Minhas diárias"><Icon name="chevronLeft" size={22} /></Link>} />
-            <MapaAno data={data} onOpen={setMes} />
-            <p className="g-mapa-dica">Toque num mês para ver o calendário</p>
+            <MapaAno data={data} onOpen={setMes} personagem={data.personagem} />
+            <div className="g-mapa-rodape">
+              <p className="g-mapa-dica">Toque num mês para ver o calendário</p>
+              <button type="button" className="g-trocar" onClick={() => setTrocando(true)} aria-label="Trocar personagem">
+                <img src={imagemPersonagem(data.personagem)} alt="" /><span>Trocar</span>
+              </button>
+            </div>
           </div>
         )}
       </div>

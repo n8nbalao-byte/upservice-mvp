@@ -1200,3 +1200,21 @@ h2.g-pill-soft { font-size: clamp(0.95rem, min(4.4vw, 2.6vh), 1.25rem); }
 @media (prefers-reduced-motion: reduce) {
   .g-mapa-brilho, .g-mapa-presente, .g-personagem img, .g-mapa-titulo span, .g-fundo-mes, .g-personagem-brilhos { animation: none !important; }
 }
+/* Escolha do personagem e botão "Trocar" no rodapé do mapa. */
+.g-escolha { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 22px; background: #fdf0d5; box-shadow: 0 5px 0 #dcb677, 0 10px 24px rgba(120, 70, 10, 0.15); color: #4a2a0c; overflow-y: auto; }
+.g-escolha h2 { margin: 0; text-align: center; font-family: 'Luckiest Guy', 'Poppins', sans-serif; font-weight: 400; font-size: clamp(1.3rem, 6vw, 1.7rem); color: #4a2a0c; }
+.g-escolha > p { margin: 0; text-align: center; font-weight: 600; font-size: 0.9rem; }
+.g-escolha-grade { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; align-content: center; }
+.g-escolha-card { all: unset; box-sizing: border-box; display: grid; justify-items: center; gap: 4px; padding: 8px 6px 10px; border-radius: 18px; background: #fff7e6; border: 2px solid #ecd6ae; box-shadow: 0 3px 0 #e3c48c; cursor: pointer; text-align: center; font-weight: 800; color: #4a2a0c; }
+.g-escolha-card img { width: 100%; height: clamp(90px, 18vh, 170px); object-fit: contain; filter: drop-shadow(0 4px 3px rgba(30, 15, 0, 0.25)); transition: transform 0.2s ease; }
+.g-escolha-card.sel { background: #fff0b8; border-color: #e0a100; box-shadow: 0 0 0 3px rgba(255, 196, 30, 0.6), 0 3px 0 #c48a00; }
+.g-escolha-card.sel img { transform: translateY(-4px) scale(1.04); }
+.g-escolha-card:focus-visible { outline: 3px solid #b8261a; outline-offset: 2px; }
+.g-escolha-acoes { display: flex; justify-content: center; align-items: center; gap: 12px; }
+.g-escolha-acoes .g-cta:disabled { opacity: 0.55; cursor: not-allowed; }
+.g-mapa-rodape { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.g-mapa-rodape .g-mapa-dica { text-align: left; }
+.g-trocar { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 2px 12px 2px 4px; border-radius: 99px; border: 1px solid #e3c48c; background: #fdf0d5; color: #4a2a0c; font-weight: 800; font-size: 0.82rem; cursor: pointer; }
+.g-trocar:hover { background: #fff7e6; color: #4a2a0c; border-color: #e3c48c; }
+.g-trocar img { width: 30px; height: 30px; object-fit: cover; object-position: top; border-radius: 50%; background: #f6e2bb; }
+@media (prefers-reduced-motion: reduce) { .g-escolha-card img { transition: none; } }
