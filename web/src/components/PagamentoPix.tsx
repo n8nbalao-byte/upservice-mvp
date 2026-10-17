@@ -49,20 +49,18 @@ export function PagamentoPix({ workerId, onPaid, inline = false }: { workerId: s
   if (!data) return <div className="card"><Loading /></div>;
   // Troca de chave nos últimos 7 dias: alerta no pagamento.
   const recentChange = !!data.pixChangedAt && Date.now() - new Date(data.pixChangedAt).getTime() < 7 * 86400e3;
-  const form = (
-    <form className="stack" onSubmit={pay}>
-      {inline ? <h3 className="section-title" style={{ margin: '4px 0 0' }}>Pagar com Pix</h3> : <h2>Pagar {data.name.split(' ')[0]} com Pix</h2>}
-      {recentChange && <Alert kind="warning">A chave Pix foi trocada em {fmtDateTime(data.pixChangedAt!)}. Confirme com o profissional (por telefone ou pessoalmente) antes de pagar.</Alert>}
-      {data.payload ? (
-        <>
-          <p className="muted">1. No app do banco, escolha <b>Pix → Ler QR Code</b> (ou "Pix copia e cola") e confira o nome e o valor.</p>
-          <div className="pix-qr" role="img" aria-label={`QR Code do Pix de ${fmtMoney(data.aReceber)}`} dangerouslySetInnerHTML={{ __html: svg }} />
-          <div className="pix-copy">
-            <input value={data.payload} readOnly aria-label="Pix copia e cola" onFocus={(e) => e.currentTarget.select()} />
-            <button type="button" className="sm" onClick={() => navigator.clipboard?.writeText(data.payload!).then(() => setCopied(true))}>{copied ? 'Copiado' : 'Copiar'}</button>
-          </div>
-        </>
-      ) : <Alert kind="info">Nada em aberto para pagar.</Alert>}
+  const qr = data.payload ? (
+    <div className="pix-left stack">
+      <p className="muted">1. No app do banco, escolha <b>Pix → Ler QR Code</b> (ou "Pix copia e cola") e confira o nome e o valor.</p>
+      <div className="pix-qr" role="img" aria-label={`QR Code do Pix de ${fmtMoney(data.aReceber)}`} dangerouslySetInnerHTML={{ __html: svg }} />
+      <div className="pix-copy">
+        <input value={data.payload} readOnly aria-label="Pix copia e cola" onFocus={(e) => e.currentTarget.select()} />
+        <button type="button" className="sm" onClick={() => navigator.clipboard?.writeText(data.payload!).then(() => setCopied(true))}>{copied ? 'Copiado' : 'Copiar'}</button>
+      </div>
+    </div>
+  ) : <Alert kind="info">Nada em aberto para pagar.</Alert>;
+  const fields = (
+    <div className="pix-right stack">
       <p className="muted">2. Depois de pagar, anexe o comprovante do banco. Ele vai pelo WhatsApp para o profissional e fica na Carteira dele.</p>
       <label>Valor pago (R$)<input name="amount" inputMode="decimal" defaultValue={data.aReceber.toFixed(2).replace('.', ',')} required /></label>
       <label>Comprovante (foto ou PDF)<input name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required /></label>
@@ -71,7 +69,14 @@ export function PagamentoPix({ workerId, onPaid, inline = false }: { workerId: s
         {!inline && <button type="button" onClick={() => dlg.current?.close()}>Cancelar</button>}
         <button type="submit" className="primary" disabled={busy === 'pay'}>{busy === 'pay' ? 'Registrando…' : 'Marquei como pago'}</button>
       </div>
-    </form>
+    </div>
+  );
+  const warn = recentChange && <Alert kind="warning">A chave Pix foi trocada em {fmtDateTime(data.pixChangedAt!)}. Confirme com o profissional (por telefone ou pessoalmente) antes de pagar.</Alert>;
+  // Na tela Pagamentos: QR Code à esquerda e comprovante à direita, para caber sem rolar; na janela, um embaixo do outro.
+  const form = inline ? (
+    <form className="stack" onSubmit={pay}>{warn}<div className="pix-inline">{qr}{fields}</div></form>
+  ) : (
+    <form className="stack" onSubmit={pay}><h2>Pagar {data.name.split(' ')[0]} com Pix</h2>{warn}{qr}{fields}</form>
   );
   return (
     <section className="card stack" aria-label="Pagamento">
@@ -90,8 +95,9 @@ export function PagamentoPix({ workerId, onPaid, inline = false }: { workerId: s
       ) : <Alert kind="warning">O profissional ainda não cadastrou a chave Pix. O app pede a chave no próximo acesso dele.</Alert>}
       {inline && data.pixKey && data.aReceber > 0 && form}
 
-      <h3 className="section-title" style={{ margin: '8px 0 0' }}>Pagamentos feitos</h3>
-      {data.pagamentos.length === 0 ? <EmptyState icon="wallet" title="Nenhum pagamento registrado" /> : (
+      {/* Histórico só na ficha; na tela Pagamentos o cartão do profissional já diz o último pagamento. */}
+      {!inline && <h3 className="section-title" style={{ margin: '8px 0 0' }}>Pagamentos feitos</h3>}
+      {inline ? null : data.pagamentos.length === 0 ? <EmptyState icon="wallet" title="Nenhum pagamento registrado" /> : (
         <ul className="wallet-items">
           {data.pagamentos.map((p) => (
             <li key={p.id}>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/icons';
 import { PagamentoPix } from '../components/PagamentoPix';
-import { Alert, EmptyState, Loading, PageHeader, Stat, StatusBadge } from '../components/ui';
+import { Alert, EmptyState, Loading, PageHeader, StatusBadge } from '../components/ui';
 import { CHANGED, api, fmtDate, fmtMoney } from '../lib/api';
 
 type Pendente = {
@@ -43,14 +43,16 @@ export default function AdminPagamentos() {
 
   return (
     <div className="page pagamentos" style={{ maxWidth: 1200 }}>
-      <PageHeader title="Pagamentos" description="Profissionais com valor a receber. Escolha um para pagar pelo Pix, anexar o comprovante e marcar como pago." />
+      {/* Totais pequenos ao lado do título: a tela inteira cabe sem rolar; só a lista de pendentes rola. */}
+      <PageHeader title="Pagamentos" actions={data && (
+        <div className="pag-totais">
+          <span><b className="tabular">{data.count}</b> pendente(s)</span>
+          <span><b className="tabular">{fmtMoney(data.total)}</b> a pagar</span>
+        </div>
+      )} />
       {error && <Alert kind="danger">{error}</Alert>}
       {!data ? <Loading /> : (
         <>
-          <div className="stats">
-            <Stat label="Pagamentos pendentes" value={data.count} tone={data.count ? 'warning' : 'success'} />
-            <Stat label="Total a pagar" value={fmtMoney(data.total)} tone="accent" />
-          </div>
           {data.count === 0 ? <div className="card"><EmptyState icon="wallet" title="Nenhum pagamento pendente" text="Quando alguém tiver valor a receber, aparece aqui." /></div> : (
             <div className={`pag-grid${atual ? ' com-sel' : ''}`}>
               <section className="card tight pag-lista" aria-label="Pagamentos pendentes">
