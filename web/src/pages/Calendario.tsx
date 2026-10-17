@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useMe } from '../App';
 import { useMedia } from '../components/fit';
 import { Icon } from '../components/icons';
-import { Alert, EmptyState, Loading, PageHeader, Progress, StatusBadge, useAction, useDialog } from '../components/ui';
+import { Alert, EmptyState, Loading, PageHeader, StatusBadge, useAction, useDialog } from '../components/ui';
 import { api, fmtTime, todayBR, type Unit } from '../lib/api';
 
 type CalJob = {
@@ -34,24 +34,30 @@ function monthGrid(year: number, month: number) {
   return days;
 }
 
+/** Vagas do dia em cartões compactos (duas linhas), para caberem todas no painel ao lado do calendário. A faixa da
+ *  esquerda mostra o preenchimento: verde (completa), amarela (em parte) ou vermelha (ninguém). */
 function DayJobs({ jobs }: { jobs: CalJob[] }) {
   return (
     <ul className="cal-jobs">
-      {jobs.map((j) => (
-        <li key={j.id}>
-          <div className="cal-job-head">
-            <span className="strong">{fmtTime(j.starts_at)}–{fmtTime(j.ends_at)}</span>
-            <StatusBadge status={j.status} />
-          </div>
-          <div><span className="strong">{j.code}</span>{j.filial && <span className="muted"> · filial {j.filial}</span>} · {j.unit_name}</div>
-          <div className="muted">{j.title}{j.reserve ? ` · ${j.reserve} na reserva` : ''}{j.working ? ` · ${j.working} trabalhando` : ''}{j.finished ? ` · ${j.finished} finalizada(s)` : ''}</div>
-          <Progress value={j.approved} total={j.positions} />
-          <div className="row">
-            <Link className="btn sm" to={`/gestao/atividades?unit=${j.unit_id}&date=${dayOf(j.starts_at)}`}><Icon name="activity" size={16} />Atividades</Link>
-            <Link className="btn sm ghost" to={`/gestao/vagas/${j.id}`}>Candidaturas</Link>
-          </div>
-        </li>
-      ))}
+      {jobs.map((j) => {
+        const fill = j.approved >= j.positions ? 'f-full' : j.approved > 0 ? 'f-part' : 'f-none';
+        const extra = [j.reserve && `${j.reserve} na reserva`, j.working && `${j.working} trabalhando`, j.finished && `${j.finished} finalizada(s)`].filter(Boolean).join(' · ');
+        return (
+          <li key={j.id} className={`cal-job ${fill}`}>
+            <div className="cal-job-top">
+              <b className="tabular">{fmtTime(j.starts_at)}–{fmtTime(j.ends_at)}</b>
+              <span className="cal-job-what" title={`${j.code}${j.filial ? ` · filial ${j.filial}` : ''} · ${j.unit_name} · ${j.title}`}><b>{j.code}</b>{j.filial && ` · ${j.filial}`} · {j.title}</span>
+              {j.status !== 'ABERTA' && <StatusBadge status={j.status} />}
+            </div>
+            <div className="cal-job-bottom">
+              <span className="cal-job-fill" aria-hidden="true"><span style={{ width: `${j.positions ? Math.round((j.approved / j.positions) * 100) : 0}%` }} /></span>
+              <span className="cal-job-count"><b>{j.approved}/{j.positions}</b>{extra && <span className="muted"> · {extra}</span>}</span>
+              <Link className="icon-btn sm" to={`/gestao/atividades?unit=${j.unit_id}&date=${dayOf(j.starts_at)}`} title="Atividades" aria-label={`Atividades de ${j.code} às ${fmtTime(j.starts_at)}`}><Icon name="activity" size={16} /></Link>
+              <Link className="icon-btn sm" to={`/gestao/vagas/${j.id}`} title="Candidaturas" aria-label={`Candidaturas de ${j.code} às ${fmtTime(j.starts_at)}`}><Icon name="users" size={16} /></Link>
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }
