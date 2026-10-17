@@ -6,7 +6,7 @@
 // número fica em whatsapp_conversas: passo atual, contexto e as opções mostradas (para entender a resposta).
 import { createHash, randomUUID } from 'node:crypto';
 import { audit } from './audit.js';
-import { isBlocked } from './auth.js';
+import { canLogin, isBlocked } from './auth.js';
 import { q } from './db.js';
 import { byNearThenSoon, distanceMeters } from './rules.js';
 import { loadFile } from './storage.js';
@@ -27,6 +27,8 @@ const fmtHora = (d) => new Date(d).toLocaleTimeString('pt-BR', { timeZone: TZ, h
 const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const first = (name) => String(name).trim().split(/\s+/)[0];
 const MENU = ['Menu', 'menu'];
+// Conta bloqueada: como no app, só o que o bloqueado pode fazer (sem vagas, diárias nem carteira).
+const BLOQUEADO_PODE = new Set(['menu', 'humano']);
 
 /** Telefone (11 dígitos, com DDD) a partir do número do WhatsApp; celular antigo sem o 9 ganha o 9. */
 export function phoneFromJid(jid) {
@@ -342,12 +344,14 @@ async function responder(phone, msg) {
   if (cnt.n > 40) return;
 
   const [u] = await q("SELECT id, name, role, status FROM users WHERE whatsapp = ? AND whatsapp_verified_at IS NOT NULL", [phone]);
-  if (!u || u.role !== 'PROFISSIONAL') {
+  // Mesmas regras do login do app: inativo não é atendido; bloqueado fica restrito (BLOQUEADO_PODE).
+  if (!u || u.role !== 'PROFISSIONAL' || !canLogin(u)) {
     if (msg.votes || (avisados.get(phone) ?? 0) > now - 12 * 3600e3) return;
     avisados.set(phone, now);
-    await sendWhatsapp(phone, u
-      ? 'Olá! Este atendimento automático é para os profissionais. Para a gestão, use o app.'
-      : `Olá! Aqui é a UP Service. Para usar o atendimento pelo WhatsApp, entre no app e confirme este número em *Meu perfil → WhatsApp*: ${APP_URL()}/perfil`);
+    await sendWhatsapp(phone, !u
+      ? `Olá! Aqui é a UP Service. Para usar o atendimento pelo WhatsApp, entre no app e confirme este número em *Meu perfil → WhatsApp*: ${APP_URL()}/perfil`
+      : u.role !== 'PROFISSIONAL' ? 'Olá! Este atendimento automático é para os profissionais. Para a gestão, use o app.'
+      : 'Olá! Sua conta não está ativa no momento. Fale com a UP Service pelo e-mail contato@upserviceintermed.com.');
     return;
   }
 
@@ -367,6 +371,8 @@ async function responder(phone, msg) {
     return show(phone, u, conv.step, JSON.parse(conv.ctx ?? '{}'));
   }
   const [, next, extra] = options[i];
+  // Opção de uma conversa de antes do bloqueio: o bloqueado volta ao Menu restrito.
+  if (isBlocked(u) && !BLOQUEADO_PODE.has(next)) return show(phone, u, 'menu', {});
   const ctx = next === 'menu' ? {} : { ...JSON.parse(conv.ctx ?? '{}'), ...(extra ?? {}) };
   return show(phone, u, next, ctx);
 }

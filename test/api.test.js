@@ -1597,6 +1597,18 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
     await settle();
     assert.equal(sent.length, antes + 1, 'mensagem enviada pela própria empresa não dispara o bot');
 
+    // Bloqueado: só o Menu restrito; opção guardada de antes do bloqueio (Carteira) volta ao Menu. Inativo não é atendido.
+    await q("UPDATE users SET status = 'BLOQUEADO_TEMPORARIAMENTE' WHERE id = ?", [me]);
+    await q("UPDATE whatsapp_conversas SET options = ?, updated_at = ? WHERE phone = '11977770123'", [JSON.stringify([['Carteira (pagamentos)', 'carteira']]), new Date()]);
+    const n0 = texts().length;
+    await say('1');
+    assert.ok(!texts().slice(n0).some((t) => /A receber/.test(t)), 'bloqueado não vê a Carteira');
+    assert.ok(poll().values.every((v) => !/vagas|diárias|Carteira/i.test(v)), 'menu do bloqueado sem vagas, diárias e carteira');
+    await q("UPDATE users SET status = 'INATIVO' WHERE id = ?", [me]);
+    await say('menu');
+    assert.match(texts().at(-1), /não está ativa/);
+    await q("UPDATE users SET status = 'ATIVO' WHERE id = ?", [me]);
+
     // Desligado: o webhook responde, mas o bot não atende.
     assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: false })).status, 200);
     const n = sent.length;
