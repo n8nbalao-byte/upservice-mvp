@@ -11,7 +11,7 @@ export type DayStatus = 'feita' | 'hoje' | 'em_analise' | 'agendada' | 'livre' |
 export type Day = { day: number; status: DayStatus; diaries: Diary[]; bonus?: Bonus };
 export type Month = { month: string; level: number; stars: number; maxStars: number; diaries: Diary[]; days: Day[]; bonusGanho: number; done: boolean; rating: number | null; hasBonus: boolean; hasDraw: boolean };
 export type Sorteio = { label: string | null; day: string; need: number; threeStarDays: number; dayDone: boolean; qualifies: boolean };
-export type StarsData = { current: string; year: number; today: string; total: number; bonusGanho: number; sorteio: Sorteio | null; months: Month[] };
+export type StarsData = { current: string; year: number; today: string; total: number; bonusGanho: number; sorteio: Sorteio | null; months: Month[]; personagem?: string | null };
 
 export const monthName = (m: string) => {
   const t = new Date(`${m}-15T12:00:00Z`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' });

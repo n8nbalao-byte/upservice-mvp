@@ -75,7 +75,19 @@ async function starsOf(userId) {
 
 r.get('/me/estrelas', requireRole('PROFISSIONAL'), async (req, res) => {
   if (!(await gamificationOn())) fail(403, 'As estrelas ainda não estão disponíveis.');
-  res.json(await starsOf(req.user.id));
+  res.json({ ...(await starsOf(req.user.id)), personagem: req.user.game_character ?? null });
+});
+
+/** Personagens do jogo (mesmos ids das imagens em web/public/estrelas/personagens). */
+export const PERSONAGENS = ['guerreiro', 'mago', 'arqueira', 'inventora', 'dragao'];
+
+// O profissional escolhe o personagem que o representa no mapa (na primeira entrada e quando quiser trocar).
+r.put('/me/personagem', requireRole('PROFISSIONAL'), async (req, res) => {
+  const id = String(req.body.id ?? '');
+  if (!PERSONAGENS.includes(id)) fail(400, 'Personagem inválido.');
+  await q('UPDATE users SET game_character = ? WHERE id = ?', [id, req.user.id]);
+  await audit(q, req, 'GAME_CHARACTER_SET', 'user', req.user.id, { before: { id: req.user.game_character ?? null }, after: { id } });
+  res.json({ personagem: id });
 });
 
 r.get('/manage/workers/:id/estrelas', MANAGERS, async (req, res) => {

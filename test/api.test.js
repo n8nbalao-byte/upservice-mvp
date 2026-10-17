@@ -1215,6 +1215,12 @@ test('estrelas: profissional só vê com o interruptor ligado; principal liga; g
   assert.equal(mine.status, 200);
   assert.deepEqual(mine.body.total, preview.body.total);
   assert.equal(mine.body.months.length, 12, 'um nível por mês do ano');
+  // Personagem do jogo: começa vazio (a tela pede a escolha), só aceita os da lista e fica salvo.
+  assert.equal(mine.body.personagem, null);
+  assert.equal((await call(s.w1, 'PUT', '/api/me/personagem', { id: 'pirata' })).status, 400);
+  assert.equal((await call(s.gestor, 'PUT', '/api/me/personagem', { id: 'mago' })).status, 403);
+  assert.equal((await call(s.w1, 'PUT', '/api/me/personagem', { id: 'arqueira' })).status, 200);
+  assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).body.personagem, 'arqueira');
   assert.ok(mine.body.months.some((m) => m.month === mine.body.current), 'mês atual sempre aparece');
   for (const m of mine.body.months) for (const d of m.diaries) assert.ok(d.stars === null || (d.stars >= 0 && d.stars <= 3));
   // Bônus do mês: só gestão define; o sistema sorteia os dias e a soma é o valor; o valor do dia futuro não vai para o profissional.
