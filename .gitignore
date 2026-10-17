@@ -12,3 +12,7 @@ appUpservice/
 *.xlsx
 # ...exceto a planilha de exemplo usada nos testes (sem ela o CI falha)
 !test/fixtures/*.xlsx
+
+# Imagens originais enviadas pela UP Service (só as versões otimizadas entram no projeto)
+/personagens-jogo/
+/imagens para carrossel/
