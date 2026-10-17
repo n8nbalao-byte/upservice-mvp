@@ -279,7 +279,7 @@ type Party = { title: string; n: number; text: string; d?: Diary };
 
 /** Tela "como um joguinho" (só o profissional vê): nível do mês, estrelas do ano, meses lado a lado (arrastando),
  *  regras no verso do cartão, resumo do dia, bônus e comemorações. */
-export function EstrelasMapa({ data, back, month }: { data: StarsData; back?: ReactNode; month?: string }) {
+export function EstrelasMapa({ data, back, month, onMonth }: { data: StarsData; back?: ReactNode; month?: string; onMonth?: (month: string) => void }) {
   const track = useRef<HTMLDivElement>(null);
   const start = Math.max(0, data.months.findIndex((m) => m.month === (month ?? data.current)));
   const [idx, setIdx] = useState(start);
@@ -307,6 +307,8 @@ export function EstrelasMapa({ data, back, month }: { data: StarsData; back?: Re
     writeSeen([...seen, ...done.map((d) => d.id), ...data.months.filter((m) => m.done).map((m) => `nivel-${m.month}`)]);
   }, [data]);
   const m = data.months[idx] ?? data.months[0];
+  // Avisa a página qual mês está visível (o fundo da tela é a imagem desse mês).
+  useEffect(() => { onMonth?.(m.month); }, [m.month]);
   const onScroll = () => { const el = track.current; if (el) setIdx(Math.round(el.scrollLeft / el.clientWidth)); };
   return (
     <>
