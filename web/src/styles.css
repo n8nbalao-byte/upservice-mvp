@@ -981,12 +981,31 @@ a.receber:hover { border-color: var(--line-strong, var(--line)); }
 .pix-qr { width: min(260px, 70vw); margin: 0 auto; padding: 8px; background: #fff; border-radius: 12px; }
 .pix-qr svg { display: block; width: 100%; height: auto; }
 .pix-copy { display: flex; gap: 8px; }
+/* Pagamentos: QR Code à esquerda, comprovante e "Marquei como pago" à direita. */
+.pix-inline { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.pix-inline .pix-qr { width: min(240px, 100%); margin: 0; }
+.pix-inline .pix-right .dialog-actions { justify-content: flex-start; }
+@media (max-width: 900px) { .pix-inline { grid-template-columns: minmax(0, 1fr); } .pix-inline .pix-qr { margin: 0 auto; } }
 .pix-copy input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: 0.8rem; }
 @media (max-width: 520px) { .wallet-parts { grid-template-columns: 1fr; } .wallet-items li { flex-wrap: wrap; } }
 
 /* ---------- Pagamentos (administrador): pendentes à esquerda, pagamento à direita ---------- */
 .pag-grid { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 16px; align-items: start; }
-.pag-lista { position: sticky; top: 12px; max-height: calc(100vh - 140px); display: flex; flex-direction: column; }
+.pag-lista { position: sticky; top: 88px; max-height: calc(100vh - 220px); display: flex; flex-direction: column; }
+.pag-totais { display: flex; flex-wrap: wrap; gap: 8px; }
+.pag-totais span { padding: 4px 12px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--muted); font-size: 0.85rem; }
+.pag-totais b { color: var(--ink); }
+/* Telas baixas (1366×768): QR menor e menos espaço, para o "Marquei como pago" caber sem rolar. */
+@media (min-width: 861px) and (max-height: 820px) {
+  .page.pagamentos { gap: 12px; }
+  .pagamentos .pag-detalhe { gap: 8px; }
+  .pagamentos .pag-detalhe .card { padding: 12px 18px; }
+  .pagamentos .pag-detalhe .stack { gap: 8px; }
+  .pagamentos .pix-inline .pix-qr { width: 180px; }
+  .pagamentos .wallet-parts dd { font-size: 0.95rem; }
+  .pagamentos .pag-lista { max-height: calc(100vh - 240px); }
+  .pagamentos .pix-inline p { font-size: 0.8rem; line-height: 1.35; }
+}
 .pag-lista ul { list-style: none; margin: 0; padding: 0 8px 8px; overflow-y: auto; }
 .pag-busca { display: flex; align-items: center; gap: 6px; margin: 0 12px 8px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius, 10px); color: var(--muted); }
 .pag-busca input { border: 0; outline: none; padding: 8px 0; flex: 1; min-width: 0; background: transparent; }
