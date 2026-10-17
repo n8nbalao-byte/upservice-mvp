@@ -1,5 +1,6 @@
-// Estrelas e bônus do profissional ("como um joguinho"). PRÉVIA: regras e valores ainda serão definidos com a
-// UP Service; nada aqui gera pagamento. Tudo sai do que o app já registra (resultado, validação dos registros, ocorrências).
+// Estrelas e bônus do profissional ("como um joguinho"). Cada nível é um mês; cada fase, um dia do mês.
+// As estrelas saem do que o app já registra (resultado, validação dos registros, ocorrências). O bônus do mês é
+// definido pela gestão (valor total); o sistema sorteia os dias e divide o valor. Quem faz 3 estrelas no dia ganha.
 
 /** Estrelas de uma diária: 3 tudo certinho, 2 mancada pequena, 1 mancada maior, 0 falta; null = ainda não vale. */
 export function diaryStars({ result, sessionStatus, endsAt, validations = [], occurrences = [] }, now = Date.now()) {
@@ -17,35 +18,65 @@ export function diaryStars({ result, sessionStatus, endsAt, validations = [], oc
   return { state: 'feita', stars: 3 };
 }
 
-// Bônus de exemplo por mês (fração das estrelas possíveis no mês) e o "mês perfeito" (todas as diárias, sem falta).
-export const BONUSES = [
-  { key: 'b1', value: 10, share: 0.3 },
-  { key: 'b2', value: 20, share: 0.55 },
-  { key: 'b3', value: 30, share: 0.8 },
-];
-export const PERFECT_BONUS = 50;
-export const STARS_PER_LEVEL = 30;
+export const daysInMonth = (month) => { const [y, mo] = month.split('-').map(Number); return new Date(Date.UTC(y, mo, 0)).getUTCDate(); };
+const dayKey = (month, day) => `${month}-${String(day).padStart(2, '0')}`;
 
-/** Monta um mês com TODOS os dias (cada dia é uma fase; dia sem diária fica vazio, sem estrela), as estrelas,
- *  os bônus (meta, se já abriu e depois de qual dia aparecem na grade) e o mês perfeito. */
-export function buildMonth(month, diaries) {
-  const [y, mo] = month.split('-').map(Number);
-  const daysIn = new Date(Date.UTC(y, mo, 0)).getUTCDate();
-  const byDay = new Map();
-  for (const d of diaries) { const k = Number(d.day); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(d); }
-  const days = Array.from({ length: daysIn }, (_, i) => ({ day: i + 1, diaries: byDay.get(i + 1) ?? [] }));
-  const max = diaries.length * 3;
-  const stars = diaries.reduce((s, d) => s + (d.stars ?? 0), 0);
-  const bonuses = BONUSES.map((b) => {
-    const goal = Math.max(1, Math.ceil(max * b.share));
-    return { key: b.key, value: b.value, goal, unlocked: max > 0 && stars >= goal, afterDay: Math.round(daysIn * b.share) };
-  });
-  const finished = diaries.length > 0 && diaries.every((d) => d.state === 'feita');
-  const perfect = { value: PERFECT_BONUS, unlocked: finished && diaries.every((d) => d.stars > 0), lost: diaries.some((d) => d.stars === 0) };
-  return { month, days, diaries, stars, maxStars: max, bonuses, perfect };
+/** Sorteia os dias de bônus do mês e divide o total: de 3 a 5 dias (menos se o valor for pequeno), um em cada trecho
+ *  do mês, fora dos dias já ocupados (sorteio). Valores sempre crescentes, em múltiplos de R$ 5; a soma é o total. */
+export function planBonuses(month, total, taken = [], rand = Math.random) {
+  const cents = Math.round(Number(total) * 100);
+  if (!(cents > 0)) return [];
+  const daysIn = daysInMonth(month);
+  // Série mínima crescente 5, 10, 15...: n dias cabem se 5·n(n+1)/2 <= total.
+  let n = 3 + Math.floor(rand() * 3);
+  while (n > 1 && 500 * (n * (n + 1)) / 2 > cents) n--;
+  const days = [];
+  for (let i = 0; i < n; i++) {
+    const from = Math.floor((i * daysIn) / n) + 1;
+    const to = Math.floor(((i + 1) * daysIn) / n);
+    const free = [];
+    for (let d = from; d <= to; d++) if (!taken.includes(dayKey(month, d))) free.push(d);
+    if (free.length) days.push(free[Math.floor(rand() * free.length)]);
+  }
+  n = days.length;
+  if (!n) return [];
+  // Base 5, 10, 15... e o resto dividido por pesos crescentes (arredondado para baixo em R$ 5); o último leva a sobra.
+  const base = days.map((_, i) => 500 * (i + 1));
+  const rest = cents - base.reduce((a, b) => a + b, 0);
+  const weights = days.map((_, i) => i + 1);
+  const wsum = weights.reduce((a, b) => a + b, 0);
+  const values = base.map((b, i) => (rest > 0 ? b + Math.floor((rest * weights[i]) / wsum / 500) * 500 : b));
+  values[n - 1] = cents - values.slice(0, -1).reduce((a, b) => a + b, 0);
+  return days.map((d, i) => ({ day: dayKey(month, d), kind: 'BONUS', value: values[i] / 100 }));
 }
 
-export const levelOf = (total) => ({ level: Math.floor(total / STARS_PER_LEVEL) + 1, inLevel: total % STARS_PER_LEVEL, perLevel: STARS_PER_LEVEL });
+/** Monta um mês (um nível) com TODOS os dias (cada dia é uma fase; sem diária fica vazio). O valor de um bônus só vai
+ *  quando o dia chega (today = 'AAAA-MM-DD'); ganho = diária do dia com 3 estrelas. */
+export function buildMonth(month, diaries, bonusDays = [], today = '9999-12-31') {
+  const daysIn = daysInMonth(month);
+  const byDay = new Map();
+  for (const d of diaries) { const k = Number(d.day); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(d); }
+  const bonusOf = new Map(bonusDays.map((b) => [b.day, b]));
+  const days = Array.from({ length: daysIn }, (_, i) => {
+    const key = dayKey(month, i + 1);
+    const ds = byDay.get(i + 1) ?? [];
+    const b = bonusOf.get(key);
+    const bonus = b && { kind: b.kind, label: b.label ?? null, value: key <= today && b.value != null ? Number(b.value) : null, revealed: key <= today, earned: ds.some((d) => d.stars === 3) };
+    return { day: i + 1, diaries: ds, ...(bonus ? { bonus } : {}) };
+  });
+  const stars = diaries.reduce((s, d) => s + (d.stars ?? 0), 0);
+  const bonusGanho = days.reduce((s, d) => s + (d.bonus?.kind === 'BONUS' && d.bonus.earned && d.bonus.value ? d.bonus.value : 0), 0);
+  return { month, level: Number(month.slice(5, 7)), days, diaries, stars, maxStars: daysIn * 3, bonusGanho, done: dayKey(month, daysIn) < today };
+}
+
+/** Sorteio (ex.: TV em 20/12): qualifica quem tem `need` dias com 3 estrelas no ano até o dia do sorteio,
+ *  e o próprio dia do sorteio também com 3 estrelas. `diaries` = [{ date: 'AAAA-MM-DD', stars }]. */
+export function sorteioStatus(diaries, day, need = 15) {
+  const year = day.slice(0, 4);
+  const perfectDays = new Set(diaries.filter((d) => d.stars === 3 && d.date.startsWith(year) && d.date <= day).map((d) => d.date));
+  const dayDone = perfectDays.has(day);
+  return { day, need, threeStarDays: perfectDays.size, dayDone, qualifies: perfectDays.size >= need && dayDone };
+}
 
 // Resumo da diária para o profissional (sem horários): como foi cada registro e como ganhar mais estrelas.
 const STEP_NAME = { CHECK_IN: 'Check-in feito', PAUSE_START: 'Início da pausa feito', PAUSE_END: 'Volta da pausa feita', CHECK_OUT: 'Checkout feito' };

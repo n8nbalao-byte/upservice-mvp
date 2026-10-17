@@ -813,7 +813,7 @@ img.avatar { object-fit: cover; }
 .tp-row { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* ---------- Estrelas do profissional (prévia "como um joguinho") ---------- */
-.game { display: grid; gap: 14px; max-width: 560px; padding: 16px; border-radius: 22px; color: #fff; background: repeating-linear-gradient(90deg, #f0662a 0 34px, #e8551d 34px 68px); box-shadow: inset 0 0 80px rgba(120, 30, 0, 0.35); }
+.game { display: grid; gap: 14px; color: #3b2709; }
 .g-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .g-level { display: grid; gap: 4px; flex: 1; min-width: 0; }
 .g-level-badge { justify-self: start; padding: 4px 12px; border-radius: 99px; background: #fff; color: #b5370b; font-weight: 800; font-size: 0.9rem; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.18); }
@@ -822,9 +822,6 @@ img.avatar { object-fit: cover; }
 .g-level small { font-weight: 600; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
 .g-total { display: inline-flex; align-items: center; gap: 4px; font-size: 1.8rem; font-weight: 900; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25); }
 .g-total svg, .g-count svg { fill: #ffd84d; stroke: #b07800; }
-.g-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.8rem; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
-.g-arrow { min-height: 0; width: 38px; height: 38px; padding: 0; border-radius: 50%; border: 3px solid #fff; background: #d8261c; color: #fff; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25); }
-.g-arrow:hover { background: #b81d14; border-color: #fff; }
 .g-track { display: grid; grid-auto-flow: column; grid-auto-columns: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .g-track::-webkit-scrollbar { display: none; }
 .g-month { scroll-snap-align: start; display: grid; gap: 10px; padding: 4px 2px; }
@@ -847,42 +844,17 @@ img.avatar { object-fit: cover; }
 .g-tile.zero { background: linear-gradient(170deg, #b3bfcc, #7f8fa2); }
 .g-tile.today { background: linear-gradient(170deg, #a6e8ae, #45b85c); }
 .g-lock { display: grid; place-items: center; width: clamp(24px, 8vw, 34px); height: clamp(24px, 8vw, 34px); border-radius: 50%; background: #c9d1d9; color: #444; border: 2px solid #8a939c; }
-.g-lock.sm { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; }
-.g-tile.bonus { background: linear-gradient(170deg, #ffe38a, #f2b318 60%, #d99a00); color: #5a3d00; }
-.g-tile.bonus:not(.open) { filter: saturate(0.35) brightness(0.92); }
-.g-tile.bonus.open { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), 0 0 14px rgba(255, 220, 80, 0.9); animation: g-glow 1.8s ease-in-out infinite alternate; }
-.g-money { font-size: clamp(0.72rem, 3.4vw, 0.95rem); white-space: nowrap; font-weight: 900; color: #4a3200; }
-.g-tile.bonus .g-date { color: #4a3200; }
-.g-empty { margin: 0; padding: 20px; border-radius: 14px; background: rgba(0, 0, 0, 0.18); font-weight: 600; }
-.g-legend, .g-note { margin: 0; font-size: 0.8rem; font-weight: 600; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
-.g-legend .g-stars svg { width: 12px; height: 12px; }
-.g-note { opacity: 0.9; }
-@keyframes g-glow { from { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), 0 0 6px rgba(255, 220, 80, 0.6); } to { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), 0 0 18px rgba(255, 230, 120, 1); } }
-@media (prefers-reduced-motion: reduce) { .g-tile.bonus.open { animation: none; } }
-@media (max-width: 420px) { .g-grid { gap: 10px 8px; } .g-arrow { width: 32px; height: 32px; } .g-total { font-size: 1.4rem; } }
+@media (max-width: 420px) { .g-grid { gap: 10px 8px; } .g-total { font-size: 1.4rem; } }
 /* Fases do mês sem diária: só o número do dia, apagado e sem estrela; hoje com contorno. */
 .g-tile.is-today { outline: 3px solid #fff; outline-offset: 2px; }
 /* A largura manda (aspect-ratio): sem esticar na altura da linha, todas as fases ficam do mesmo tamanho. */
 .g-grid > .g-tile { width: 100%; align-self: start; }
 
 /* ---------- Estrelas: tela cheia, fundo de papelão (como no jogo), resumo do dia e comemoração ---------- */
-.game-full { position: fixed; inset: 0; z-index: 1000; display: grid; grid-template-rows: auto 1fr; background: #cfa874; }
-.game-full-bar { display: flex; align-items: center; gap: 12px; padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); background: rgba(80, 52, 18, 0.18); }
-.game-full-bar h1 { margin: 0; font-size: 1.15rem; color: #3b2709; }
-.game-full-body { overflow-y: auto; padding: 12px 12px 24px; display: grid; justify-items: center; align-content: start; }
+.game-full { position: fixed; inset: 0; z-index: 1000; overflow-y: auto; color: #3b2709; background: radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.26), transparent 40%), radial-gradient(circle at 85% 92%, rgba(110, 72, 24, 0.2), transparent 45%), #d8b584; box-shadow: inset 0 0 80px rgba(90, 58, 18, 0.25); }
+.game-full-body { width: min(560px, 100%); margin: 0 auto; padding: max(10px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom)); display: grid; gap: 10px; align-content: start; }
 .game-full-body .game { width: 100%; }
-.game {
-  color: #3b2709;
-  background:
-    linear-gradient(90deg, transparent calc(50% - 1px), rgba(90, 60, 20, 0.22) 50%, transparent calc(50% + 1px)),
-    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.28), transparent 42%),
-    radial-gradient(circle at 85% 88%, rgba(110, 72, 24, 0.22), transparent 46%),
-    #d8b584;
-  box-shadow: inset 0 0 60px rgba(90, 58, 18, 0.28);
-}
-.g-level small, .g-month-head h2, .g-count, .g-nav, .g-legend, .g-note, .g-total { color: #3b2709; text-shadow: none; }
 .g-month-head h2 { color: #3b2709; }
-.g-empty { background: rgba(255, 255, 255, 0.35); color: #3b2709; }
 .g-level-bar { background: rgba(80, 52, 18, 0.25); }
 .g-tile.g-blank { background: rgba(255, 255, 255, 0.32); border: 2px dashed rgba(90, 60, 20, 0.35); box-shadow: none; }
 .g-tile.g-blank .g-num { color: rgba(59, 39, 9, 0.6); -webkit-text-stroke: 0; text-shadow: none; margin: 0; font-size: clamp(1.1rem, 5vw, 1.5rem); }
@@ -937,3 +909,33 @@ img.avatar { object-fit: cover; }
 .aviso.new { border-left: 4px solid var(--success); }
 .bottom-nav a { position: relative; }
 .bottom-nav .nav-count { position: absolute; top: 2px; left: calc(50% + 6px); margin: 0; min-width: 18px; padding: 0 5px; line-height: 18px; font-size: 0.68rem; border-radius: 99px; }
+
+/* ---------- Estrelas: cabeçalho discreto, selo de bônus/sorteio, regras no verso do cartão ---------- */
+.g-head { display: flex; align-items: center; gap: 8px; }
+.g-head h1 { margin: 0; font-size: 1.1rem; color: #3b2709; }
+.g-back { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #3b2709; background: rgba(255, 255, 255, 0.35); }
+.g-back:hover { background: rgba(255, 255, 255, 0.6); color: #3b2709; }
+.g-back:focus-visible { outline: 3px solid #b8261a; outline-offset: 2px; }
+.g-badge { position: absolute; top: -8px; right: -8px; z-index: 1; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: #5a3d00; background: #ffd84d; border: 2px solid #1d2b3a; box-shadow: 0 2px 0 rgba(29, 43, 58, 0.4); transform: rotate(4deg); pointer-events: none; }
+.g-badge.won { background: #7ed26b; color: #143d10; }
+.g-badge.tv { width: 28px; height: 28px; background: #e05d8f; color: #fff; }
+.g-tile.tv { border-color: #8a1d4a; }
+.g-tile.g-blank.tv { border: 2px dashed #8a1d4a; background: rgba(224, 93, 143, 0.18); }
+.g-gift { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; color: #5a3d00; background: #ffd84d; border: 3px solid #1d2b3a; }
+.g-gift.tv { background: #e05d8f; color: #fff; }
+.g-rules-btn { justify-self: center; }
+.g-flip { perspective: 1400px; }
+.g-flip-inner { display: grid; transition: transform 0.6s ease; transform-style: preserve-3d; }
+.g-flip.flipped .g-flip-inner { transform: rotateY(180deg); }
+.g-face { grid-area: 1 / 1; display: grid; gap: 12px; align-content: start; min-width: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.g-face.g-reverse { transform: rotateY(180deg); }
+.g-rules { display: grid; gap: 10px; padding: 16px; border-radius: 18px; background: rgba(255, 255, 255, 0.4); }
+.g-rules h2 { margin: 0; color: #3b2709; font-size: 1.3rem; }
+.g-rules h3 { margin: 6px 0 0; display: flex; align-items: center; gap: 6px; color: #3b2709; font-size: 1rem; }
+.g-rules p { margin: 0; }
+.g-legend-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.g-legend-list li { display: flex; align-items: center; gap: 10px; }
+.g-legend-list .g-stars { flex: none; }
+.g-legend-list .g-stars svg { width: 20px; height: 20px; fill: #c9b48a; stroke: #1d2b3a; stroke-width: 2; }
+.g-legend-list .g-stars .on svg { fill: #ffe14a; }
+@media (prefers-reduced-motion: reduce) { .g-flip-inner { transition: none; } }
