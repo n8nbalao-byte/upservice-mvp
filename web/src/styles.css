@@ -1143,3 +1143,8 @@ h2.g-pill-soft { font-size: clamp(0.95rem, min(4.4vw, 2.6vh), 1.25rem); }
 .g-chest-art { height: clamp(36px, 7vh, 72px); margin-bottom: -6px; }
 /* Margem no topo: o resumo desce um pouco. */
 .game-full-body { padding-top: max(18px, calc(env(safe-area-inset-top) + 10px)); }
+/* Celular: a barra de baixo fixa já leva a qualquer tela, então o resumo fica sem o botão de voltar. */
+@media (max-width: 1023px) {
+  .app.worker .g-summary .g-back, .app.worker .game-full-body > .g-back { display: none; }
+  .app.worker .g-summary { grid-template-columns: auto 1fr; }
+}
