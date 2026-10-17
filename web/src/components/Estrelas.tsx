@@ -16,7 +16,7 @@ export const monthName = (m: string) => {
 };
 const longDay = (s: string) => { const t = new Date(s).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Sao_Paulo' }); return t[0].toUpperCase() + t.slice(1); };
 const dayMonth = (key: string) => `${key.slice(8, 10)}/${key.slice(5, 7)}`;
-const STATE_TEXT: Record<Diary['state'], string> = { feita: '', hoje: 'Hoje', proxima: 'Bloqueada', em_analise: 'Em análise' };
+const STATE_TEXT: Record<Diary['state'], string> = { feita: '', hoje: 'Hoje', proxima: 'Agendada', em_analise: 'Em análise' };
 const CHEER = ['Que pena!', 'Dá para melhorar!', 'Muito bem!', 'Excelente!'];
 const HOW_TO = 'Faça check-in, pausa e checkout pelo app, dentro da loja: assim a fase vale 3 estrelas.';
 
@@ -36,24 +36,27 @@ function DayTile({ month, day, onOpen, isToday }: { month: string; day: Day; onO
   const b = day.bonus;
   const key = `${month}-${String(day.day).padStart(2, '0')}`;
   const badge = b && <span className={`g-badge${b.kind === 'SORTEIO' ? ' tv' : ''}${b.earned ? ' won' : ''}`} aria-hidden="true"><Icon name={b.kind === 'SORTEIO' ? 'tv' : 'gift'} size={14} /></span>;
-  const bonusText = b ? (b.kind === 'SORTEIO' ? ', dia do sorteio' : `, dia de bônus${b.earned ? ' ganho' : ''}`) : '';
+  const bonusText = b ? (b.kind === 'SORTEIO' ? ', dia do sorteio' : `, dia de bônus${b.revealed ? '' : ' trancado'}${b.earned ? ' ganho' : ''}`) : '';
+  // Cadeado só no dia de bônus (ou do sorteio) que ainda não chegou: o presente fica trancado até o dia.
+  const trancado = b && !b.revealed;
+  const face = trancado ? <><span className="g-lock"><Icon name="lock" size={20} /></span><small className="g-date">dia {day.day}</small></> : <b className="g-num">{day.day}</b>;
   if (!d) {
-    const cls = `g-tile g-blank${isToday ? ' is-today' : ''}${b?.kind === 'SORTEIO' ? ' tv' : ''}`;
-    if (!b) return <li className={cls} aria-label={`Dia ${day.day}: sem diária`}><b className="g-num">{day.day}</b></li>;
+    const cls = ['g-tile', trancado ? 'g-chest' : 'g-blank', isToday && 'is-today', b?.kind === 'SORTEIO' && 'tv'].filter(Boolean).join(' ');
+    if (!b) return <li className={cls} aria-label={`Dia ${day.day}: sem diária`}>{face}</li>;
     return (
       <li className={cls}>
-        <button type="button" className="g-hit" onClick={() => onOpen({ kind: 'bonus', key, b })} aria-label={`Dia ${day.day}: sem diária${bonusText}. Ver detalhes`}><b className="g-num">{day.day}</b></button>
+        <button type="button" className="g-hit" onClick={() => onOpen({ kind: 'bonus', key, b })} aria-label={`Dia ${day.day}: sem diária${bonusText}. Ver detalhes`}>{face}</button>
         {badge}
       </li>
     );
   }
-  const text = d.state === 'feita' ? `${d.stars} estrela${d.stars === 1 ? '' : 's'}` : STATE_TEXT[d.state];
-  const cls = ['g-tile', d.state !== 'feita' && 'locked', d.state === 'hoje' && 'today', d.stars === 0 && 'zero', isToday && 'is-today', b?.kind === 'SORTEIO' && 'tv'].filter(Boolean).join(' ');
+  const text = d.state === 'feita' ? `${d.stars} estrela${d.stars === 1 ? '' : 's'}` : d.state === 'proxima' ? 'diária agendada' : STATE_TEXT[d.state];
+  const cls = ['g-tile', trancado ? 'g-chest' : d.state !== 'feita' && 'locked', d.state === 'hoje' && 'today', d.stars === 0 && 'zero', isToday && 'is-today', b?.kind === 'SORTEIO' && 'tv'].filter(Boolean).join(' ');
   return (
     <li className={cls}>
       <button type="button" className="g-hit" onClick={() => onOpen(b ? { kind: 'bonus', key, b, d } : { kind: 'diary', d })} aria-label={`Dia ${day.day}, ${d.title} em ${d.unit}: ${text}${bonusText}. Ver detalhes`}>
-        {d.state === 'proxima' ? <><span className="g-lock"><Icon name="lock" size={20} /></span><small className="g-date">dia {day.day}</small></> : <b className="g-num">{day.day}</b>}
-        {d.state === 'feita' ? <Stars n={d.stars ?? 0} /> : d.state !== 'proxima' && <span className="g-state">{STATE_TEXT[d.state]}</span>}
+        {face}
+        {d.state === 'feita' ? <Stars n={d.stars ?? 0} /> : !trancado && <span className="g-state">{d.state === 'proxima' ? 'agendada' : STATE_TEXT[d.state]}</span>}
       </button>
       {badge}
     </li>

@@ -939,3 +939,8 @@ img.avatar { object-fit: cover; }
 .g-legend-list .g-stars svg { width: 20px; height: 20px; fill: #c9b48a; stroke: #1d2b3a; stroke-width: 2; }
 .g-legend-list .g-stars .on svg { fill: #ffe14a; }
 @media (prefers-reduced-motion: reduce) { .g-flip-inner { transition: none; } }
+/* Dia de bônus que ainda não chegou: "baú" dourado trancado (cadeado + presente); o valor só aparece no dia. */
+.g-tile.g-chest { background: linear-gradient(170deg, #ffe38a, #f2b318 60%, #d99a00); }
+.g-tile.g-chest.tv { background: linear-gradient(170deg, #fbc4da, #f08bb4); }
+.g-tile.g-chest .g-date { color: #3b2709; font-weight: 800; }
+.g-tile.locked .g-state { color: #3b2709; }
