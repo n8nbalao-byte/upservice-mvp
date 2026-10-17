@@ -13,11 +13,14 @@ export default function Estrelas() {
   return (
     <div className="game-full">
       <div className="game-full-body">
-        <header className="g-head">
-          <Link to="/minhas" className="g-back" aria-label="Voltar para Minhas diárias"><Icon name="chevronLeft" size={20} /></Link>
-          <h1>Minhas estrelas</h1>
-        </header>
-        {error ? <Alert kind="info">{error}</Alert> : !data ? <Loading /> : <EstrelasMapa data={data} />}
+        {/* Sem título visível: o resumo fica no topo, com o voltar dentro dele (o título fica só para leitores de tela). */}
+        <h1 className="sr-only">Minhas estrelas</h1>
+        {error || !data ? (
+          <>
+            <Link to="/minhas" className="g-back" aria-label="Voltar para Minhas diárias"><Icon name="chevronLeft" size={22} /></Link>
+            {error ? <Alert kind="info">{error}</Alert> : <Loading />}
+          </>
+        ) : <EstrelasMapa data={data} back={<Link to="/minhas" className="g-back" aria-label="Voltar para Minhas diárias"><Icon name="chevronLeft" size={22} /></Link>} />}
       </div>
     </div>
   );

@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { fmtMoney } from '../lib/api';
 import { Icon } from './icons';
 
 export type Report = { items: { tone: 'ok' | 'warn' | 'bad'; text: string }[]; tips: string[] };
 export type Diary = { id: string; title: string; unit: string; startsAt: string; date: string; day: number; state: 'feita' | 'hoje' | 'proxima' | 'em_analise'; stars: number | null; report?: Report };
 export type Bonus = { kind: 'BONUS' | 'SORTEIO'; label: string | null; value: number | null; revealed: boolean; earned: boolean };
-export type Day = { day: number; diaries: Diary[]; bonus?: Bonus };
+export type DayStatus = 'feita' | 'hoje' | 'em_analise' | 'agendada' | 'livre' | 'passou';
+export type Day = { day: number; status: DayStatus; diaries: Diary[]; bonus?: Bonus };
 export type Month = { month: string; level: number; stars: number; maxStars: number; diaries: Diary[]; days: Day[]; bonusGanho: number; done: boolean };
 export type Sorteio = { label: string | null; day: string; need: number; threeStarDays: number; dayDone: boolean; qualifies: boolean };
 export type StarsData = { current: string; year: number; today: string; total: number; bonusGanho: number; sorteio: Sorteio | null; months: Month[] };
@@ -28,35 +31,43 @@ function Stars({ n, of = 3, big = false }: { n: number; of?: number; big?: boole
   );
 }
 
-type Open = { kind: 'diary'; d: Diary } | { kind: 'bonus'; key: string; b: Bonus; d?: Diary };
+export type Open = { kind: 'diary'; d: Diary } | { kind: 'bonus'; key: string; b: Bonus; d?: Diary };
 
-/** Uma fase = um dia do mês. Sem diária: vazia. Diária futura: cadeado. Feita: 0 a 3 estrelas. Dia de bônus: selo de presente (ou TV). */
+/** Uma fase = um dia do mês, pela situação vinda do servidor: feita (estrelas), agendada, hoje, em análise,
+ *  livre (cadeado: desbloqueia agendando uma vaga nesse dia) ou passou (apagado). Dia de bônus: selo de presente (ou TV). */
 function DayTile({ month, day, onOpen, isToday }: { month: string; day: Day; onOpen: (o: Open) => void; isToday: boolean }) {
   const d = day.diaries[0];
   const b = day.bonus;
   const key = `${month}-${String(day.day).padStart(2, '0')}`;
   const badge = b && <span className={`g-badge${b.kind === 'SORTEIO' ? ' tv' : ''}${b.earned ? ' won' : ''}`} aria-hidden="true"><Icon name={b.kind === 'SORTEIO' ? 'tv' : 'gift'} size={14} /></span>;
-  const bonusText = b ? (b.kind === 'SORTEIO' ? ', dia do sorteio' : `, dia de bônus${b.revealed ? '' : ' trancado'}${b.earned ? ' ganho' : ''}`) : '';
-  // Cadeado só no dia de bônus (ou do sorteio) que ainda não chegou: o presente fica trancado até o dia.
-  const trancado = b && !b.revealed;
-  const face = trancado ? <><span className="g-lock"><Icon name="lock" size={20} /></span><small className="g-date">dia {day.day}</small></> : <b className="g-num">{day.day}</b>;
-  if (!d) {
-    const cls = ['g-tile', trancado ? 'g-chest' : 'g-blank', isToday && 'is-today', b?.kind === 'SORTEIO' && 'tv'].filter(Boolean).join(' ');
-    if (!b) return <li className={cls} aria-label={`Dia ${day.day}: sem diária`}>{face}</li>;
+  const bonusText = b ? (b.kind === 'SORTEIO' ? ', dia do sorteio' : `, dia de bônus${b.earned ? ' ganho' : ''}`) : '';
+  const cls = ['g-tile', `s-${day.status}`, d?.stars === 0 && 'zero', isToday && 'is-today', b?.kind === 'SORTEIO' && 'tv'].filter(Boolean).join(' ');
+  // Dia livre (cadeado): desbloqueia candidatando-se a uma vaga desse dia, então o toque leva direto às vagas do dia.
+  if (day.status === 'livre') {
     return (
       <li className={cls}>
-        <button type="button" className="g-hit" onClick={() => onOpen({ kind: 'bonus', key, b })} aria-label={`Dia ${day.day}: sem diária${bonusText}. Ver detalhes`}>{face}</button>
+        <Link className="g-hit" to={`/vagas?dia=${key}`} aria-label={`Dia ${day.day}: bloqueado${bonusText}. Ver vagas deste dia para desbloquear`}>
+          <span className="g-lock"><Icon name="lock" size={18} /></span><small className="g-date">{day.day}</small>
+        </Link>
+        {badge}
+      </li>
+    );
+  }
+  if (!d) {
+    if (!b) return <li className={cls} aria-label={`Dia ${day.day}: sem diária`}><b className="g-num">{day.day}</b></li>;
+    return (
+      <li className={cls}>
+        <button type="button" className="g-hit" onClick={() => onOpen({ kind: 'bonus', key, b })} aria-label={`Dia ${day.day}: sem diária${bonusText}. Ver detalhes`}><b className="g-num">{day.day}</b></button>
         {badge}
       </li>
     );
   }
   const text = d.state === 'feita' ? `${d.stars} estrela${d.stars === 1 ? '' : 's'}` : d.state === 'proxima' ? 'diária agendada' : STATE_TEXT[d.state];
-  const cls = ['g-tile', trancado ? 'g-chest' : d.state !== 'feita' && 'locked', d.state === 'hoje' && 'today', d.stars === 0 && 'zero', isToday && 'is-today', b?.kind === 'SORTEIO' && 'tv'].filter(Boolean).join(' ');
   return (
     <li className={cls}>
       <button type="button" className="g-hit" onClick={() => onOpen(b ? { kind: 'bonus', key, b, d } : { kind: 'diary', d })} aria-label={`Dia ${day.day}, ${d.title} em ${d.unit}: ${text}${bonusText}. Ver detalhes`}>
-        {face}
-        {d.state === 'feita' ? <Stars n={d.stars ?? 0} /> : !trancado && <span className="g-state">{d.state === 'proxima' ? 'agendada' : STATE_TEXT[d.state]}</span>}
+        <b className="g-num">{day.day}</b>
+        {d.state === 'feita' ? <Stars n={d.stars ?? 0} /> : d.state === 'proxima' ? <span className="g-sched" aria-hidden="true"><Icon name="calendar" size={12} /></span> : <span className="g-state">{STATE_TEXT[d.state]}</span>}
       </button>
       {badge}
     </li>
@@ -66,11 +77,10 @@ function DayTile({ month, day, onOpen, isToday }: { month: string; day: Day; onO
 function MonthPage({ m, today, onOpen }: { m: Month; today: string; onOpen: (o: Open) => void }) {
   return (
     <section className="g-month" aria-label={`Nível ${m.level}: ${monthName(m.month)}`}>
-      <header className="g-month-head">
-        <h2>{monthName(m.month)}</h2>
-        <span className="g-count" aria-label={`${m.stars} de ${m.maxStars} estrelas`}><Icon name="star" size={16} /> {m.stars} de {m.maxStars}</span>
-      </header>
-      <ul className="g-grid">{m.days.map((day) => <DayTile key={day.day} month={m.month} day={day} isToday={`${m.month}-${String(day.day).padStart(2, '0')}` === today} onOpen={onOpen} />)}</ul>
+      {/* A prancha mede o espaço que sobra: os quadros encolhem para o mês inteiro caber na tela, sem rolagem. */}
+      <div className="g-board">
+        <ul className="g-grid" style={{ '--rows5': Math.ceil(m.days.length / 5), '--rows7': Math.ceil(m.days.length / 7) } as CSSProperties}>{m.days.map((day) => <DayTile key={day.day} month={m.month} day={day} isToday={`${m.month}-${String(day.day).padStart(2, '0')}` === today} onOpen={onOpen} />)}</ul>
+      </div>
     </section>
   );
 }
@@ -135,6 +145,45 @@ function BonusDetail({ o, sorteio, onDiary, onClose }: { o: Extract<Open, { kind
   );
 }
 
+/** Estrela grande do resumo (desenho próprio, em SVG). */
+function BigStar() {
+  return (
+    <svg className="g-bigstar" viewBox="0 0 100 100" aria-hidden="true">
+      <defs>
+        <linearGradient id="gs-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ffe680" /><stop offset="0.55" stopColor="#ffc21a" /><stop offset="1" stopColor="#f08a00" /></linearGradient>
+      </defs>
+      <path d="M50 6 L62 36 L94 38 L69 58 L77 90 L50 72 L23 90 L31 58 L6 38 L38 36 Z" fill="url(#gs-fill)" stroke="#c46a00" strokeWidth="4" strokeLinejoin="round" />
+      <path d="M50 18 L58 39 L80 41 L63 54" fill="none" stroke="#fff6c8" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" opacity="0.8" />
+      <path d="M86 70 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3z" fill="#ffd84d" />
+    </svg>
+  );
+}
+
+/** Baú de estrelas do rodapé (desenho próprio, em SVG). */
+function Chest() {
+  return (
+    <svg className="g-chest-art" viewBox="0 0 240 150" aria-hidden="true">
+      <defs>
+        <linearGradient id="gc-wood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#c8742c" /><stop offset="1" stopColor="#8a4a17" /></linearGradient>
+        <linearGradient id="gc-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ffe27a" /><stop offset="1" stopColor="#e09a12" /></linearGradient>
+        <radialGradient id="gc-glow"><stop offset="0" stopColor="#fff3b0" stopOpacity="0.95" /><stop offset="1" stopColor="#fff3b0" stopOpacity="0" /></radialGradient>
+      </defs>
+      <ellipse cx="120" cy="62" rx="92" ry="52" fill="url(#gc-glow)" />
+      <path d="M58 70 Q58 22 120 22 Q182 22 182 70 Z" fill="url(#gc-wood)" stroke="#5c2f0c" strokeWidth="4" transform="rotate(-14 58 70)" />
+      {[[92, 58], [118, 50], [144, 58], [104, 70], [132, 70]].map(([x, y], i) => (
+        <path key={i} d={`M${x} ${y - 13} l4 9 10 1 -8 6 3 10 -9 -6 -9 6 3 -10 -8 -6 10 -1z`} fill="url(#gc-gold)" stroke="#c46a00" strokeWidth="2" strokeLinejoin="round" />
+      ))}
+      <rect x="56" y="72" width="128" height="62" rx="8" fill="url(#gc-wood)" stroke="#5c2f0c" strokeWidth="4" />
+      <rect x="56" y="72" width="128" height="14" fill="url(#gc-gold)" stroke="#5c2f0c" strokeWidth="3" />
+      <rect x="74" y="72" width="12" height="62" fill="url(#gc-gold)" stroke="#5c2f0c" strokeWidth="2.5" />
+      <rect x="154" y="72" width="12" height="62" fill="url(#gc-gold)" stroke="#5c2f0c" strokeWidth="2.5" />
+      <rect x="108" y="88" width="24" height="24" rx="5" fill="url(#gc-gold)" stroke="#5c2f0c" strokeWidth="3" />
+      <circle cx="120" cy="99" r="3.5" fill="#5c2f0c" />
+      <path d="M30 40 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3z M210 30 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3z" fill="#ffd84d" />
+    </svg>
+  );
+}
+
 /** Comemoração ao terminar uma diária (ou um nível), como no fim de uma fase do jogo. */
 function Celebrate({ title, n, text, onDetails, onClose }: { title: string; n: number; text: string; onDetails?: () => void; onClose: () => void }) {
   return (
@@ -185,7 +234,7 @@ type Party = { title: string; n: number; text: string; d?: Diary };
 
 /** Tela "como um joguinho" (só o profissional vê): nível do mês, estrelas do ano, meses lado a lado (arrastando),
  *  regras no verso do cartão, resumo do dia, bônus e comemorações. */
-export function EstrelasMapa({ data }: { data: StarsData }) {
+export function EstrelasMapa({ data, back }: { data: StarsData; back?: ReactNode }) {
   const track = useRef<HTMLDivElement>(null);
   const start = Math.max(0, data.months.findIndex((m) => m.month === data.current));
   const [idx, setIdx] = useState(start);
@@ -219,15 +268,27 @@ export function EstrelasMapa({ data }: { data: StarsData }) {
     <div className={`game g-flip${flipped ? ' flipped' : ''}`}>
       <div className="g-flip-inner">
         <div className="g-face g-front" inert={flipped}>
-          <div className="g-top">
-            <div className="g-level">
+          <section className="g-summary" aria-label="Resumo">
+            {back}
+            <div className="g-summary-total" aria-label={`${data.total} estrelas no ano`}>
+              <BigStar />
+              <span><b>{data.total}</b><small>estrela{data.total === 1 ? '' : 's'}</small></span>
+            </div>
+            <div className="g-summary-level">
               <span className="g-level-badge">Nível {m.level}</span>
               <div className="g-level-bar" role="progressbar" aria-label={`Estrelas do nível ${m.level}`} aria-valuenow={m.stars} aria-valuemin={0} aria-valuemax={m.maxStars}><span style={{ width: `${(m.stars / m.maxStars) * 100}%` }} /></div>
             </div>
-            <span className="g-total" aria-label={`${data.total} estrelas no ano`}>{data.total} <Icon name="star" size={22} /></span>
-          </div>
+            {/* Mês visível (muda ao arrastar) e as estrelas dele, dentro do mesmo cartão. */}
+            <div className="g-summary-month">
+              <span><Icon name="calendar" size={15} />{monthName(m.month)}</span>
+              <span aria-label={`${m.stars} de ${m.maxStars} estrelas no mês`}><Icon name="star" size={14} /> {m.stars} de {m.maxStars}</span>
+            </div>
+          </section>
           <div className="g-track" ref={track} onScroll={onScroll}>{data.months.map((mm) => <MonthPage key={mm.month} m={mm} today={data.today} onOpen={setOpen} />)}</div>
-          <button type="button" className="g-pill sm g-rules-btn" onClick={() => setFlipped(true)}>Ver regras</button>
+          <div className="g-foot">
+            <Chest />
+            <button type="button" className="g-cta" onClick={() => setFlipped(true)}><Icon name="eye" size={22} />Ver Regras</button>
+          </div>
         </div>
         <div className="g-face g-reverse" inert={!flipped}>
           <Rules sorteio={data.sorteio} />
@@ -235,9 +296,12 @@ export function EstrelasMapa({ data }: { data: StarsData }) {
         </div>
       </div>
     </div>
+      {/* Diálogos no corpo da página: ficam acima da barra de baixo (que fica por cima da tela do jogo no celular). */}
+      {createPortal(<>
       {open?.kind === 'diary' && <DayDetail d={open.d} onClose={() => setOpen(null)} />}
       {open?.kind === 'bonus' && <BonusDetail o={open} sorteio={data.sorteio} onDiary={(d) => setOpen({ kind: 'diary', d })} onClose={() => setOpen(null)} />}
       {party && <Celebrate title={party.title} n={party.n} text={party.text} onDetails={party.d ? () => { setOpen({ kind: 'diary', d: party.d! }); setParty(null); } : undefined} onClose={() => setParty(null)} />}
+      </>, document.body)}
     </>
   );
 }

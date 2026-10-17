@@ -50,6 +50,14 @@ export function planBonuses(month, total, taken = [], rand = Math.random) {
   return days.map((d, i) => ({ day: dayKey(month, d), kind: 'BONUS', value: values[i] / 100 }));
 }
 
+/** Situação de um dia (fase): com diária, a da diária (agendada = ainda vai acontecer); sem diária, "livre" de hoje em
+ *  diante (cadeado: desbloqueia agendando uma vaga) ou "passou" (apagado, não dá mais para agendar). */
+export function dayStatus(key, diaries, today) {
+  const d = diaries[0];
+  if (d) return d.state === 'proxima' ? 'agendada' : d.state;
+  return key < today ? 'passou' : 'livre';
+}
+
 /** Monta um mês (um nível) com TODOS os dias (cada dia é uma fase; sem diária fica vazio). O valor de um bônus só vai
  *  quando o dia chega (today = 'AAAA-MM-DD'); ganho = diária do dia com 3 estrelas. */
 export function buildMonth(month, diaries, bonusDays = [], today = '9999-12-31') {
@@ -62,7 +70,7 @@ export function buildMonth(month, diaries, bonusDays = [], today = '9999-12-31')
     const ds = byDay.get(i + 1) ?? [];
     const b = bonusOf.get(key);
     const bonus = b && { kind: b.kind, label: b.label ?? null, value: key <= today && b.value != null ? Number(b.value) : null, revealed: key <= today, earned: ds.some((d) => d.stars === 3) };
-    return { day: i + 1, diaries: ds, ...(bonus ? { bonus } : {}) };
+    return { day: i + 1, status: dayStatus(key, ds, today), diaries: ds, ...(bonus ? { bonus } : {}) };
   });
   const stars = diaries.reduce((s, d) => s + (d.stars ?? 0), 0);
   const bonusGanho = days.reduce((s, d) => s + (d.bonus?.kind === 'BONUS' && d.bonus.earned && d.bonus.value ? d.bonus.value : 0), 0);
