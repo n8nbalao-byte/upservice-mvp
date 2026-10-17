@@ -832,20 +832,23 @@ img.avatar { object-fit: cover; }
 .g-month-head h2 { color: #fff; font-size: 1.1rem; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25); }
 .g-count { display: inline-flex; align-items: center; gap: 4px; font-weight: 800; }
 .g-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-.g-tile { position: relative; min-width: 0; overflow: visible; text-align: center; aspect-ratio: 1; display: grid; place-items: center; align-content: center; gap: 0; border-radius: 14px; background: linear-gradient(160deg, #7cc8f5, #3a8fd8 60%, #2b74c8); border: 3px solid #1f5fa8; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.5); transform: rotate(-2deg); }
-.g-tile:nth-child(2n) { transform: rotate(2deg); }
-.g-num { font-size: 1.35rem; font-weight: 900; line-height: 1; color: #fff; text-shadow: 0 2px 0 #174a86, 0 0 4px #174a86; }
+/* Fase como no jogo: quadro azul inclinado, contorno escuro grosso, número desenhado e estrelas grandes sobrando na borda de baixo. */
+.g-tile { position: relative; min-width: 0; overflow: visible; text-align: center; aspect-ratio: 1; display: grid; place-items: center; align-content: center; gap: 0; border-radius: 16px 10px 16px 10px; background: linear-gradient(170deg, #8cc4ee, #5596d6 55%, #3f7cc0); border: 3px solid #1d2b3a; box-shadow: 0 5px 0 rgba(29, 43, 58, 0.45), inset 0 3px 0 rgba(255, 255, 255, 0.45), inset 0 -4px 0 rgba(0, 0, 0, 0.12); transform: rotate(-4deg); }
+.g-num { font-family: 'Luckiest Guy', 'Poppins', sans-serif; font-weight: 400; font-size: clamp(1.5rem, 7vw, 2.2rem); line-height: 1; color: #fff; -webkit-text-stroke: 5px #1d2b3a; paint-order: stroke fill; text-shadow: 0 3px 0 #1d2b3a; margin-bottom: 6px; }
 .g-date { font-size: 0.6rem; font-weight: 700; opacity: 0.9; line-height: 1.1; white-space: nowrap; }
 .g-stars { display: inline-flex; gap: 0; margin-top: 1px; }
 .g-stars svg { width: 14px; height: 14px; fill: #6b4a1f; stroke: #4a3110; stroke-width: 1.5; }
 .g-stars .on svg { fill: #ffd84d; stroke: #b07800; }
+.g-tile .g-stars { position: absolute; left: -4px; bottom: -10px; }
+.g-tile .g-stars span + span { margin-left: -6px; }
+.g-tile .g-stars svg { width: clamp(18px, 6vw, 26px); height: clamp(18px, 6vw, 26px); fill: #a8946c; stroke: #1d2b3a; stroke-width: 2.2; stroke-linejoin: round; }
+.g-tile .g-stars .on svg { fill: #ffe14a; stroke: #1d2b3a; }
 .g-state { font-size: 0.6rem; font-weight: 800; }
-.g-tile.zero { background: linear-gradient(160deg, #a7b4c2, #75869a); border-color: #56677c; }
-.g-tile.today { background: linear-gradient(160deg, #9ee6a8, #3fbf5a); border-color: #21863a; }
-.g-tile.locked:not(.today) { background: rgba(70, 20, 0, 0.32); border-color: rgba(0, 0, 0, 0.35); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3); }
+.g-tile.zero { background: linear-gradient(170deg, #b3bfcc, #7f8fa2); }
+.g-tile.today { background: linear-gradient(170deg, #a6e8ae, #45b85c); }
 .g-lock { display: grid; place-items: center; width: clamp(24px, 8vw, 34px); height: clamp(24px, 8vw, 34px); border-radius: 50%; background: #c9d1d9; color: #444; border: 2px solid #8a939c; }
 .g-lock.sm { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; }
-.g-tile.bonus { background: linear-gradient(160deg, #ffe38a, #f2b318 60%, #d99a00); border-color: #a87400; color: #5a3d00; }
+.g-tile.bonus { background: linear-gradient(170deg, #ffe38a, #f2b318 60%, #d99a00); color: #5a3d00; }
 .g-tile.bonus:not(.open) { filter: saturate(0.35) brightness(0.92); }
 .g-tile.bonus.open { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), 0 0 14px rgba(255, 220, 80, 0.9); animation: g-glow 1.8s ease-in-out infinite alternate; }
 .g-money { font-size: clamp(0.72rem, 3.4vw, 0.95rem); white-space: nowrap; font-weight: 900; color: #4a3200; }
@@ -856,10 +859,8 @@ img.avatar { object-fit: cover; }
 .g-note { opacity: 0.9; }
 @keyframes g-glow { from { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), 0 0 6px rgba(255, 220, 80, 0.6); } to { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), 0 0 18px rgba(255, 230, 120, 1); } }
 @media (prefers-reduced-motion: reduce) { .g-tile.bonus.open { animation: none; } }
-@media (max-width: 420px) { .g-grid { gap: 7px; } .g-num { font-size: 1.1rem; } .g-stars svg { width: 11px; height: 11px; } .g-arrow { width: 32px; height: 32px; } .g-total { font-size: 1.4rem; } }
+@media (max-width: 420px) { .g-grid { gap: 10px 8px; } .g-arrow { width: 32px; height: 32px; } .g-total { font-size: 1.4rem; } }
 /* Fases do mês sem diária: só o número do dia, apagado e sem estrela; hoje com contorno. */
-.g-tile.g-blank { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.28); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.18); }
-.g-tile.g-blank .g-num { color: rgba(255, 255, 255, 0.75); text-shadow: none; font-size: 1.05rem; }
 .g-tile.is-today { outline: 3px solid #fff; outline-offset: 2px; }
 /* A largura manda (aspect-ratio): sem esticar na altura da linha, todas as fases ficam do mesmo tamanho. */
 .g-grid > .g-tile { width: 100%; align-self: start; }
@@ -884,8 +885,8 @@ img.avatar { object-fit: cover; }
 .g-empty { background: rgba(255, 255, 255, 0.35); color: #3b2709; }
 .g-level-bar { background: rgba(80, 52, 18, 0.25); }
 .g-tile.g-blank { background: rgba(255, 255, 255, 0.32); border: 2px dashed rgba(90, 60, 20, 0.35); box-shadow: none; }
-.g-tile.g-blank .g-num { color: rgba(59, 39, 9, 0.6); }
-.g-tile.locked:not(.today) { background: rgba(90, 58, 18, 0.32); border-color: rgba(70, 44, 12, 0.45); }
+.g-tile.g-blank .g-num { color: rgba(59, 39, 9, 0.6); -webkit-text-stroke: 0; text-shadow: none; margin: 0; font-size: clamp(1.1rem, 5vw, 1.5rem); }
+.g-tile.locked:not(.today) { background: rgba(90, 58, 18, 0.32); border-color: rgba(59, 39, 9, 0.7); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.25); }
 .g-tile.is-today { outline-color: #b8261a; }
 .g-hit { all: unset; box-sizing: border-box; width: 100%; height: 100%; display: grid; place-items: center; align-content: center; cursor: pointer; border-radius: 12px; }
 .g-hit:focus-visible { outline: 3px solid #b8261a; outline-offset: 2px; }
