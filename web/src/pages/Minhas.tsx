@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMe } from '../App';
 import { Icon } from '../components/icons';
-import { Alert, EmptyState, Loading, StatusBadge, useAction, useDialog } from '../components/ui';
+import { Alert, Loading, StatusBadge, useAction, useDialog } from '../components/ui';
 import { api, fmtMoney, fmtTime, todayBR } from '../lib/api';
 import { JornadaBars } from '../components/JornadaBars';
 import { hms, jornadaStatus, type JornadaEvent, type JornadaSession } from '../lib/jornada';
@@ -86,7 +86,6 @@ export default function Minhas() {
   const { busy, run } = useAction();
   const [valor, setValor] = useState<number>();
   const [apps, setApps] = useState<App[]>();
-  const [history, setHistory] = useState(false);
   const [error, setError] = useState('');
   const [avisos, setAvisos] = useState<Aviso[]>([]);
 
@@ -120,7 +119,6 @@ export default function Minhas() {
   const today = open.find((a) => a.session_status !== 'AGUARDANDO_CHECKIN' || dayOf(a.starts_at) === todayBR());
   const next = [...open.filter((a) => a !== today), ...apps.filter((a) => a.status === 'PENDENTE')]
     .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at));
-  const past = apps.filter((a) => a !== today && !next.includes(a));
   const docsPending = !REQUIRED_DOCS.every((t) => me.documents.some((d) => d.type === t && d.status === 'APROVADO'));
   const day = new Date().toLocaleDateString('pt-BR', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -168,31 +166,8 @@ export default function Minhas() {
 
       <section className="next-section" aria-label="Próximas diárias">
         <h2 className="section-title">Próximas diárias{next.length > 0 && ` (${next.length})`}</h2>
-        {next.length === 0 ? <p className="card next-empty">Nenhuma diária marcada. Toque em "Ver vagas" para escolher.</p> : <ul className="mini-list">{next.map(item)}</ul>}
+        {next.length === 0 ? <p className="card next-empty">Nenhuma diária marcada. Toque em "Vagas" na barra de baixo para escolher.</p> : <ul className="mini-list">{next.map(item)}</ul>}
       </section>
-
-      {/* Sempre à mão: fixos no pé da tela (acima das abas no celular). */}
-      <div className="diarias-actions">
-        <button type="button" onClick={() => setHistory(!history)}>{history ? 'Esconder histórico' : 'Ver histórico'}</button>
-        <Link className="btn primary" to="/vagas">Ver vagas</Link>
-      </div>
-
-      {history && (
-        <section className="card tight">
-          <div className="card-header"><h2>Histórico</h2></div>
-          {past.length === 0 ? <EmptyState title="Nada por aqui ainda" /> : (
-            <ul className="next-list">
-              {past.map((a) => (
-                <li key={a.id} className="next-item">
-                  <span className="next-day">{when(a.starts_at)}</span>
-                  <span className="next-what"><b>{a.title}</b><small>{a.unit_name}</small></span>
-                  <StatusBadge status={a.confirmation ?? a.session_status ?? a.status} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
     </div>
   );
 }

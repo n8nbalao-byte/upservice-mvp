@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useMe } from '../App';
-import { ChavePix } from '../components/ChavePix';
 import { ConfirmarWhatsapp } from '../components/ConfirmarWhatsapp';
 import { DadosPessoais } from '../components/DadosPessoais';
 import { PageHeader, useAction } from '../components/ui';
@@ -48,7 +48,7 @@ export default function Perfil() {
         <section className="card form" aria-label="Chave Pix">
           <h2>Chave Pix</h2>
           <p className="muted">É para esta chave que a UP Service paga as diárias e os bônus.</p>
-          <ChavePix key={me.profile?.pix_key ?? ''} initialType={me.profile?.pix_type} initialKey={me.profile?.pix_key} cpf={me.profile?.cpf} onDone={reload} />
+          <p>{me.profile?.pix_key ? <>Cadastrada: <strong>{me.profile.pix_key}</strong>. </> : 'Ainda não cadastrada. '}Para cadastrar ou trocar, vá em <Link className="link" to="/cadastro">Cadastro e documentos</Link>.</p>
         </section>
       )}
       <section className="card form" aria-label="Senha">

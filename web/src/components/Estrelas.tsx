@@ -46,8 +46,8 @@ function DayTile({ month, day, onOpen, isToday }: { month: string; day: Day; onO
   if (day.status === 'livre') {
     return (
       <li className={cls}>
-        <button type="button" className="g-hit" onClick={() => onOpen({ kind: 'livre', key, b })} aria-label={`Dia ${day.day}: bloqueado${bonusText}. Ver como desbloquear`}>
-          <span className="g-lock"><Icon name="lock" size={18} /></span><small className="g-date">{day.day}</small>
+        <button type="button" className="g-hit" title="Bloqueado" onClick={() => onOpen({ kind: 'livre', key, b })} aria-label={`Dia ${day.day}: bloqueado${bonusText}. Ver como desbloquear`}>
+          <b className="g-num">{day.day}</b><span className="g-lock" title="Bloqueado" aria-hidden="true"><Icon name="lock" size={12} /></span>
         </button>
         {badge}
       </li>
@@ -204,31 +204,6 @@ function BigStar() {
   );
 }
 
-/** Baú de estrelas do rodapé (desenho próprio, em SVG). */
-function Chest() {
-  return (
-    <svg className="g-chest-art" viewBox="0 0 240 150" aria-hidden="true">
-      <defs>
-        <linearGradient id="gc-wood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#c8742c" /><stop offset="1" stopColor="#8a4a17" /></linearGradient>
-        <linearGradient id="gc-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ffe27a" /><stop offset="1" stopColor="#e09a12" /></linearGradient>
-        <radialGradient id="gc-glow"><stop offset="0" stopColor="#fff3b0" stopOpacity="0.95" /><stop offset="1" stopColor="#fff3b0" stopOpacity="0" /></radialGradient>
-      </defs>
-      <ellipse cx="120" cy="62" rx="92" ry="52" fill="url(#gc-glow)" />
-      <path d="M58 70 Q58 22 120 22 Q182 22 182 70 Z" fill="url(#gc-wood)" stroke="#5c2f0c" strokeWidth="4" transform="rotate(-14 58 70)" />
-      {[[92, 58], [118, 50], [144, 58], [104, 70], [132, 70]].map(([x, y], i) => (
-        <path key={i} d={`M${x} ${y - 13} l4 9 10 1 -8 6 3 10 -9 -6 -9 6 3 -10 -8 -6 10 -1z`} fill="url(#gc-gold)" stroke="#c46a00" strokeWidth="2" strokeLinejoin="round" />
-      ))}
-      <rect x="56" y="72" width="128" height="62" rx="8" fill="url(#gc-wood)" stroke="#5c2f0c" strokeWidth="4" />
-      <rect x="56" y="72" width="128" height="14" fill="url(#gc-gold)" stroke="#5c2f0c" strokeWidth="3" />
-      <rect x="74" y="72" width="12" height="62" fill="url(#gc-gold)" stroke="#5c2f0c" strokeWidth="2.5" />
-      <rect x="154" y="72" width="12" height="62" fill="url(#gc-gold)" stroke="#5c2f0c" strokeWidth="2.5" />
-      <rect x="108" y="88" width="24" height="24" rx="5" fill="url(#gc-gold)" stroke="#5c2f0c" strokeWidth="3" />
-      <circle cx="120" cy="99" r="3.5" fill="#5c2f0c" />
-      <path d="M30 40 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3z M210 30 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3z" fill="#ffd84d" />
-    </svg>
-  );
-}
-
 /** Comemoração ao terminar uma diária (ou um nível), como no fim de uma fase do jogo. */
 function Celebrate({ title, n, text, onDetails, onClose }: { title: string; n: number; text: string; onDetails?: () => void; onClose: () => void }) {
   return (
@@ -317,15 +292,14 @@ export function EstrelasMapa({ data, back, month, onMonth }: { data: StarsData; 
         <div className="g-face g-front" inert={flipped}>
           <Resumo data={data} m={m} left={back} />
           <div className="g-track" ref={track} onScroll={onScroll}>{data.months.map((mm) => <MonthPage key={mm.month} m={mm} today={data.today} onOpen={setOpen} />)}</div>
-          <div className="g-foot">
-            <Chest />
-            <button type="button" className="g-cta" onClick={() => setFlipped(true)}><Icon name="eye" size={22} />Ver Regras</button>
-          </div>
         </div>
         <div className="g-face g-reverse" inert={!flipped}>
           <Rules sorteio={data.sorteio} />
-          <button type="button" className="g-pill sm g-rules-btn" onClick={() => setFlipped(false)}>Voltar ao calendário</button>
         </div>
+      </div>
+      {/* Fora do cartão que gira: o botão fica parado e só troca o texto. */}
+      <div className="g-foot">
+        <button type="button" className="g-cta" aria-pressed={flipped} onClick={() => setFlipped(!flipped)}><Icon name={flipped ? 'calendar' : 'eye'} size={22} />{flipped ? 'Voltar ao calendário' : 'Ver Regras'}</button>
       </div>
     </div>
       {/* Diálogos no corpo da página: ficam acima da barra de baixo (que fica por cima da tela do jogo no celular). */}

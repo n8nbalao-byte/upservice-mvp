@@ -14,10 +14,10 @@ const mesNome = (m: string) => monthName(m).split(' ')[0];
 const STAR = 'M0 -7 L2 -2.3 7 -2 3.2 1.3 4.4 6.4 0 3.7 -4.4 6.4 -3.2 1.3 -7 -2 -2 -2.3Z';
 type Pt = { x: number; y: number };
 
-/** Marcador do mês em cima do ponto da imagem: nome curto, estrelas da nota, cadeado no futuro, presente/TV. */
+/** Marcador do mês em cima do ponto da imagem: nome curto, estrelas da nota, cadeado no futuro. */
 function Bolinha({ m, i, estado, onOpen }: { m: Month; i: number; estado: 'passado' | 'atual' | 'futuro'; onOpen: () => void }) {
   const nota = m.rating;
-  const texto = `${mesNome(m.month)}: ${estado === 'atual' ? 'mês atual' : estado === 'futuro' ? 'ainda não chegou' : 'concluído'}${nota != null ? `, nota ${nota} de 3 estrelas` : ''}${m.hasBonus ? ', com bônus' : ''}${m.hasDraw ? ', dia do sorteio' : ''}. Abrir o calendário`;
+  const texto = `${mesNome(m.month)}: ${estado === 'atual' ? 'mês atual' : estado === 'futuro' ? 'ainda não chegou' : 'concluído'}${nota != null ? `, nota ${nota} de 3 estrelas` : ''}. Abrir o calendário`;
   return (
     <button type="button" className={`g-mapa-mes ${estado}`} style={{ left: `${PONTOS[i].x}%`, top: `${PONTOS[i].y}%` }} aria-label={texto} data-mes={m.month} onClick={(e) => { e.stopPropagation(); onOpen(); }}>
       <svg viewBox="-50 -50 100 100" aria-hidden="true">
@@ -32,19 +32,6 @@ function Bolinha({ m, i, estado, onOpen }: { m: Month; i: number; estado: 'passa
         ) : nota != null && (
           <g transform="translate(0 -22)">
             {[-18, 0, 18].map((dx, k) => <path key={k} d={STAR} transform={`translate(${dx} ${k === 1 ? -5 : 0}) scale(1.45)`} className={k < nota ? 'on' : 'off'} />)}
-          </g>
-        )}
-        {m.hasBonus && (
-          <g transform="translate(34 -4)"><g className="g-mapa-presente">
-            <rect x="-10" y="-7" width="20" height="16" rx="3" fill="#8e5bd8" stroke="#3d1d73" strokeWidth="1.5" />
-            <rect x="-12" y="-11" width="24" height="6" rx="2" fill="#a774ee" stroke="#3d1d73" strokeWidth="1.5" />
-            <rect x="-2.2" y="-11" width="4.4" height="20" fill="#ffd84d" />
-          </g></g>
-        )}
-        {m.hasDraw && (
-          <g transform="translate(-36 -6)" className="g-mapa-tv">
-            <rect x="-13" y="-10" width="26" height="19" rx="4" fill="#2b2f45" stroke="#e05d8f" strokeWidth="2.5" />
-            <rect x="-9" y="-6" width="18" height="11" rx="2" fill="#7fd6ff" />
           </g>
         )}
       </svg>
