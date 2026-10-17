@@ -158,10 +158,11 @@ export default function Minhas() {
         <Link to="/cadastro" className="diarias-warn"><Icon name="alert" size={18} />{!me.complete ? 'Complete seu cadastro para pegar vagas' : 'Documentos em análise pela UP Service'}<Icon name="chevronRight" size={16} /></Link>
       )}
 
-      <section className="card receber" aria-label="A receber">
+      <Link to="/carteira" className="card receber" aria-label={`A receber: ${valor == null ? '' : fmtMoney(valor)}. Abrir a Carteira`}>
         <span>A receber</span>
         <strong>{valor == null ? '—' : fmtMoney(valor)}</strong>
-      </section>
+        <Icon name="chevronRight" size={18} />
+      </Link>
 
       {today && <Jornada key={today.id} app={today} />}
 

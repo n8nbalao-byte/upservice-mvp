@@ -7,6 +7,7 @@ import { q, tx } from '../db.js';
 import { fail, text } from '../http.js';
 import { isValidCpf } from '../rules.js';
 import { decodeBase64, removeFile, saveFile, sniff } from '../storage.js';
+import { wallet } from './carteira.js';
 
 const r = Router();
 // SELFIE: foto do rosto tirada pela câmera no cadastro; base para a futura comparação facial.
@@ -113,21 +114,21 @@ r.post('/me/terms', requireRole('PROFISSIONAL'), async (req, res) => {
   res.json(await profileState(req.user.id));
 });
 
-// O profissional vê só quantidades e o valor a receber (pauta da reunião).
+// O profissional vê só quantidades e o valor a receber (o mesmo saldo da Carteira: diárias + bônus − pagamentos).
 r.get('/me/summary', requireRole('PROFISSIONAL'), async (req, res) => {
   const [s] = await q(
     `SELECT COUNT(*) AS candidaturas,
             COALESCE(SUM(a.status = 'APROVADA'), 0) AS aprovadas,
             COALESCE(SUM(ws.status = 'FINALIZADA'), 0) AS comparecidas,
-            COALESCE(SUM(dc.result = 'CONCLUIDA'), 0) AS concluidas,
-            COALESCE(SUM(CASE WHEN dc.result = 'CONCLUIDA' THEN j.daily_value END), 0) AS valor
-     FROM applications a JOIN jobs j ON j.id = a.job_id
+            COALESCE(SUM(dc.result = 'CONCLUIDA'), 0) AS concluidas
+     FROM applications a
      LEFT JOIN work_sessions ws ON ws.application_id = a.id
      LEFT JOIN daily_confirmations dc ON dc.application_id = a.id
      WHERE a.user_id = ?`,
     [req.user.id],
   );
-  res.json(Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Number(v)])));
+  const w = await wallet(req.user.id);
+  res.json({ ...Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Number(v)])), valor: w.aReceber, diarias: w.diarias, bonus: w.bonus, pago: w.pago });
 });
 
 export default r;

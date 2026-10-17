@@ -939,6 +939,41 @@ img.avatar { object-fit: cover; }
 .g-legend-list .g-stars svg { width: 20px; height: 20px; fill: #c9b48a; stroke: #1d2b3a; stroke-width: 2; }
 .g-legend-list .g-stars .on svg { fill: #ffe14a; }
 @media (prefers-reduced-motion: reduce) { .g-flip-inner { transition: none; } }
+
+/* ---------- Carteira: valor a receber, composição, recebidos com comprovante e pagamento por Pix ---------- */
+.nav-money { margin-left: auto; padding: 0 6px; border-radius: 6px; background: var(--success-soft); color: var(--success); font-size: 0.72rem; font-weight: 800; line-height: 20px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.app.collapsed .nav-money { display: none; }
+.bottom-nav .nav-money { position: absolute; top: 0; left: 50%; transform: translateX(-2px); margin: 0; padding: 0 4px; line-height: 16px; font-size: 0.62rem; border-radius: 99px; border: 1px solid var(--surface); }
+a.receber { color: inherit; text-decoration: none; align-items: center; }
+a.receber strong { margin-left: auto; }
+a.receber:hover { border-color: var(--line-strong, var(--line)); }
+.wallet-total { display: grid; gap: 8px; }
+.wallet-total > span { color: var(--muted); font-weight: 600; }
+.wallet-total > strong { font-size: 2.2rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.wallet-total > button { justify-self: start; }
+.wallet-parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.wallet-parts div { padding: 8px 10px; border-radius: 10px; background: var(--surface-2, rgba(0, 0, 0, 0.03)); }
+.wallet-parts dt { color: var(--muted); font-size: 0.78rem; }
+.wallet-parts dd { margin: 2px 0 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.wallet-items { list-style: none; margin: 0; padding: 0; display: grid; }
+.wallet-items li { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.wallet-items li:first-child { border-top: 0; }
+.wallet-what { flex: 1; min-width: 0; display: grid; }
+.wallet-what small { color: var(--muted); }
+.wallet-kind { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--surface-2, #eef1f3); color: var(--muted); }
+.wallet-kind.bonus { background: #fff3c4; color: #6b4a00; }
+.wallet-kind.paid { background: var(--success-soft); color: var(--success); }
+.pix-types { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; border: 0; }
+.pix-types legend { margin-bottom: 6px; font-weight: 600; }
+.pix-type { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 99px; cursor: pointer; font-weight: 600; }
+.pix-type.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.pix-type input { margin: 0; }
+.pix-dialog { width: min(460px, calc(100vw - 32px)); }
+.pix-qr { width: min(260px, 70vw); margin: 0 auto; padding: 8px; background: #fff; border-radius: 12px; }
+.pix-qr svg { display: block; width: 100%; height: auto; }
+.pix-copy { display: flex; gap: 8px; }
+.pix-copy input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+@media (max-width: 520px) { .wallet-parts { grid-template-columns: 1fr; } .wallet-items li { flex-wrap: wrap; } }
 /* Dia de bônus que ainda não chegou: "baú" dourado trancado (cadeado + presente); o valor só aparece no dia. */
 .g-tile.g-chest { background: linear-gradient(170deg, #ffe38a, #f2b318 60%, #d99a00); }
 .g-tile.g-chest.tv { background: linear-gradient(170deg, #fbc4da, #f08bb4); }

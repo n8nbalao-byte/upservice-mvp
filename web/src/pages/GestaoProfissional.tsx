@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useInbox } from '../App';
 import { Icon } from '../components/icons';
+import { PagamentoPix } from '../components/PagamentoPix';
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
 import { api, fmtDateTime, label, type Me, type Unit } from '../lib/api';
 
@@ -214,6 +215,7 @@ export default function GestaoProfissional() {
           )}
         </div>
       </div>
+      {id && <PagamentoPix workerId={id} />}
       {id && <Disciplina workerId={id} workerName={data.user.name} onChange={load} />}
     </div>
   );

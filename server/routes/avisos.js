@@ -1,18 +1,22 @@
-// Avisos do profissional dentro do app e a contagem de diárias que vêm pela frente (número no botão "Diárias").
+// Avisos do profissional dentro do app, a contagem de diárias que vêm pela frente (número no botão "Diárias")
+// e o valor a receber (botão "Carteira").
 import { Router } from 'express';
 import { requireRole } from '../auth.js';
 import { q } from '../db.js';
+import { wallet } from './carteira.js';
 
 const r = Router();
 
 r.get('/me/avisos', requireRole('PROFISSIONAL'), async (req, res) => {
-  const [items, [{ unread }], [{ upcoming }]] = await Promise.all([
+  const [items, [{ unread }], [{ upcoming }], w] = await Promise.all([
     q('SELECT id, kind, title, body, link, created_at, read_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30', [req.user.id]),
     q('SELECT COUNT(*) AS unread FROM notifications WHERE user_id = ? AND read_at IS NULL', [req.user.id]),
     q(`SELECT COUNT(*) AS upcoming FROM applications a JOIN jobs j ON j.id = a.job_id JOIN work_sessions ws ON ws.application_id = a.id
        WHERE a.user_id = ? AND a.status = 'APROVADA' AND j.ends_at > ? AND ws.status IN ('AGUARDANDO_CHECKIN', 'EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA')`, [req.user.id, new Date()]),
+    // ponytail: recalcula o saldo a cada consulta (30 s por profissional); guardar o saldo se pesar.
+    wallet(req.user.id),
   ]);
-  res.json({ items, unread: Number(unread), upcoming: Number(upcoming) });
+  res.json({ items, unread: Number(unread), upcoming: Number(upcoming), aReceber: w.aReceber });
 });
 
 // Marca como lidos: os ids informados ou, sem ids, todos.

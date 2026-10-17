@@ -197,6 +197,9 @@ r.delete('/admin/users/:id', requireOwner, async (req, res) => {
     await tq('DELETE FROM auth_tokens WHERE user_id = ?', [u.id]);
     await tq('DELETE FROM notifications WHERE user_id = ?', [u.id]);
     files.push(...(await tq('SELECT storage_key FROM worker_documents WHERE user_id = ?', [u.id])).map((d) => d.storage_key));
+    // Pagamentos ficam (valores e datas), sem a chave Pix nem o comprovante.
+    files.push(...(await tq('SELECT receipt_key FROM worker_payments WHERE user_id = ? AND receipt_key IS NOT NULL', [u.id])).map((p) => p.receipt_key));
+    await tq('UPDATE worker_payments SET pix_key = NULL, receipt_key = NULL, receipt_mime = NULL, note = NULL WHERE user_id = ?', [u.id]);
 
     const [h] = await tq(
       `SELECT (SELECT COUNT(*) FROM applications WHERE user_id = ?) + (SELECT COUNT(*) FROM occurrences WHERE user_id = ?)

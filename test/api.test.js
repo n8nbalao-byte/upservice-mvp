@@ -1233,3 +1233,79 @@ test('estrelas: profissional só vê com o interruptor ligado; principal liga; g
   assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/gamification', { enabled: false })).status, 200);
   assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).status, 403);
 });
+
+test('carteira: chave Pix obrigatória para pagar, código Pix, pagamento com comprovante (no app e pelo WhatsApp)', { skip }, async () => {
+  const http = await import('node:http');
+  const sent = [];
+  const mock = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (c) => { b += c; });
+    req.on('end', () => { sent.push({ url: req.url, body: JSON.parse(b || '{}') }); res.end('{}'); });
+  }).listen(0);
+  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  try {
+    const me = (await call(s.winner, 'GET', '/api/me')).body.user;
+    const before = (await call(s.winner, 'GET', '/api/me/carteira')).body;
+    assert.equal(before.aReceber, (await call(s.winner, 'GET', '/api/me/summary')).body.valor, 'mesmo saldo no resumo e na carteira');
+    assert.ok(before.aReceber >= 150.5);
+    assert.ok(before.itens.some((i) => i.kind === 'DIARIA'));
+    assert.equal(before.pixKey, null);
+    assert.equal((await call(s.gestor, 'GET', `/api/manage/workers/${me.id}/pagamento`)).body.payload, null, 'sem chave, sem código Pix');
+    assert.equal((await call(s.gestor, 'POST', `/api/manage/workers/${me.id}/pagamentos`, { amount: 10, receipt: JPEG })).status, 409, 'sem chave não paga');
+
+    assert.equal((await call(s.winner, 'PUT', '/api/me/pix', { type: 'CPF', key: '111.111.111-11' })).status, 400);
+    assert.equal((await call(s.winner, 'PUT', '/api/me/pix', { type: 'XYZ', key: 'a' })).status, 400);
+    const pix = await call(s.winner, 'PUT', '/api/me/pix', { type: 'TELEFONE', key: '(11) 95555-4444' });
+    assert.equal(pix.status, 200);
+    assert.equal(pix.body.pixKey, '+5511955554444');
+    assert.equal((await call(s.gestor, 'PUT', '/api/me/pix', { type: 'TELEFONE', key: '11955554444' })).status, 403, 'só profissional');
+
+    const pay = (await call(s.gestor, 'GET', `/api/manage/workers/${me.id}/pagamento`)).body;
+    assert.match(pay.payload, /^000201.*br\.gov\.bcb\.pix.*\+5511955554444.*6304[0-9A-F]{4}$/);
+    assert.ok(pay.payload.includes(`54${String(before.aReceber.toFixed(2).length).padStart(2, '0')}${before.aReceber.toFixed(2)}`), 'valor em aberto no código');
+    assert.equal((await call(s.loser, 'GET', `/api/manage/workers/${me.id}/pagamento`)).status, 403, 'profissional não vê pagamento de ninguém');
+
+    const url = `/api/manage/workers/${me.id}/pagamentos`;
+    assert.equal((await call(s.gestor, 'POST', url, { amount: 100 })).status, 400, 'sem comprovante');
+    assert.equal((await call(s.gestor, 'POST', url, { amount: 100, receipt: Buffer.from('oi').toString('base64') })).status, 400, 'formato');
+    assert.equal((await call(s.gestor, 'POST', url, { amount: before.aReceber + 1, receipt: JPEG })).status, 400, 'acima do saldo');
+    assert.equal((await call(s.winner, 'POST', url, { amount: 10, receipt: JPEG })).status, 403);
+    await q('UPDATE users SET whatsapp = ? WHERE id = ?', ['11944443333', me.id]);
+    const paid = await call(s.gestor, 'POST', url, { amount: 100, receipt: JPEG, note: 'Semana 1' });
+    assert.equal(paid.status, 200);
+    assert.equal(Math.round(paid.body.aReceber * 100), Math.round((before.aReceber - 100) * 100), 'saldo cai');
+
+    const after = (await call(s.winner, 'GET', '/api/me/carteira')).body;
+    assert.equal(after.pago, before.pago + 100);
+    assert.equal(after.pagamentos[0].amount, 100);
+    assert.equal(after.pagamentos[0].receipt, true);
+    const rid = after.pagamentos[0].id;
+    assert.equal((await call(s.winner, 'GET', `/api/files/comprovante/${rid}`)).status, 200);
+    assert.equal((await call(s.gestor, 'GET', `/api/files/comprovante/${rid}`)).status, 200);
+    assert.ok([403, 404].includes((await call(s.loser, 'GET', `/api/files/comprovante/${rid}`)).status), 'outro profissional não vê');
+    const av = (await call(s.winner, 'GET', '/api/me/avisos')).body;
+    assert.match(av.items[0].title, /Pagamento recebido/);
+
+    // O mesmo comprovante vai pelo WhatsApp (em segundo plano).
+    for (let i = 0; i < 50 && !sent.length; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].url, '/message/sendMedia/upservice');
+    assert.equal(sent[0].body.number, '5511944443333');
+    assert.equal(sent[0].body.mediatype, 'image');
+    assert.equal(sent[0].body.media, Buffer.from(JPEG, 'base64').toString('base64'));
+    assert.match(sent[0].body.caption, /R\$\s?100,00/);
+
+    // Troca de chave (conta invadida?): aviso no app e no WhatsApp confirmado; o gestor vê que a chave mudou.
+    assert.equal((await call(s.gestor, 'GET', `/api/manage/workers/${me.id}/pagamento`)).body.pixChangedAt, null, 'primeiro cadastro não é troca');
+    await q('UPDATE users SET whatsapp_verified_at = ? WHERE id = ?', [new Date(), me.id]);
+    assert.equal((await call(s.winner, 'PUT', '/api/me/pix', { type: 'EMAIL', key: 'novo@exemplo.com' })).status, 200);
+    for (let i = 0; i < 50 && sent.length < 2; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(sent[1].url, '/message/sendText/upservice');
+    assert.match(sent[1].body.text, /chave Pix da sua conta foi trocada/);
+    assert.match((await call(s.winner, 'GET', '/api/me/avisos')).body.items[0].title, /chave Pix foi trocada/);
+    assert.ok((await call(s.gestor, 'GET', `/api/manage/workers/${me.id}/pagamento`)).body.pixChangedAt, 'gestor vê a troca');
+  } finally {
+    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
+    mock.close();
+  }
+});

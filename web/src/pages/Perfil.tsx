@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMe } from '../App';
+import { ChavePix } from '../components/ChavePix';
 import { ConfirmarWhatsapp } from '../components/ConfirmarWhatsapp';
 import { DadosPessoais } from '../components/DadosPessoais';
 import { PageHeader, useAction } from '../components/ui';
@@ -43,6 +44,13 @@ export default function Perfil() {
           <ConfirmarWhatsapp initial={me.profile?.phone ?? ''} onDone={async () => { setChanging(false); await reload(); }} />
         )}
       </section>
+      {worker && (
+        <section className="card form" aria-label="Chave Pix">
+          <h2>Chave Pix</h2>
+          <p className="muted">É para esta chave que a UP Service paga as diárias e os bônus.</p>
+          <ChavePix key={me.profile?.pix_key ?? ''} initialType={me.profile?.pix_type} initialKey={me.profile?.pix_key} cpf={me.profile?.cpf} onDone={reload} />
+        </section>
+      )}
       <section className="card form" aria-label="Senha">
         <h2>Senha</h2>
         <p className="muted">Para entrar também com e-mail e senha, crie ou troque a senha pelo link que enviamos para {me.user.email}. Ao salvar a senha nova, você sai de todos os aparelhos.</p>
