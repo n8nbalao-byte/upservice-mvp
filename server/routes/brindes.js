@@ -4,7 +4,7 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { audit } from '../audit.js';
-import { requireRole } from '../auth.js';
+import { assertUnit, requireRole, unitScope } from '../auth.js';
 import { q, tx } from '../db.js';
 import { fail, text } from '../http.js';
 import { sendWhatsappSafe } from '../whatsapp.js';
@@ -24,11 +24,13 @@ const SELECT = `SELECT b.id, DATE_FORMAT(b.day, '%Y-%m-%d') AS day, b.unit_id AS
   FROM brindes b LEFT JOIN units un ON un.id = b.unit_id LEFT JOIN users w ON w.id = b.winner_user_id`;
 const shape = ({ winnerName, ...b }) => ({ ...b, winner: winnerName ? nomeCurto(winnerName) : null });
 
-/** Brindes de um período (sem os cancelados). Com unidade: os dela e os de todas as unidades. */
-export async function brindesEntre(from, to, unitId) {
+/** Brindes de um período (sem os cancelados). Com unidade: os dela e os de todas as unidades. `scope`: filtro SQL
+ *  extra sobre b.unit_id (o gestor só vê os de todas as unidades e os das lojas dele). */
+export async function brindesEntre(from, to, unitId, scope = ['1 = 1', []]) {
   const rows = await q(
-    `${SELECT} WHERE b.day BETWEEN ? AND ? AND b.status <> 'CANCELADO'${unitId ? ' AND (b.unit_id IS NULL OR b.unit_id = ?)' : ''} ORDER BY b.day, b.created_at`,
-    unitId ? [from, to, unitId] : [from, to],
+    `${SELECT} WHERE b.day BETWEEN ? AND ? AND b.status <> 'CANCELADO'${unitId ? ' AND (b.unit_id IS NULL OR b.unit_id = ?)' : ''}
+     AND (b.unit_id IS NULL OR ${scope[0]}) ORDER BY b.day, b.created_at`,
+    [from, to, ...(unitId ? [unitId] : []), ...scope[1]],
   );
   return rows.map(shape);
 }
@@ -36,7 +38,9 @@ export async function brindesEntre(from, to, unitId) {
 r.get('/manage/brindes', requireRole('GESTOR', 'ADMINISTRADOR'), async (req, res) => {
   const { from, to, unitId } = req.query;
   if (!DAY.test(from ?? '') || !DAY.test(to ?? '')) fail(400, 'Período inválido.');
-  res.json({ items: await brindesEntre(from, to, unitId || null) });
+  if (unitId) await assertUnit(req.user, unitId);
+  const items = await brindesEntre(from, to, unitId || null, unitScope(req.user, 'b.unit_id'));
+  res.json({ items: items.map(({ winnerId: _, ...b }) => b) });
 });
 
 r.post('/admin/brindes', requireRole('ADMINISTRADOR'), async (req, res) => {

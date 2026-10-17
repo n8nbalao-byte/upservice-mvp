@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMe } from '../App';
+import { ChavePix } from '../components/ChavePix';
 import { DadosPessoais } from '../components/DadosPessoais';
 import { Icon } from '../components/icons';
 import { Alert, PageHeader, StatusBadge, useDialog } from '../components/ui';
@@ -106,6 +107,14 @@ export default function Cadastro() {
             <div><button className="primary" disabled={busy === 'terms'} onClick={() => run('terms', () => api('/me/terms', { body: { accept: true } }), 'Cadastro completo!')}>Li e aceito</button></div>
           )}
         </div>
+      )}
+
+      {me.profile && (
+        <section className="card form" aria-label="Chave Pix">
+          <h2>Chave Pix</h2>
+          <p className="muted">É para esta chave que a UP Service paga as diárias e os bônus. Só se troca aqui.</p>
+          <ChavePix key={me.profile.pix_key ?? ''} initialType={me.profile.pix_type} initialKey={me.profile.pix_key} cpf={me.profile.cpf} onDone={reload} />
+        </section>
       )}
 
       {me.complete && <button className="primary big" onClick={() => navigate('/vagas')}>Ver vagas disponíveis</button>}

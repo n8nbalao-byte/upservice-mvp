@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useMe } from '../App';
-import { ChavePix } from '../components/ChavePix';
+import { Link } from 'react-router-dom';
 import { Icon } from '../components/icons';
 import { Alert, EmptyState, Loading, PageHeader, useAction, useDialog } from '../components/ui';
 import { api, fmtDate, fmtDateTime, fmtMoney } from '../lib/api';
@@ -27,9 +26,9 @@ function Abatimentos({ items, onChange }: { items: Abatimento[]; onChange: () =>
     if (await run(a.id, () => api('/me/contestations', { body: { cashBreakId: a.id, message } }), 'Pedido de revisão enviado.')) onChange();
   }
   return (
-    <section className="card tight" aria-label="Abatimentos: quebra de caixa">
-      <div className="card-header"><h2>Abatimentos — quebra de caixa</h2></div>
-      <p className="muted" style={{ padding: '0 16px' }}>Em vagas de caixa, a diferença que faltou no caixa ao fim do expediente é abatida do seu A receber.</p>
+    <section className="wallet-quebras" aria-label="Quebra de caixa">
+      <h3>Quebra de caixa</h3>
+      <p className="muted">Em vagas de caixa, a diferença que faltou no caixa ao fim do expediente é abatida do seu A receber.</p>
       <ul className="wallet-items">
         {items.map((a) => (
           <li key={a.id} className={a.status === 'CANCELADA' ? 'is-canceled' : ''}>
@@ -52,10 +51,8 @@ function Abatimentos({ items, onChange }: { items: Abatimento[]; onChange: () =>
 
 /** Carteira do profissional: quanto tem a receber (e de onde vem), a chave Pix e os pagamentos com o comprovante. */
 export default function Carteira() {
-  const { me, reload } = useMe();
   const [data, setData] = useState<Wallet & { pixType: string | null; pixKey: string | null }>();
   const [error, setError] = useState('');
-  const [changing, setChanging] = useState(false);
   const [extrato, setExtrato] = useState(false);
   const load = () => api<Wallet & { pixType: string | null; pixKey: string | null }>('/me/carteira').then(setData, (e) => setError(e.message));
   useEffect(() => { load(); }, []);
@@ -64,38 +61,35 @@ export default function Carteira() {
   return (
     <div className="page carteira" style={{ maxWidth: 720 }}>
       <PageHeader title="Carteira" description="O que você tem a receber e os pagamentos feitos na sua chave Pix." />
+      {/* Só o valor a receber; o que compõe (diárias, bônus, quebra de caixa e já recebido) aparece ao tocar. */}
       <section className="card wallet-total" aria-label="A receber">
         <span>A receber</span>
         <strong>{fmtMoney(data.aReceber)}</strong>
-        <dl className="wallet-parts">
-          <div><dt>Diárias concluídas</dt><dd>{fmtMoney(data.diarias)}</dd></div>
-          <div><dt>Bônus ganhos</dt><dd>{fmtMoney(data.bonus)}</dd></div>
-          {!!data.abatimentos.length && <div><dt>Quebra de caixa</dt><dd>− {fmtMoney(data.quebras)}</dd></div>}
-          <div><dt>Já recebido</dt><dd>− {fmtMoney(data.pago)}</dd></div>
-        </dl>
         <button type="button" className="ghost sm" aria-expanded={extrato} onClick={() => setExtrato(!extrato)}>{extrato ? 'Esconder o que compõe' : 'Ver o que compõe'}</button>
         {extrato && (
-          <ul className="wallet-items">
-            {data.itens.length === 0 ? <li className="muted">Nenhuma diária concluída ainda.</li> : data.itens.map((i) => (
-              <li key={i.id}><span className={`wallet-kind ${i.kind === 'BONUS' ? 'bonus' : ''}`}><Icon name={i.kind === 'BONUS' ? 'gift' : 'briefcase'} size={16} /></span><span className="wallet-what"><b>{i.text}</b><small>{fmtDate(i.date)}</small></span><span className="tabular">{fmtMoney(i.value)}</span></li>
-            ))}
-          </ul>
+          <>
+            <dl className="wallet-parts">
+              <div><dt>Diárias concluídas</dt><dd>{fmtMoney(data.diarias)}</dd></div>
+              <div><dt>Bônus ganhos</dt><dd>{fmtMoney(data.bonus)}</dd></div>
+              <div><dt>Quebra de caixa</dt><dd>− {fmtMoney(data.quebras)}</dd></div>
+              <div><dt>Já recebido</dt><dd>− {fmtMoney(data.pago)}</dd></div>
+            </dl>
+            <ul className="wallet-items">
+              {data.itens.length === 0 ? <li className="muted">Nenhuma diária concluída ainda.</li> : data.itens.map((i) => (
+                <li key={i.id}><span className={`wallet-kind ${i.kind === 'BONUS' ? 'bonus' : ''}`}><Icon name={i.kind === 'BONUS' ? 'gift' : 'briefcase'} size={16} /></span><span className="wallet-what"><b>{i.text}</b><small>{fmtDate(i.date)}</small></span><span className="tabular">{fmtMoney(i.value)}</span></li>
+              ))}
+            </ul>
+            {!!data.abatimentos.length && <Abatimentos items={data.abatimentos} onChange={load} />}
+          </>
         )}
       </section>
 
-      <section className="card stack" aria-label="Chave Pix">
-        <div className="card-header" style={{ marginBottom: 0 }}><h2>Chave Pix</h2></div>
-        {data.pixKey && !changing ? (
-          <div className="row wrap between">
-            <p><span className="muted">{PIX_NAME[data.pixType ?? ''] ?? 'Chave'}:</span> <strong className="tabular">{data.pixKey}</strong></p>
-            <button type="button" onClick={() => setChanging(true)}>Trocar chave</button>
-          </div>
-        ) : (
-          <ChavePix initialType={data.pixType} cpf={me.profile?.cpf} onDone={async () => { setChanging(false); await Promise.all([load(), reload()]); }} />
-        )}
+      {/* Chave Pix só para conferir: a troca fica em Cadastro e documentos. */}
+      <section className="card wallet-pix" aria-label="Chave Pix">
+        <span className="muted">Chave Pix ({PIX_NAME[data.pixType ?? ''] ?? 'chave'})</span>
+        <strong className="tabular">{data.pixKey ?? 'Não cadastrada'}</strong>
+        <small className="muted">Para trocar, vá em <Link className="link" to="/cadastro">Cadastro e documentos</Link>.</small>
       </section>
-
-      {!!data.abatimentos.length && <Abatimentos items={data.abatimentos} onChange={load} />}
 
       <section className="card tight" aria-label="Recebidos">
         <div className="card-header"><h2>Recebidos</h2></div>

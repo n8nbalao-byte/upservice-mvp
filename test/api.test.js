@@ -1427,6 +1427,13 @@ test('brinde do dia: só admin cadastra; sorteio às 9h do dia seguinte entre qu
   assert.equal(hoje.body.status, 'AGENDADO');
   const lista = (await call(s.gestor, 'GET', `/api/manage/brindes?from=${today}&to=${today}&unitId=${s.unitA}`)).body.items;
   assert.ok(lista.some((b) => b.id === hoje.body.id), 'brinde de todas as unidades aparece no filtro da loja');
+  assert.ok(lista.every((b) => !('winnerId' in b)), 'sem id do ganhador');
+  // Gestor só da loja A: não consulta a loja B nem vê brinde só dela.
+  const soB = await call(s.admin, 'POST', '/api/admin/brindes', { day: today, premio: 'Brinde da B', unitId: s.unitB });
+  assert.equal((await call(s.gestor, 'GET', `/api/manage/brindes?from=${today}&to=${today}&unitId=${s.unitB}`)).status, 404);
+  assert.ok(!(await call(s.gestor, 'GET', `/api/manage/brindes?from=${today}&to=${today}`)).body.items.some((b) => b.id === soB.body.id), 'gestor não vê brinde de outra loja');
+  assert.ok((await call(s.admin, 'GET', `/api/manage/brindes?from=${today}&to=${today}`)).body.items.some((b) => b.id === soB.body.id));
+  assert.equal((await call(s.admin, 'DELETE', `/api/admin/brindes/${soB.body.id}`)).status, 200);
   // O profissional vê o prêmio no dia, desde o cadastro.
   const w1 = (await userByEmail('w1@test.dev')).id;
   const est = (await call(s.admin, 'GET', `/api/manage/workers/${w1}/estrelas`)).body;
