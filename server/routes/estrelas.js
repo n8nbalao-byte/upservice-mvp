@@ -53,6 +53,24 @@ export async function earnedBonuses(userId) {
   return bonus.filter((b) => perfect.has(b.day)).map((b) => ({ day: b.day, value: Number(b.value) }));
 }
 
+/** Bônus ganhos por profissional, de todos de uma vez (lista de pagamentos do admin). Mesma regra de earnedBonuses. */
+export async function bonusGanhoPorUsuario() {
+  const today = todayKey();
+  const bonus = await q("SELECT DATE_FORMAT(day, '%Y-%m-%d') AS day, value FROM bonus_days WHERE kind = 'BONUS' AND value > 0 AND day <= ? ORDER BY day", [today]);
+  const out = new Map();
+  if (!bonus.length) return out;
+  const valor = new Map(bonus.map((b) => [b.day, Number(b.value)]));
+  // ponytail: calcula as estrelas de todas as diárias entre o primeiro e o último dia de bônus; guardar o ganho se pesar.
+  const rows = await diaries('j.starts_at BETWEEN DATE_SUB(?, INTERVAL 1 DAY) AND DATE_ADD(?, INTERVAL 2 DAY)', [bonus[0].day, bonus.at(-1).day]);
+  const visto = new Set();
+  for (const d of rows) {
+    if (d.stars !== 3 || !valor.has(d.date) || visto.has(d.userId + d.date)) continue;
+    visto.add(d.userId + d.date);
+    out.set(d.userId, Math.round(((out.get(d.userId) ?? 0) + valor.get(d.date)) * 100) / 100);
+  }
+  return out;
+}
+
 async function starsOf(userId) {
   const today = todayKey();
   const year = today.slice(0, 4);

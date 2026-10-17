@@ -1377,3 +1377,28 @@ test('quebra de caixa: só em diária de caixa encerrada, abate da Carteira com 
   assert.equal((await call(s.winner, 'GET', '/api/me/carteira')).body.aReceber, before.aReceber, 'cancelada não abate');
   assert.equal((await call(s.gestor, 'GET', `/api/manage/workers/${me.id}/quebras`)).body.length >= 1, true);
 });
+
+test('pagamentos (admin): lista quem tem a receber, com a mesma conta da Carteira; só administrador vê', { skip }, async () => {
+  assert.equal((await call(s.gestor, 'GET', '/api/admin/pagamentos')).status, 403);
+  assert.equal((await call(s.w1, 'GET', '/api/admin/pagamentos')).status, 403);
+  const r = await call(s.admin, 'GET', '/api/admin/pagamentos');
+  assert.equal(r.status, 200);
+  assert.ok(r.body.items.length >= 1, 'há alguém com valor a receber');
+  assert.equal(r.body.count, r.body.items.length);
+  assert.ok(r.body.items.every((x) => x.aReceber > 0), 'só quem tem a receber');
+  for (let i = 1; i < r.body.items.length; i++) assert.ok(r.body.items[i - 1].aReceber >= r.body.items[i].aReceber, 'maior valor primeiro');
+  for (const x of r.body.items) {
+    const w = (await call(s.admin, 'GET', `/api/manage/workers/${x.id}/pagamento`)).body;
+    assert.equal(Math.round(x.aReceber * 100), Math.round(w.aReceber * 100), `${x.name}: mesma conta da Carteira`);
+    assert.equal(x.pixKey ?? null, w.pixKey ?? null);
+  }
+  const resumo = (await call(s.admin, 'GET', '/api/admin/pagamentos?resumo=1')).body;
+  assert.equal(resumo.count, r.body.count);
+  assert.equal(Math.round(resumo.total * 100), Math.round(r.body.items.reduce((t, x) => t + x.aReceber, 0) * 100));
+  // Quem recebe o valor todo sai da lista.
+  const alvo = r.body.items.find((x) => x.pixKey);
+  if (alvo) {
+    assert.equal((await call(s.admin, 'POST', `/api/manage/workers/${alvo.id}/pagamentos`, { amount: alvo.aReceber, receipt: JPEG })).status, 200);
+    assert.ok(!(await call(s.admin, 'GET', '/api/admin/pagamentos')).body.items.some((x) => x.id === alvo.id), 'quitado sai da lista');
+  }
+});

@@ -8,6 +8,7 @@ import { DialogProvider, Loading } from './components/ui';
 import AdminUnidades from './pages/AdminUnidades';
 import AdminConfiguracoes from './pages/AdminConfiguracoes';
 import AdminUsuarios from './pages/AdminUsuarios';
+import AdminPagamentos from './pages/AdminPagamentos';
 import Ajustes from './pages/Ajustes';
 import Atividade from './pages/Atividade';
 import Cadastro from './pages/Cadastro';
@@ -157,6 +158,7 @@ export default function App() {
                 <Route path="/qr/:id" element={<QrAprovar />} />
                 {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
+                {role === 'ADMINISTRADOR' && <Route path="/admin/pagamentos" element={<AdminPagamentos />} />}
                 {me.user.isOwner && <Route path="/admin/configuracoes" element={<AdminConfiguracoes />} />}
                 <Route path="*" element={<Navigate to="/gestao/inicio" />} />
               </Routes>

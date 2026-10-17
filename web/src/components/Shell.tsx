@@ -16,7 +16,7 @@ const store = {
 /** Cadastro completo e os 4 documentos (CPF, RG, comprovante e selfie) aprovados: o Cadastro sai da barra e fica no menu do usuário. */
 const cadastroAprovado = (me: Me) => me.complete && ['CPF', 'RG', 'COMPROVANTE', 'SELFIE'].every((t) => me.documents.some((d) => d.type === t && d.status === 'APROVADO'));
 
-function groupsFor(me: Me, inboxCount: number, gamification = false, upcoming = 0, aReceber = 0): Group[] {
+function groupsFor(me: Me, inboxCount: number, gamification = false, upcoming = 0, aReceber = 0, pagamentos = 0): Group[] {
   const role = me.user.role;
   if (role === 'PROFISSIONAL') {
     if (isBlocked(me.user.status)) return [{ items: [{ to: '/ocorrencias', text: 'Ocorrências', icon: 'alert' }] }];
@@ -33,6 +33,8 @@ function groupsFor(me: Me, inboxCount: number, gamification = false, upcoming = 
     { items: [
       { to: '/gestao/inicio', text: 'Dashboard', icon: 'home' },
       { to: '/gestao/pendencias', text: 'Pendências', icon: 'inbox', count: inboxCount },
+      // Administrador: quem tem pagamento pendente (número no menu); paga ali mesmo, sem abrir a ficha.
+      ...(role === 'ADMINISTRADOR' ? [{ to: '/admin/pagamentos', text: 'Pagamentos', icon: 'wallet' as const, count: pagamentos }] : []),
       { to: '/gestao/vagas', text: 'Vagas', icon: 'briefcase' },
       { to: '/gestao/atividades', text: 'Atividades', icon: 'activity' },
       { to: '/gestao/calendario', text: 'Calendário', icon: 'calendar' },
@@ -115,7 +117,18 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
     window.addEventListener(CHANGED, load);
     return () => { clearInterval(t); window.removeEventListener(CHANGED, load); };
   }, [workerActive, pathname]);
-  const groups = groupsFor(me, inboxCount, gamification, avisos.upcoming, avisos.aReceber);
+  // Administrador: quantos profissionais têm pagamento pendente (a cada 60 s e depois de qualquer ação).
+  const [pagamentos, setPagamentos] = useState(0);
+  const admin = me.user.role === 'ADMINISTRADOR';
+  useEffect(() => {
+    if (!admin) return;
+    const load = () => api<{ count: number }>('/admin/pagamentos?resumo=1').then((r) => setPagamentos(r.count), () => {});
+    load();
+    const t = setInterval(load, 60000);
+    window.addEventListener(CHANGED, load);
+    return () => { clearInterval(t); window.removeEventListener(CHANGED, load); };
+  }, [admin]);
+  const groups = groupsFor(me, inboxCount, gamification, avisos.upcoming, avisos.aReceber, pagamentos);
   // Desktop: recolhe a barra (preferência lembrada). Celular/tablet: abre a gaveta.
   const menu = () => {
     if (window.matchMedia('(max-width: 1023px)').matches) return setDrawer(true);
