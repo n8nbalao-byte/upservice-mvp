@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Alert, Loading, PageHeader, StatusBadge, useAction } from '../components/ui';
 import { api } from '../lib/api';
 import { applyTheme, type Theme } from '../lib/theme';
@@ -63,10 +64,10 @@ export default function AdminConfiguracoes() {
         )}
       </section>
       <section className="stack" style={{ marginTop: 32 }}>
-        <h2 className="section-title">Estrelas do profissional (prévia)</h2>
+        <h2 className="section-title">Estrelas do profissional</h2>
         <div className="card stack">
           <div className="row between wrap">
-            <p style={{ maxWidth: 640 }}>Tela "como um joguinho": cada diária vale até 3 estrelas, com nível e bônus do mês. <strong>Os valores dos bônus são de exemplo</strong> e as regras ainda serão definidas. Enquanto estiver desligada, só gestores e administradores veem (pela ficha do profissional, em "Ver estrelas").</p>
+            <p style={{ maxWidth: 640 }}>Tela "como um joguinho": cada mês é um nível e cada dia vale até 3 estrelas. <strong>O bônus vale dinheiro</strong>: o valor do mês é definido em <Link className="link" to="/gestao/bonus">Bônus do mês</Link>, e quem fizer 3 estrelas num dia de bônus ganha o valor no A receber. Enquanto estiver desligada, só gestores e administradores veem (pela ficha do profissional, em "Ver estrelas").</p>
             {gamification !== undefined && <button className={gamification ? 'danger' : 'primary'} disabled={busy === 'gamification'} onClick={toggleGamification}>{gamification ? 'Desligar para os profissionais' : 'Ligar para os profissionais'}</button>}
           </div>
           {gamification && <StatusBadge status="ATIVA">Ligada: os profissionais veem "Estrelas" no menu</StatusBadge>}

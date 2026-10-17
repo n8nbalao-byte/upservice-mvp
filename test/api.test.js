@@ -1192,7 +1192,7 @@ test('reserva chamada recebe WhatsApp (se tiver número confirmado), só depois 
   }
 });
 
-test('estrelas (prévia): profissional só vê com o interruptor ligado; principal liga; gestor confere a ficha', { skip }, async () => {
+test('estrelas: profissional só vê com o interruptor ligado; principal liga; gestor confere a ficha; bônus do mês pela gestão', { skip }, async () => {
   assert.equal((await call(null, 'GET', '/api/config')).body.gamification, false);
   assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).status, 403, 'desligado: profissional não vê');
   assert.equal((await call(s.gestor, 'PUT', '/api/admin/settings/gamification', { enabled: true })).status, 403);
@@ -1206,8 +1206,30 @@ test('estrelas (prévia): profissional só vê com o interruptor ligado; princip
   const mine = await call(s.w1, 'GET', '/api/me/estrelas');
   assert.equal(mine.status, 200);
   assert.deepEqual(mine.body.total, preview.body.total);
+  assert.equal(mine.body.months.length, 12, 'um nível por mês do ano');
   assert.ok(mine.body.months.some((m) => m.month === mine.body.current), 'mês atual sempre aparece');
   for (const m of mine.body.months) for (const d of m.diaries) assert.ok(d.stars === null || (d.stars >= 0 && d.stars <= 3));
+  // Bônus do mês: só gestão define; o sistema sorteia os dias e a soma é o valor; o valor do dia futuro não vai para o profissional.
+  const year = mine.body.year;
+  const next = `${year}-12`;
+  assert.equal((await call(s.w1, 'GET', `/api/manage/bonus?month=${next}`)).status, 403);
+  assert.equal((await call(s.w1, 'PUT', `/api/manage/bonus/${next}`, { total: 100 })).status, 403);
+  assert.equal((await call(s.gestor, 'PUT', `/api/manage/bonus/${next}`, { total: -1 })).status, 400);
+  const set = await call(s.gestor, 'PUT', `/api/manage/bonus/${next}`, { total: 100 });
+  assert.equal(set.status, 200);
+  assert.equal(set.body.days.reduce((t, b) => t + b.value, 0), 100);
+  const view = await call(s.admin, 'GET', `/api/manage/bonus?month=${next}`);
+  assert.equal(view.body.total, 100);
+  assert.ok(view.body.days.some((b) => b.kind === 'SORTEIO'), 'sorteio da TV em 20/12');
+  const dez = (await call(s.w1, 'GET', '/api/me/estrelas')).body.months[11];
+  const bonusDays = dez.days.filter((d) => d.bonus?.kind === 'BONUS');
+  assert.equal(bonusDays.length, set.body.days.length);
+  assert.ok(bonusDays.every((d) => d.bonus.value === null), 'valor escondido até o dia');
+  // Depois que um dia de bônus do mês chegou, o valor não muda mais.
+  const cur = mine.body.current;
+  await q("INSERT INTO bonus_days (day, kind, value) VALUES (?, 'BONUS', 10)", [`${cur}-01`]);
+  assert.equal((await call(s.admin, 'PUT', `/api/manage/bonus/${cur}`, { total: 50 })).status, 409);
+  await q('DELETE FROM bonus_days WHERE day = ?', [`${cur}-01`]);
   assert.equal((await call(s.admin, 'PUT', '/api/admin/settings/gamification', { enabled: false })).status, 200);
   assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).status, 403);
 });

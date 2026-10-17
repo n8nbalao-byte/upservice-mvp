@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildMonth, diaryReport, diaryStars, levelOf } from '../server/estrelas.js';
+import { buildMonth, diaryReport, diaryStars, planBonuses, sorteioStatus } from '../server/estrelas.js';
 
 const ended = '2026-10-01T20:00:00Z';
 const now = Date.parse('2026-10-15T12:00:00Z');
@@ -21,23 +21,48 @@ test('diárias que ainda não valem: próxima, em andamento e em análise', () =
   assert.equal(diaryStars({ sessionStatus: 'PENDENTE_DE_FECHAMENTO', endsAt: ended }, now).state, 'em_analise');
 });
 
-test('mês: bônus abrem com as estrelas; mês perfeito só sem falta e com tudo feito', () => {
-  const d = (stars, state = 'feita') => ({ stars, state });
-  const m = buildMonth('2026-10', [d(3), d(3), d(2), d(3), d(1), d(3), d(3), d(3), d(3), d(3)]);
-  assert.equal(m.maxStars, 30);
-  assert.equal(m.stars, 27);
-  assert.deepEqual(m.bonuses.map((b) => [b.goal, b.unlocked]), [[9, true], [17, true], [24, true]]);
-  assert.equal(m.perfect.unlocked, true);
-  const faltou = buildMonth('2026-10', [d(3), d(0), d(3), d(null, 'proxima')]);
-  assert.equal(faltou.perfect.unlocked, false);
-  assert.equal(faltou.perfect.lost, true);
-  assert.deepEqual(levelOf(64), { level: 3, inLevel: 4, perLevel: 30 });
-  // Todos os dias do mês aparecem como fases; dia sem diária fica vazio.
-  const nov = buildMonth('2026-11', [{ day: 3, stars: 3, state: 'feita' }, { day: 20, stars: null, state: 'proxima' }]);
-  assert.equal(nov.days.length, 30);
-  assert.deepEqual(nov.days.filter((d) => d.diaries.length).map((d) => d.day), [3, 20]);
-  assert.equal(buildMonth('2026-10', []).days.length, 31);
-  assert.deepEqual(nov.bonuses.map((b) => b.afterDay), [9, 17, 24]);
+test('mês = nível: todas as fases (dias), máximo de 3 estrelas por dia e bônus só revelado no dia', () => {
+  const m = buildMonth('2026-10', [{ day: 3, stars: 3, state: 'feita' }, { day: 7, stars: 2, state: 'feita' }, { day: 25, stars: null, state: 'proxima' }],
+    [{ day: '2026-10-03', kind: 'BONUS', value: '10.00' }, { day: '2026-10-07', kind: 'BONUS', value: '20.00' }, { day: '2026-10-25', kind: 'BONUS', value: '70.00' }], '2026-10-15');
+  assert.equal(m.level, 10);
+  assert.equal(m.days.length, 31);
+  assert.equal(m.maxStars, 93);
+  assert.equal(m.stars, 5);
+  assert.deepEqual(m.days[2].bonus, { kind: 'BONUS', label: null, value: 10, revealed: true, earned: true });
+  assert.equal(m.days[6].bonus.earned, false, '2 estrelas não ganham o bônus');
+  assert.equal(m.days[24].bonus.value, null, 'valor do dia futuro não vai');
+  assert.equal(m.bonusGanho, 10);
+  assert.equal(m.done, false);
+  assert.equal(buildMonth('2026-09', [], [], '2026-10-15').done, true);
+  assert.equal(buildMonth('2026-11', []).days.length, 30);
+});
+
+test('bônus do mês: soma exata do valor definido, valores crescentes, fora do dia do sorteio', () => {
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (const total of [100, 250, 37.5, 15, 12, 5, 1000]) {
+    for (let i = 0; i < 30; i++) {
+      const plan = planBonuses('2026-12', total, ['2026-12-20'], rand);
+      const sum = plan.reduce((s, b) => s + Math.round(b.value * 100), 0);
+      assert.equal(sum, Math.round(total * 100), `soma ${total}`);
+      assert.ok(plan.length >= 1 && plan.length <= 5);
+      assert.ok(plan.every((b, j) => j === 0 || (b.value > plan[j - 1].value && b.day > plan[j - 1].day)), `crescente ${JSON.stringify(plan)}`);
+      assert.ok(!plan.some((b) => b.day === '2026-12-20'));
+    }
+  }
+  assert.equal(planBonuses('2026-12', 12).length, 1, 'valor pequeno: um dia só');
+  assert.deepEqual(planBonuses('2026-12', 0), []);
+});
+
+test('sorteio: 15 dias com 3 estrelas no ano e o dia do sorteio com 3 estrelas', () => {
+  const days = (n) => Array.from({ length: n }, (_, i) => ({ date: `2026-11-${String(i + 1).padStart(2, '0')}`, stars: 3 }));
+  const dia = { date: '2026-12-20', stars: 3 };
+  assert.equal(sorteioStatus([...days(14), dia], '2026-12-20').qualifies, true, '14 + o dia = 15');
+  assert.equal(sorteioStatus([...days(13), dia], '2026-12-20').qualifies, false);
+  assert.equal(sorteioStatus(days(20), '2026-12-20').qualifies, false, 'sem o dia do sorteio');
+  assert.equal(sorteioStatus([...days(20), { ...dia, stars: 2 }], '2026-12-20').qualifies, false);
+  const dup = sorteioStatus([...days(3), ...days(3), { date: '2025-11-01', stars: 3 }], '2026-12-20');
+  assert.equal(dup.threeStarDays, 3, 'conta dias, não diárias; só o ano do sorteio');
 });
 
 test('resumo do dia (sem horários): o que deu certo, o que pesou e como ganhar mais estrelas', () => {

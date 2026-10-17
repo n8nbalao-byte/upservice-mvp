@@ -36,6 +36,7 @@ function groupsFor(me: Me, inboxCount: number, gamification = false, upcoming = 
       { to: '/gestao/atividades', text: 'Atividades', icon: 'activity' },
       { to: '/gestao/calendario', text: 'Calendário', icon: 'calendar' },
       { to: '/gestao/relatorios', text: 'Relatórios', icon: 'chart' },
+      { to: '/gestao/bonus', text: 'Bônus do mês', icon: 'gift' },
     ] },
     { items: [
       { to: '/gestao/documentos', text: 'Documentos', icon: 'file' },

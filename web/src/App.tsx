@@ -28,6 +28,7 @@ import Perfil from './pages/Perfil';
 import QrAprovar from './pages/QrAprovar';
 import RedefinirSenha from './pages/RedefinirSenha';
 import Relatorios from './pages/Relatorios';
+import GestaoBonus from './pages/GestaoBonus';
 import Vagas from './pages/Vagas';
 import Avisos from './pages/Avisos';
 import Estrelas, { GestaoEstrelas } from './pages/Estrelas';
@@ -143,6 +144,7 @@ export default function App() {
                 <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
                 <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />
                 <Route path="/gestao/relatorios" element={<Relatorios />} />
+                <Route path="/gestao/bonus" element={<GestaoBonus />} />
                 <Route path="/gestao/ajustes" element={<Ajustes />} />
                 <Route path="/perfil" element={<Perfil />} />
                 <Route path="/qr/:id" element={<QrAprovar />} />
