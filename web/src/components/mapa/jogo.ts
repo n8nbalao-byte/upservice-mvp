@@ -2,7 +2,7 @@
 // nele, os fundos dos meses e os personagens. Sem DOM: testado em test/mapa.test.js.
 
 /** Muda quando as imagens forem trocadas, para o navegador não usar a versão antiga do cache. */
-const V = '1';
+const V = '2';
 const img = (p: string) => `/estrelas/${p}?v=${V}`;
 
 /** Panorama: 2688 × 1152 (proporção usada para a largura do mapa). */
