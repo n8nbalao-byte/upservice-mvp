@@ -45,10 +45,21 @@ export async function evolution(path, { method = 'GET', body, cfg } = {}) {
   return data;
 }
 
-/** Envia texto para um celular brasileiro (DDD + número). */
-export async function sendWhatsapp(phone, text) {
-  const digits = String(phone).replace(/\D/g, '');
-  await evolution('/message/sendText/{instance}', { method: 'POST', body: { number: digits.startsWith('55') ? digits : `55${digits}`, text } });
+const toNumber = (phone) => { const d = String(phone).replace(/\D/g, ''); return d.startsWith('55') ? d : `55${d}`; };
+
+/** Envia texto para um celular brasileiro (DDD + número). `delay` (ms): mostra "digitando…" antes (atendimento). */
+export async function sendWhatsapp(phone, text, { delay } = {}) {
+  await evolution('/message/sendText/{instance}', { method: 'POST', body: { number: toNumber(phone), text, ...(delay ? { delay } : {}) } });
+}
+
+/** Pergunta com opções, como enquete de escolha única: o profissional toca numa opção. As opções vão numeradas
+ *  ("1. Vagas"), então responder só o número também vale (celular que não mostra enquete). Devolve o id da mensagem. */
+export async function sendOptions(phone, question, options) {
+  const data = await evolution('/message/sendPoll/{instance}', {
+    method: 'POST',
+    body: { number: toNumber(phone), name: question.slice(0, 255), selectableCount: 1, values: options.map((o) => o.slice(0, 100)), delay: 700 },
+  });
+  return data?.key?.id ?? null;
 }
 
 /** Envia um arquivo (foto ou PDF) com legenda; nunca derruba a operação: falha só vai para o log. */

@@ -18,8 +18,10 @@ export function WhatsappConfig() {
   const { busy, run } = useAction();
   const [st, setSt] = useState<Status>();
   const [pair, setPair] = useState<{ qr?: string | null; pairingCode?: string | null } | null>(null);
+  const [bot, setBot] = useState<boolean>();
   const load = () => api<Status>('/admin/whatsapp').then(setSt, () => setSt({ configured: false }));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api<{ enabled: boolean }>('/admin/whatsapp/bot').then((b) => setBot(b.enabled), () => {}); }, []);
+  const toggleBot = (enabled: boolean) => run('bot', async () => { setBot((await api<{ enabled: boolean }>('/admin/whatsapp/bot', { method: 'PUT', body: { enabled } })).enabled); }, enabled ? 'Atendimento pelo WhatsApp ligado.' : 'Atendimento pelo WhatsApp desligado.');
   // Enquanto o QR/código está na tela, confere a conexão a cada 4 s.
   useEffect(() => {
     if (!pair) return;
@@ -89,6 +91,17 @@ export function WhatsappConfig() {
           </form>
         )}
       </div>
+
+      {st.state === 'CONECTADO' && bot !== undefined && (
+        <div className="card stack">
+          <div className="row between">
+            <h2>Atendimento automático (bot)</h2>
+            <StatusBadge tone={bot ? 'success' : 'neutral'}>{bot ? 'Ligado' : 'Desligado'}</StatusBadge>
+          </div>
+          <p className="muted">O profissional manda qualquer mensagem para o número oficial e o bot responde com enquetes: procurar vagas e se candidatar, ver e desistir das diárias, ver a Carteira e os comprovantes. Só atende quem confirmou o WhatsApp no app. "Falar com uma pessoa" deixa o bot quieto naquela conversa por 4 horas.</p>
+          <div><button className={bot ? 'danger' : 'primary'} disabled={busy === 'bot'} onClick={() => toggleBot(!bot)}>{busy === 'bot' ? 'Salvando…' : bot ? 'Desligar o atendimento' : 'Ligar o atendimento'}</button></div>
+        </div>
+      )}
 
       <form className="card form" onSubmit={save}>
         <h2>Evolution API</h2>
