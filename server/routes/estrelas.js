@@ -7,6 +7,7 @@ import { audit } from '../audit.js';
 import { q, tx } from '../db.js';
 import { buildMonth, diaryReport, diaryStars, planBonuses, sorteioStatus } from '../estrelas.js';
 import { fail } from '../http.js';
+import { brindesEntre } from './brindes.js';
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
@@ -17,9 +18,9 @@ const todayKey = () => dateOf(Date.now());
 export const gamificationOn = async () => (await q("SELECT value FROM app_settings WHERE name = 'gamification'"))[0]?.value === 'on';
 
 /** Diárias aprovadas com as estrelas calculadas. `where` filtra (ex.: por profissional ou por período). */
-async function diaries(where, params) {
+export async function diaries(where, params) {
   const rows = await q(
-    `SELECT a.id, a.user_id, j.title, j.starts_at, j.ends_at, u.name AS unit_name, ws.status AS session_status, dc.result,
+    `SELECT a.id, a.user_id, j.unit_id, j.title, j.starts_at, j.ends_at, u.name AS unit_name, ws.status AS session_status, dc.result,
             (SELECT GROUP_CONCAT(DISTINCT e.validation) FROM presence_events e WHERE e.work_session_id = ws.id) AS validations,
             (SELECT GROUP_CONCAT(CONCAT(e.type, ':', e.validation) ORDER BY e.occurred_at) FROM presence_events e WHERE e.work_session_id = ws.id) AS steps,
             (SELECT GROUP_CONCAT(o.type) FROM occurrences o WHERE o.application_id = a.id AND o.status <> 'CANCELADA') AS occurrences
@@ -38,7 +39,7 @@ async function diaries(where, params) {
     for (const p of (row.steps ?? '').split(',').filter(Boolean)) { const [t, v] = p.split(':'); steps[t] ??= v; }
     if (s.state === 'feita') s.report = diaryReport({ stars: s.stars, steps, occurrences });
     const date = dateOf(row.starts_at);
-    return { id: row.id, userId: row.user_id, title: row.title, unit: row.unit_name, startsAt: row.starts_at, date, day: Number(date.slice(8, 10)), ...s };
+    return { id: row.id, userId: row.user_id, unitId: row.unit_id, title: row.title, unit: row.unit_name, startsAt: row.starts_at, date, day: Number(date.slice(8, 10)), ...s };
   });
 }
 
@@ -76,10 +77,18 @@ async function starsOf(userId) {
   const year = today.slice(0, 4);
   const mine = (await diaries('a.user_id = ?', [userId])).map(({ userId: _, ...d }) => d);
   const special = await bonusDaysOf(`${year}-01-01`, `${year}-12-31`);
+  // Brindes que ele vê: os de todas as unidades e os de uma unidade onde ele tem diária naquele dia.
+  const brindes = (await brindesEntre(`${year}-01-01`, `${year}-12-31`)).filter((b) => !b.unitId || mine.some((d) => d.date === b.day && d.unitId === b.unitId))
+    .map(({ winnerId, unitId: _, ...b }) => ({ ...b, you: winnerId === userId }));
   // Os 12 meses do ano (nível 1 a 12); arrastando, o profissional vê os outros meses.
   const months = Array.from({ length: 12 }, (_, i) => {
     const m = `${year}-${String(i + 1).padStart(2, '0')}`;
-    return buildMonth(m, mine.filter((d) => d.date.startsWith(m)), special.filter((b) => b.day.startsWith(m)), today);
+    const month = buildMonth(m, mine.filter((d) => d.date.startsWith(m)), special.filter((b) => b.day.startsWith(m)), today);
+    for (const d of month.days) {
+      const br = brindes.filter((b) => b.day === `${m}-${String(d.day).padStart(2, '0')}`);
+      if (br.length) d.brindes = br;
+    }
+    return month;
   });
   const draw = special.find((b) => b.kind === 'SORTEIO');
   return {

@@ -707,6 +707,13 @@ img.avatar { object-fit: cover; }
 .cal-fill { display: block; width: 100%; height: 5px; overflow: hidden; border-radius: 99px; background: #e6ecef; }
 .cal-fill span { display: block; height: 100%; background: var(--success); }
 .cal-meta, .cal-stores { overflow: hidden; max-width: 100%; color: var(--muted); font-size: 0.7rem; text-overflow: ellipsis; white-space: nowrap; }
+.cal-brinde-dot { display: inline-grid; place-items: center; margin-left: 6px; width: 20px; height: 20px; border-radius: 50%; background: #8e5bd8; color: #fff; vertical-align: middle; }
+.cal-brindes { display: grid; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.cal-brindes > button { justify-self: start; }
+.cal-brinde-item { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 10px; color: #6a3fb5; }
+.cal-brinde-item > span { display: grid; gap: 2px; color: var(--ink); }
+.cal-brinde-item small { color: var(--muted); }
+.cal-brinde-form { display: grid; gap: 10px; }
 .cal-panel { position: sticky; top: 88px; max-height: calc(100vh - 110px); overflow-y: auto; }
 .cal-jobs { display: grid; margin: 0; padding: 0; list-style: none; }
 .cal-jobs li { display: grid; gap: 6px; padding: 12px 16px; border-top: 1px solid var(--line); }
@@ -919,10 +926,13 @@ img.avatar { object-fit: cover; }
 .g-badge { position: absolute; top: -8px; right: -8px; z-index: 1; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: #5a3d00; background: #ffd84d; border: 2px solid #1d2b3a; box-shadow: 0 2px 0 rgba(29, 43, 58, 0.4); transform: rotate(4deg); pointer-events: none; }
 .g-badge.won { background: #7ed26b; color: #143d10; }
 .g-badge.tv { width: 28px; height: 28px; background: #e05d8f; color: #fff; }
+.g-badge.brinde { background: #8e5bd8; color: #fff; }
+.g-badge.brinde.won { background: #7ed26b; color: #143d10; }
 .g-tile.tv { border-color: #8a1d4a; }
 .g-tile.g-blank.tv { border: 2px dashed #8a1d4a; background: rgba(224, 93, 143, 0.18); }
 .g-gift { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; color: #5a3d00; background: #ffd84d; border: 3px solid #1d2b3a; }
 .g-gift.tv { background: #e05d8f; color: #fff; }
+.g-gift.brinde { background: #8e5bd8; color: #fff; }
 .g-rules-btn { justify-self: center; }
 .g-flip { perspective: 1400px; }
 .g-flip-inner { display: grid; transition: transform 0.6s ease; transform-style: preserve-3d; }

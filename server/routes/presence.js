@@ -12,6 +12,7 @@ import {
   checkinWindowError, distanceMeters, exceptionWindowError, nextState, transitionError, workedTime,
 } from '../rules.js';
 import { decodeBase64, removeFile, saveFile, sniff } from '../storage.js';
+import { sortearBrindes } from './brindes.js';
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
@@ -454,6 +455,9 @@ export async function sweep() {
     });
     await flush(c);
   }
+
+  // 5. Brindes do dia anterior: sorteio às 9h (Brasília) entre quem fez 3 estrelas.
+  await sortearBrindes();
 }
 
 export default r;

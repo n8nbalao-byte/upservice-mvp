@@ -1408,3 +1408,83 @@ test('pagamentos (admin): lista quem tem a receber, com a mesma conta da Carteir
     assert.ok(!(await call(s.admin, 'GET', '/api/admin/pagamentos')).body.items.some((x) => x.id === alvo.id), 'quitado sai da lista');
   }
 });
+
+test('brinde do dia: só admin cadastra; sorteio às 9h do dia seguinte entre quem fez 3 estrelas na unidade; uma vez só', { skip }, async () => {
+  const { sortearBrindes, ultimoDiaSorteavel, nomeCurto } = await import('../server/routes/brindes.js');
+  // Sorteável só a partir das 9h (Brasília) do dia seguinte.
+  assert.equal(ultimoDiaSorteavel(Date.parse('2026-10-18T11:59:00Z')), '2026-10-16');
+  assert.equal(ultimoDiaSorteavel(Date.parse('2026-10-18T12:00:00Z')), '2026-10-17');
+  assert.equal(nomeCurto('Maria Souza Lima'), 'Maria L.');
+
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  assert.equal((await call(s.gestor, 'POST', '/api/admin/brindes', { day: today, premio: 'Boné' })).status, 403, 'gestor não cadastra');
+  assert.equal((await call(s.w1, 'POST', '/api/admin/brindes', { day: today, premio: 'Boné' })).status, 403);
+  assert.equal((await call(s.admin, 'POST', '/api/admin/brindes', { day: '2020-01-01', premio: 'Boné' })).status, 400, 'dia passado');
+  assert.equal((await call(s.admin, 'POST', '/api/admin/brindes', { day: today, premio: '' })).status, 400, 'sem prêmio');
+  assert.equal((await call(s.admin, 'POST', '/api/admin/brindes', { day: today, premio: 'Boné', unitId: 'nao-existe' })).status, 400);
+  const hoje = await call(s.admin, 'POST', '/api/admin/brindes', { day: today, premio: 'Camiseta UP' });
+  assert.equal(hoje.status, 201);
+  assert.equal(hoje.body.status, 'AGENDADO');
+  const lista = (await call(s.gestor, 'GET', `/api/manage/brindes?from=${today}&to=${today}&unitId=${s.unitA}`)).body.items;
+  assert.ok(lista.some((b) => b.id === hoje.body.id), 'brinde de todas as unidades aparece no filtro da loja');
+  // O profissional vê o prêmio no dia, desde o cadastro.
+  const w1 = (await userByEmail('w1@test.dev')).id;
+  const est = (await call(s.admin, 'GET', `/api/manage/workers/${w1}/estrelas`)).body;
+  const dia = est.months.find((m) => today.startsWith(m.month)).days[Number(today.slice(8)) - 1];
+  assert.equal(dia.brindes?.[0]?.premio, 'Camiseta UP');
+  await sortearBrindes(Date.now());
+  assert.equal((await q('SELECT status FROM brindes WHERE id = ?', [hoje.body.id]))[0].status, 'AGENDADO', 'antes das 9h do dia seguinte não sorteia');
+
+  // Dia isolado no passado, com dois profissionais novos: br1 com 3 estrelas na loja A, br2 com 3 estrelas na loja B.
+  const [g] = await q("SELECT id FROM users WHERE email = 'gestor@test.dev'");
+  const br1 = await login('br1@test.dev');
+  const br2 = await login('br2@test.dev');
+  await completeWorker(br1, '390.533.447-05');
+  await completeWorker(br2, '987.654.321-00');
+  const b1 = (await userByEmail('br1@test.dev')).id;
+  const b2 = (await userByEmail('br2@test.dev')).id;
+  const feita = async (worker, unit) => {
+    const a = await approvedSession(worker, 'Repositor brinde');
+    await q("UPDATE work_sessions SET status = 'FINALIZADA' WHERE id = ?", [a.session]);
+    await q("INSERT INTO daily_confirmations (application_id, result, confirmed_by) VALUES (?, 'CONCLUIDA', ?)", [a.application, g.id]);
+    await q("UPDATE jobs SET unit_id = ?, starts_at = '2020-01-15 13:00:00', ends_at = '2020-01-15 19:00:00' WHERE id = ?", [unit, a.job]);
+  };
+  await feita(br1, s.unitA);
+  await feita(br2, s.unitB);
+  const novo = async (unitId, day = '2020-01-15') => { const id = crypto.randomUUID(); await q('INSERT INTO brindes SET ?', [{ id, day, unit_id: unitId, premio: 'Boné', created_by: w1 }]); return id; };
+  const bA = await novo(s.unitA);
+  const bB = await novo(s.unitB);
+  const bTodas = await novo(null);
+  const bVazio = await novo(null, '2020-01-16');
+  assert.equal((await call(s.admin, 'DELETE', `/api/admin/brindes/${hoje.body.id}`)).status, 200, 'cancela antes do sorteio');
+
+  const http = await import('node:http');
+  const sent = [];
+  const mock = http.createServer((req, res) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => { sent.push(JSON.parse(b || '{}')); res.end('{}'); }); }).listen(0);
+  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  try {
+    await q("UPDATE users SET whatsapp = '11977770001', whatsapp_verified_at = ? WHERE id = ?", [new Date(), b1]);
+    await q("DELETE FROM notifications WHERE kind = 'BRINDE'");
+    await sortearBrindes();
+    const st = Object.fromEntries((await q('SELECT id, status, winner_user_id AS w, participants AS p FROM brindes')).map((b) => [b.id, b]));
+    assert.deepEqual([st[bA].status, st[bA].w, st[bA].p], ['SORTEADO', b1, 1], 'loja A: só quem fez 3 estrelas lá');
+    assert.deepEqual([st[bB].status, st[bB].w, st[bB].p], ['SORTEADO', b2, 1], 'loja B');
+    assert.equal(st[bTodas].p, 2, 'todas as unidades: os dois concorrem');
+    assert.ok([b1, b2].includes(st[bTodas].w));
+    assert.equal(st[bVazio].status, 'SEM_PARTICIPANTES');
+    assert.equal(st[hoje.body.id].status, 'CANCELADO');
+    const avisos = await q("SELECT user_id, title FROM notifications WHERE kind = 'BRINDE'");
+    assert.equal(avisos.length, 4, 'um aviso por participante de cada sorteio');
+    assert.ok(avisos.some((a) => a.user_id === b1 && /Você ganhou o sorteio: Boné/.test(a.title)));
+    for (let i = 0; i < 50 && !sent.length; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(sent.length >= 1 && sent.every((m) => m.number === '5511977770001'), 'WhatsApp só para o ganhador com número confirmado');
+    assert.match(sent[0].text, /Você ganhou o sorteio: Boné/);
+    // Roda de novo: nada muda, ninguém recebe aviso de novo.
+    await sortearBrindes();
+    assert.equal((await q("SELECT COUNT(*) AS n FROM notifications WHERE kind = 'BRINDE'"))[0].n, 4);
+    assert.equal((await call(s.admin, 'DELETE', `/api/admin/brindes/${bA}`)).status, 409, 'sorteado não cancela');
+  } finally {
+    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
+    mock.close();
+  }
+});
