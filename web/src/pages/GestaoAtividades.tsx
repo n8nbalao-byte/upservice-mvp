@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useInbox } from '../App';
 import { Icon } from '../components/icons';
 import { Alert, EmptyState, Loading, PageHeader, Stat, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
-import { api, fmtDateTime, fmtMinutes, fmtTime, label, toLocalInput, todayBR } from '../lib/api';
+import { api, fmtDateTime, fmtMinutes, fmtMoney, fmtTime, label, toLocalInput, todayBR } from '../lib/api';
 import { useUnitPicker } from './GestaoVagas';
 
 const ACTIVE = ['EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA'];
@@ -85,6 +85,20 @@ export default function GestaoAtividades() {
     });
     if (note === null) return;
     await run(`confirm:${s.id}`, () => api(`/manage/applications/${s.application_id}/confirm`, { body: { result, note } }), absent ? 'Falta registrada.' : 'Diária confirmada.');
+    afterAction();
+  }
+
+  // Quebra de caixa: diferença do caixa no fim do expediente, abatida do A receber (não é ocorrência nem punição).
+  async function cashBreak(s: any) {
+    const amount = await ask({
+      title: `Quebra de caixa de ${s.worker_name}`,
+      message: `${s.title} · ${fmtTime(s.starts_at)}–${fmtTime(s.ends_at)}. O valor é abatido do que o profissional tem a receber (até ${fmtMoney(s.daily_value)}), com o motivo. Ele é avisado e pode pedir uma revisão.`,
+      label: 'Valor que faltou no caixa (R$)', placeholder: 'Ex.: 50,00', confirmText: 'Continuar',
+    });
+    if (amount === null) return;
+    const reason = await ask({ title: 'Motivo da quebra de caixa', label: 'Motivo (o profissional vê)', placeholder: 'Ex.: faltou R$ 50 no fechamento do caixa 4', minLength: 5, maxLength: 500, multiline: true, confirmText: 'Lançar quebra de caixa' });
+    if (reason === null) return;
+    await run(`cash:${s.id}`, () => api(`/manage/applications/${s.application_id}/quebra-caixa`, { body: { amount, reason } }), 'Quebra de caixa lançada. O profissional foi avisado.');
     afterAction();
   }
 
@@ -226,13 +240,18 @@ export default function GestaoAtividades() {
                       <span className="muted">
                         {s.worked && <>Trabalhado <b className="tabular">{fmtMinutes(s.worked.workedMin)}</b> · pausas {fmtMinutes(s.worked.breakMin)} · origem: {s.worked.sources.map(label).join(', ')}</>}
                       </span>
-                      {!s.confirmation && (
-                        <div className="row">
-                          {s.status === 'FINALIZADA' && <button className="primary sm" disabled={!!busy} onClick={() => confirmDaily(s, 'CONCLUIDA')}>Confirmar diária</button>}
-                          {s.status === 'AGUARDANDO_CHECKIN' && <button className="danger sm" disabled={!!busy} onClick={() => confirmDaily(s, 'NAO_COMPARECEU')}>Registrar falta</button>}
-                        </div>
-                      )}
+                      <div className="row">
+                        {!s.confirmation && s.status === 'FINALIZADA' && <button className="primary sm" disabled={!!busy} onClick={() => confirmDaily(s, 'CONCLUIDA')}>Confirmar diária</button>}
+                        {!s.confirmation && s.status === 'AGUARDANDO_CHECKIN' && <button className="danger sm" disabled={!!busy} onClick={() => confirmDaily(s, 'NAO_COMPARECEU')}>Registrar falta</button>}
+                        {!!s.is_cashier && s.status === 'FINALIZADA' && !s.cash_break_id && <button className="sm" disabled={!!busy} onClick={() => cashBreak(s)}>Lançar quebra de caixa</button>}
+                      </div>
                     </div>
+                  )}
+                  {s.cash_break_id && (
+                    <p className="cashier-note">
+                      <Icon name="wallet" size={14} /> Quebra de caixa: <b>{fmtMoney(Number(s.cash_break_final ?? s.cash_break_amount))}</b>{s.cash_break_final != null && ` (revisada; lançada ${fmtMoney(Number(s.cash_break_amount))})`} · {s.cash_break_reason}
+                      {s.cash_break_status === 'CANCELADA' && <> · <b>cancelada</b></>}
+                    </p>
                   )}
                 </div>
               );

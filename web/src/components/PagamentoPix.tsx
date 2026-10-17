@@ -51,6 +51,7 @@ export function PagamentoPix({ workerId }: { workerId: string }) {
       <dl className="wallet-parts">
         <div><dt>Diárias concluídas</dt><dd>{fmtMoney(data.diarias)}</dd></div>
         <div><dt>Bônus ganhos</dt><dd>{fmtMoney(data.bonus)}</dd></div>
+        {!!data.abatimentos?.length && <div><dt>Quebra de caixa</dt><dd>− {fmtMoney(data.quebras)}</dd></div>}
         <div><dt>Já pago</dt><dd>− {fmtMoney(data.pago)}</dd></div>
       </dl>
       {data.pixKey ? (

@@ -1309,3 +1309,61 @@ test('carteira: chave Pix obrigatória para pagar, código Pix, pagamento com co
     mock.close();
   }
 });
+
+test('quebra de caixa: só em diária de caixa encerrada, abate da Carteira com motivo, uma revisão, sem virar ocorrência', { skip }, async () => {
+  const me = (await call(s.winner, 'GET', '/api/me')).body.user;
+  const caixa = await approvedSession(s.winner, 'Operador de Caixa teste');
+  const [job] = await q('SELECT is_cashier FROM jobs WHERE id = ?', [caixa.job]);
+  assert.equal(job.is_cashier, 1, '"caixa" no título marca a vaga');
+  assert.equal((await call(s.winner, 'GET', '/api/jobs')).body.find((j) => j.id === caixa.job)?.is_cashier, 1, 'profissional vê que é de caixa');
+  const url = `/api/manage/applications/${caixa.application}/quebra-caixa`;
+  assert.equal((await call(s.gestor, 'POST', url, { amount: 30, reason: 'Faltou dinheiro no fechamento' })).status, 409, 'antes do fim da diária');
+
+  const [g] = await q("SELECT id FROM users WHERE email = 'gestor@test.dev'");
+  const finish = async (a) => {
+    await q("UPDATE work_sessions SET status = 'FINALIZADA' WHERE id = ?", [a.session]);
+    await q("INSERT INTO daily_confirmations (application_id, result, confirmed_by) VALUES (?, 'CONCLUIDA', ?)", [a.application, g.id]);
+  };
+  await finish(caixa);
+  const outra = await approvedSession(s.winner, 'Repositor de frios');
+  await finish(outra);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${outra.application}/quebra-caixa`, { amount: 30, reason: 'Faltou dinheiro no fechamento' })).status, 409, 'vaga que não é de caixa');
+  assert.equal((await call(s.gestor, 'POST', url, { amount: 101, reason: 'Faltou dinheiro no fechamento' })).status, 400, 'acima do valor da diária');
+  assert.equal((await call(s.gestor, 'POST', url, { amount: 30, reason: 'x' })).status, 400, 'motivo obrigatório');
+  assert.equal((await call(s.winner, 'POST', url, { amount: 30, reason: 'Faltou dinheiro no fechamento' })).status, 403);
+
+  const before = (await call(s.winner, 'GET', '/api/me/carteira')).body;
+  const set = await call(s.gestor, 'POST', url, { amount: 30, reason: 'Faltou R$ 30 no fechamento do caixa 4' });
+  assert.equal(set.status, 201);
+  assert.equal((await call(s.gestor, 'POST', url, { amount: 10, reason: 'Faltou dinheiro de novo' })).status, 409, 'uma por diária');
+  const after = (await call(s.winner, 'GET', '/api/me/carteira')).body;
+  assert.equal(Math.round((before.aReceber - after.aReceber) * 100), 3000, 'abate R$ 30');
+  assert.equal(after.quebras, before.quebras + 30);
+  const ab = after.abatimentos.find((x) => x.id === set.body.id);
+  assert.equal(ab.reason, 'Faltou R$ 30 no fechamento do caixa 4');
+  assert.equal(ab.counts, true);
+  assert.equal((await q('SELECT COUNT(*) AS n FROM occurrences WHERE application_id = ?', [caixa.application]))[0].n, 0, 'não é ocorrência');
+  assert.match((await call(s.winner, 'GET', '/api/me/avisos')).body.items[0].title, /Quebra de caixa registrada/);
+  const session = (await call(s.gestor, 'GET', `/api/manage/sessions?unitId=${s.unitA}&date=${new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })}`)).body.sessions.find((x) => x.application_id === caixa.application);
+  if (session) assert.equal(Number(session.cash_break_amount), 30, 'Atividades mostram a quebra');
+
+  // Uma revisão só; não aparece entre as ocorrências; o gestor ajusta e depois cancela.
+  const review = await call(s.winner, 'POST', '/api/me/contestations', { cashBreakId: set.body.id, message: 'O caixa foi conferido por outra pessoa no fim.' });
+  assert.equal(review.status, 201);
+  assert.equal((await call(s.winner, 'POST', '/api/me/contestations', { cashBreakId: set.body.id, message: 'Pedindo de novo a revisão.' })).status, 409);
+  assert.ok(!(await call(s.winner, 'GET', '/api/me/occurrences')).body.contestations.some((c) => c.protocol === review.body.protocol), 'fora das ocorrências');
+  const inbox = (await call(s.gestor, 'GET', '/api/manage/inbox')).body.items.find((i) => i.title.includes(review.body.protocol));
+  assert.equal(inbox.kind, 'REVISAO_QUEBRA');
+  const [ct] = await q('SELECT id FROM contestations WHERE protocol = ?', [review.body.protocol]);
+  const decide = (body) => call(s.gestor, 'POST', `/api/manage/contestations/${ct.id}/decide`, { reason: 'Conferido com a filmagem do caixa.', ...body });
+  assert.equal((await decide({ decision: 'AJUSTADA', newAmount: 40 })).status, 400, 'ajuste só para menos');
+  assert.equal((await decide({ decision: 'AJUSTADA', newAmount: 10 })).status, 200);
+  const adj = (await call(s.winner, 'GET', '/api/me/carteira')).body;
+  assert.equal(Math.round((before.aReceber - adj.aReceber) * 100), 1000, 'abate o valor revisado');
+  assert.equal(adj.abatimentos.find((x) => x.id === set.body.id).review.status, 'AJUSTADA');
+  assert.equal((await call(s.winner, 'POST', '/api/me/contestations', { cashBreakId: set.body.id, message: 'Quero outra revisão.' })).status, 409, 'decisão final');
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/quebras/${set.body.id}/cancel`, { reason: 'Lançada na diária errada.' })).status, 200);
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/quebras/${set.body.id}/cancel`, { reason: 'Lançada na diária errada.' })).status, 409);
+  assert.equal((await call(s.winner, 'GET', '/api/me/carteira')).body.aReceber, before.aReceber, 'cancelada não abate');
+  assert.equal((await call(s.gestor, 'GET', `/api/manage/workers/${me.id}/quebras`)).body.length >= 1, true);
+});

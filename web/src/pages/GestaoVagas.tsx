@@ -42,6 +42,10 @@ const dateBR = (s: string) => new Date(s).toLocaleDateString('pt-BR', { timeZone
 
 function NewJob({ unitId, onDone, onCancel }: { unitId: string; onDone: () => void; onCancel: () => void }) {
   const { busy, run } = useAction();
+  // Vaga de caixa: marcada sozinha quando o título tem "caixa"; o gestor pode mudar.
+  const [title, setTitle] = useState('Repositor');
+  const [cashier, setCashier] = useState<boolean | null>(null);
+  const isCashier = cashier ?? /\bcaixa\b/i.test(title);
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
@@ -49,14 +53,14 @@ function NewJob({ unitId, onDone, onCancel }: { unitId: string; onDone: () => vo
     const endsAt = new Date(`${f.date}T${f.end}`);
     if (endsAt <= startsAt) endsAt.setDate(endsAt.getDate() + 1); // turno que vira a noite
     run('create', () => api('/manage/jobs', {
-      body: { unitId, title: f.title, description: f.description, startsAt, endsAt, positions: f.positions, dailyValue: f.dailyValue, breakCount: f.breakCount, breakMinutes: f.breakMinutes, publish: f.publish === 'on' },
+      body: { unitId, title: f.title, description: f.description, startsAt, endsAt, positions: f.positions, dailyValue: f.dailyValue, breakCount: f.breakCount, breakMinutes: f.breakMinutes, publish: f.publish === 'on', isCashier },
     }), f.publish === 'on' ? 'Vaga publicada.' : 'Rascunho salvo.').then((ok) => ok && onDone());
   }
   return (
     <form className="card form" onSubmit={submit}>
       <div className="card-header"><h2>Nova vaga</h2><span className="sub">Todos os horários no fuso de Brasília</span></div>
       <div className="cols">
-        <label>Título<input name="title" required defaultValue="Repositor" /></label>
+        <label>Título<input name="title" required value={title} onChange={(e) => setTitle(e.target.value)} /></label>
         <label>Data<input name="date" type="date" required defaultValue={todayBR()} /></label>
         <label>Início<input name="start" type="time" required defaultValue="08:00" /></label>
         <label>Término<input name="end" type="time" required defaultValue="17:00" /><span className="hint">Antes do início = termina no dia seguinte</span></label>
@@ -68,6 +72,7 @@ function NewJob({ unitId, onDone, onCancel }: { unitId: string; onDone: () => vo
         <label>Duração de cada pausa (min)<input name="breakMinutes" type="number" min={1} max={120} required defaultValue={15} /></label>
       </div>
       <label>Descrição <span className="hint">(opcional)</span><textarea name="description" rows={2} maxLength={1000} placeholder="Atividades, uniforme, ponto de encontro…" /></label>
+      <label className="check"><input type="checkbox" checked={isCashier} onChange={(e) => setCashier(e.target.checked)} /> Vaga de caixa (pode haver quebra de caixa: a diferença do caixa no fim do expediente é abatida da diária)</label>
       <div className="row between">
         <label className="check"><input name="publish" type="checkbox" defaultChecked /> Publicar agora (profissionais já podem se candidatar)</label>
         <div className="row">

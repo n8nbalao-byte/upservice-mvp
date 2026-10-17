@@ -16,7 +16,7 @@ const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
 
 r.get('/jobs', requireRole('PROFISSIONAL'), async (req, res) => {
   const rows = await q(
-    `SELECT j.id, j.title, j.description, j.starts_at, j.ends_at, j.positions, j.daily_value, j.break_count, j.break_minutes,
+    `SELECT j.id, j.title, j.description, j.starts_at, j.ends_at, j.positions, j.daily_value, j.break_count, j.break_minutes, j.is_cashier,
             u.name AS unit_name, u.address AS unit_address, u.lat, u.lng,
             (SELECT COUNT(*) FROM applications x WHERE x.job_id = j.id AND x.status = 'APROVADA') AS approved,
             (SELECT y.status FROM applications y WHERE y.job_id = j.id AND y.user_id = ?) AS my_status
@@ -127,6 +127,8 @@ function buildJob(req, b, unitId) {
     daily_value: Math.round(num(b.dailyValue, 'valor da diária', 0, 100000) * 100) / 100,
     break_count: int(b.breakCount, 'quantidade de pausas', 0, 3),
     break_minutes: int(b.breakMinutes, 'duração da pausa', 1, 120),
+    // Vaga de caixa: pode haver quebra de caixa ao fim do expediente. Sem escolha explícita, "caixa" no título marca.
+    is_cashier: (b.isCashier === undefined ? /\bcaixa\b/i.test(String(b.title ?? '')) : b.isCashier === true) ? 1 : 0,
     status: b.publish ? 'ABERTA' : 'RASCUNHO',
     created_by: req.user.id,
   };
@@ -205,7 +207,7 @@ r.post('/manage/jobs/import', MANAGERS, async (req, res) => {
   }
   const jobs = lines.filter((l) => !l.issue).map((l) => buildJob(req, {
     title, description: d.description, startsAt: l.startsAt, endsAt: l.endsAt, positions: l.positions,
-    dailyValue: d.dailyValue, breakCount: d.breakCount, breakMinutes: d.breakMinutes, publish: d.publish,
+    dailyValue: d.dailyValue, breakCount: d.breakCount, breakMinutes: d.breakMinutes, publish: d.publish, isCashier: d.isCashier,
   }, l.unit.id));
 
   const stores = new Map();

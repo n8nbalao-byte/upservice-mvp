@@ -7,6 +7,9 @@ import { q, tx } from '../db.js';
 import { fail, requireReason, text } from '../http.js';
 import { applyBlock, createOccurrence, ctx, decideOccurrence, endBlock, flush } from '../penalties.js';
 import { STRIKES_TO_BLOCK, isStrike } from '../rules.js';
+import { notifyBreak } from './quebra.js';
+
+const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
@@ -36,7 +39,8 @@ async function history(userId, { includePending = false } = {}) {
     q(`SELECT o.*, un.name AS unit_name FROM occurrences o JOIN units un ON un.id = o.unit_id
        WHERE o.user_id = ? ${includePending ? '' : "AND o.status <> 'PENDENTE'"} ORDER BY o.created_at DESC`, [userId]),
     q('SELECT * FROM penalties WHERE user_id = ? ORDER BY created_at DESC', [userId]),
-    q('SELECT * FROM contestations WHERE user_id = ? ORDER BY created_at DESC', [userId]),
+    // Revisão de quebra de caixa fica na Carteira, não junto das ocorrências.
+    q('SELECT * FROM contestations WHERE user_id = ? AND cash_break_id IS NULL ORDER BY created_at DESC', [userId]),
   ]);
   return { occurrences, penalties, contestations, strikes: occurrences.filter(isStrike).length, strikesToBlock: STRIKES_TO_BLOCK };
 }
@@ -44,10 +48,23 @@ async function history(userId, { includePending = false } = {}) {
 const protocol = () => `CT-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomBytes(2).toString('hex').toUpperCase()}`;
 
 /** Valida o item contestado (do próprio profissional, ativo/confirmado, sem contestação aberta) e cria o protocolo. */
-async function openContestation(req, { userId, penaltyId, occurrenceId, message, channel }) {
-  if (!penaltyId === !occurrenceId) fail(400, 'Informe o bloqueio ou a ocorrência contestada.');
+async function openContestation(req, { userId, penaltyId, occurrenceId, cashBreakId, message, channel }) {
+  if ([penaltyId, occurrenceId, cashBreakId].filter(Boolean).length !== 1) fail(400, 'Informe o bloqueio, a ocorrência ou a quebra de caixa.');
   const msg = text(message, 'mensagem', { min: 10, max: 1000 });
   return tx(async (tq) => {
+    if (cashBreakId) {
+      // Quebra de caixa: pedido de revisão do abatimento (não é punição).
+      const [cb] = await tq('SELECT status FROM cash_breaks WHERE id = ? AND user_id = ?', [cashBreakId, userId]);
+      if (!cb) fail(404, 'Não encontrado.');
+      if (cb.status !== 'ATIVA') fail(409, 'Esta quebra de caixa já foi cancelada.');
+      const [prev] = await tq('SELECT protocol, status FROM contestations WHERE cash_break_id = ? LIMIT 1 FOR UPDATE', [cashBreakId]);
+      if (prev?.status === 'ABERTA') fail(409, `Já existe um pedido de revisão em análise (protocolo ${prev.protocol}).`);
+      if (prev) fail(409, `Esta quebra de caixa já foi revisada (protocolo ${prev.protocol}) e a decisão é final.`);
+      const c = { id: randomUUID(), protocol: protocol(), user_id: userId, cash_break_id: cashBreakId, channel, message: msg, created_by: req.user.id };
+      await tq('INSERT INTO contestations SET ?', [c]);
+      await audit(tq, req, 'CASH_BREAK_REVIEW_OPEN', 'contestation', c.id, { after: { protocol: c.protocol, channel, cashBreakId } });
+      return c;
+    }
     if (penaltyId) {
       const [p] = await tq('SELECT status FROM penalties WHERE id = ? AND user_id = ?', [penaltyId, userId]);
       if (!p) fail(404, 'Não encontrado.');
@@ -74,7 +91,7 @@ r.get('/me/occurrences', requireRole('PROFISSIONAL'), async (req, res) => res.js
 
 // O bloqueio não é suspenso pela contestação (v4.0 §6); a análise é prioritária.
 r.post('/me/contestations', requireRole('PROFISSIONAL'), async (req, res) => {
-  const c = await openContestation(req, { userId: req.user.id, penaltyId: req.body.penaltyId, occurrenceId: req.body.occurrenceId, message: req.body.message, channel: 'APP' });
+  const c = await openContestation(req, { userId: req.user.id, penaltyId: req.body.penaltyId, occurrenceId: req.body.occurrenceId, cashBreakId: req.body.cashBreakId, message: req.body.message, channel: 'APP' });
   res.status(201).json({ protocol: c.protocol });
 });
 
@@ -94,7 +111,7 @@ r.get('/manage/occurrences', MANAGERS, async (req, res) => {
        WHERE o.status = 'PENDENTE' AND ${oWhere} ORDER BY o.created_at LIMIT 200`, oArgs),
     q(`SELECT c.*, u.name AS worker_name, p.type AS penalty_type, p.reason AS penalty_reason, p.ends_at AS penalty_ends_at, o.type AS occurrence_type, o.description AS occurrence_description
        FROM contestations c JOIN users u ON u.id = c.user_id LEFT JOIN penalties p ON p.id = c.penalty_id LEFT JOIN occurrences o ON o.id = c.occurrence_id
-       WHERE c.status = 'ABERTA' AND ${cWhere} ORDER BY c.created_at LIMIT 200`, cArgs),
+       WHERE c.status = 'ABERTA' AND c.cash_break_id IS NULL AND ${cWhere} ORDER BY c.created_at LIMIT 200`, cArgs),
     q(`SELECT p.*, u.name AS worker_name FROM penalties p JOIN users u ON u.id = p.user_id
        WHERE p.status = 'ATIVA' AND ${pWhere} ORDER BY p.created_at DESC LIMIT 200`, pArgs),
   ]);
@@ -178,10 +195,33 @@ r.post('/manage/contestations/:id/decide', MANAGERS, async (req, res) => {
   const decision = req.body.decision;
   if (!['MANTIDA', 'CANCELADA', 'AJUSTADA'].includes(decision)) fail(400, 'Decisão inválida.');
   const reason = requireReason(req.body.reason);
+  let sendBreak = null;
   const c = await tx(async (tq) => {
     const [ct] = await tq('SELECT * FROM contestations WHERE id = ? FOR UPDATE', [req.params.id]);
     if (!ct || !(await workerAllowed(req.user, ct.user_id))) fail(404, 'Não encontrado.');
     if (ct.status !== 'ABERTA') fail(409, 'Esta contestação já foi decidida.');
+    if (ct.cash_break_id) {
+      // Revisão de quebra de caixa: mantém, ajusta o valor (para menos) ou cancela o abatimento.
+      const [cb] = await tq('SELECT * FROM cash_breaks WHERE id = ? FOR UPDATE', [ct.cash_break_id]);
+      await assertUnit(req.user, cb.unit_id);
+      const current = Number(cb.final_amount ?? cb.amount);
+      let msg;
+      if (decision === 'CANCELADA') {
+        await tq("UPDATE cash_breaks SET status = 'CANCELADA', canceled_by = ?, canceled_at = ?, cancel_reason = ? WHERE id = ?", [req.user.id, new Date(), `Revisão ${ct.protocol} aceita: ${reason}`, cb.id]);
+        msg = ['Revisão aceita: quebra de caixa cancelada', `O valor de ${brl(current)} volta para o seu A receber. ${reason}`];
+      } else if (decision === 'AJUSTADA') {
+        const amount = Math.round(Number(String(req.body.newAmount ?? '').replace(',', '.')) * 100) / 100;
+        if (!(amount > 0) || amount >= current) fail(400, `Informe o novo valor, menor que ${brl(current)}.`);
+        await tq('UPDATE cash_breaks SET final_amount = ? WHERE id = ?', [amount, cb.id]);
+        msg = [`Revisão aceita em parte: quebra de caixa ajustada para ${brl(amount)}`, reason];
+      } else {
+        msg = [`Revisão analisada: quebra de caixa mantida (${brl(current)})`, reason];
+      }
+      await tq('UPDATE contestations SET status = ?, decided_by = ?, decided_at = ?, decision_reason = ? WHERE id = ?', [decision, req.user.id, new Date(), reason, ct.id]);
+      await audit(tq, req, 'CASH_BREAK_REVIEW_DECIDE', 'contestation', ct.id, { before: { status: 'ABERTA', amount: current }, after: { status: decision, newAmount: req.body.newAmount ?? null }, reason });
+      sendBreak = await notifyBreak(tq, ct.user_id, msg[0], msg[1]);
+      return null;
+    }
     const c = ctx(tq, req);
     const [p] = ct.penalty_id ? await tq('SELECT * FROM penalties WHERE id = ? FOR UPDATE', [ct.penalty_id]) : [];
     const [o] = ct.occurrence_id ? await tq('SELECT * FROM occurrences WHERE id = ? FOR UPDATE', [ct.occurrence_id]) : [];
@@ -205,7 +245,8 @@ r.post('/manage/contestations/:id/decide', MANAGERS, async (req, res) => {
     c.outbox.push([w.email, `UpService: contestação ${ct.protocol} analisada`, `Olá, ${w.name}.\n\nSua contestação ${ct.protocol} foi ${result}.\nJustificativa: ${reason}`]);
     return c;
   });
-  await flush(c);
+  if (c) await flush(c);
+  if (sendBreak) setImmediate(sendBreak);
   res.json({ ok: true });
 });
 
@@ -229,7 +270,7 @@ r.get('/manage/inbox', MANAGERS, async (req, res) => {
        WHERE d.status = 'PENDENTE' AND ${wWhere} GROUP BY d.user_id, u.name`, wArgs),
     q(`SELECT o.id, o.type, o.created_at AS at, u.name, un.name AS unit_name FROM occurrences o JOIN users u ON u.id = o.user_id JOIN units un ON un.id = o.unit_id
        WHERE o.status = 'PENDENTE' AND ${oWhere}`, oArgs),
-    q(`SELECT c.id, c.protocol, c.created_at AS at, u.name FROM contestations c JOIN users u ON u.id = c.user_id WHERE c.status = 'ABERTA' AND ${cWhere}`, cArgs),
+    q(`SELECT c.id, c.protocol, c.created_at AS at, c.user_id, c.cash_break_id, u.name FROM contestations c JOIN users u ON u.id = c.user_id WHERE c.status = 'ABERTA' AND ${cWhere}`, cArgs),
     q(`SELECT la.id, la.at, la.distance_m, w.name, j.unit_id, j.starts_at, un.name AS unit_name FROM location_alerts la
        JOIN work_sessions ws ON ws.id = la.work_session_id JOIN applications a ON a.id = ws.application_id JOIN users w ON w.id = a.user_id
        JOIN jobs j ON j.id = a.job_id JOIN units un ON un.id = j.unit_id WHERE la.acknowledged_at IS NULL AND ${uWhere}`, uArgs),
@@ -241,7 +282,9 @@ r.get('/manage/inbox', MANAGERS, async (req, res) => {
     ...closures.map((x) => ({ key: `close:${x.id}`, kind: 'CHECKOUT_PENDENTE', at: x.at, title: `Checkout pendente: ${x.name}`, detail: x.unit_name, link: activity(x) })),
     ...documents.map((x) => ({ key: `doc:${x.id}:${x.n}`, kind: 'DOCUMENTO', at: x.at, title: `${x.n} documento(s): ${x.name}`, detail: 'Aguardando análise', link: `/gestao/profissionais/${x.id}` })),
     ...occurrences.map((x) => ({ key: `occ:${x.id}`, kind: 'OCORRENCIA', at: x.at, title: `Ocorrência a confirmar: ${x.name}`, detail: `${x.unit_name} · ${x.type}`, link: '/gestao/ocorrencias' })),
-    ...contestations.map((x) => ({ key: `ct:${x.id}`, kind: 'CONTESTACAO', at: x.at, title: `Contestação ${x.protocol}: ${x.name}`, detail: 'Análise prioritária', link: '/gestao/ocorrencias' })),
+    ...contestations.map((x) => (x.cash_break_id
+      ? { key: `ct:${x.id}`, kind: 'REVISAO_QUEBRA', at: x.at, title: `Revisão de quebra de caixa ${x.protocol}: ${x.name}`, detail: 'Pedido do profissional', link: `/gestao/profissionais/${x.user_id}` }
+      : { key: `ct:${x.id}`, kind: 'CONTESTACAO', at: x.at, title: `Contestação ${x.protocol}: ${x.name}`, detail: 'Análise prioritária', link: '/gestao/ocorrencias' })),
   ].sort((a, b) => new Date(a.at) - new Date(b.at));
   res.json({ serverNow: new Date(), items });
 });

@@ -21,7 +21,7 @@ export default function ImportarEscala() {
   const [year, setYear] = useState('');
   const [escala, setEscala] = useState<Escala>();
   const [error, setError] = useState('');
-  const [defaults, setDefaults] = useState({ title: 'Repositor', startTime: '08:00', endTime: '16:00', dailyValue: '', breakCount: '1', breakMinutes: '15', publish: true });
+  const [defaults, setDefaults] = useState<{ title: string; startTime: string; endTime: string; dailyValue: string; breakCount: string; breakMinutes: string; publish: boolean; isCashier?: boolean }>({ title: 'Repositor', startTime: '08:00', endTime: '16:00', dailyValue: '', breakCount: '1', breakMinutes: '15', publish: true });
   const [preview, setPreview] = useState<Result>();
 
   function interpret(r: Cell[][], y = year) {
@@ -50,7 +50,7 @@ export default function ImportarEscala() {
   const body = (dryRun: boolean) => ({
     dryRun,
     items: escala!.items,
-    defaults: { ...defaults, dailyValue: Number(defaults.dailyValue), breakCount: Number(defaults.breakCount), breakMinutes: Number(defaults.breakMinutes) },
+    defaults: { ...defaults, isCashier: defaults.isCashier ?? /\bcaixa\b/i.test(defaults.title), dailyValue: Number(defaults.dailyValue), breakCount: Number(defaults.breakCount), breakMinutes: Number(defaults.breakMinutes) },
   });
 
   function makePreview(e: FormEvent) {
@@ -113,6 +113,7 @@ export default function ImportarEscala() {
             <label>Pausas<input type="number" min={0} max={3} value={defaults.breakCount} onChange={(e) => set('breakCount', e.target.value)} required /></label>
             <label>Minutos por pausa<input type="number" min={1} max={120} value={defaults.breakMinutes} onChange={(e) => set('breakMinutes', e.target.value)} required /></label>
           </div>
+          <label className="check"><input type="checkbox" checked={defaults.isCashier ?? /\bcaixa\b/i.test(defaults.title)} onChange={(e) => set('isCashier', e.target.checked)} /> Vagas de caixa (pode haver quebra de caixa, abatida da diária)</label>
           <label className="check"><input type="checkbox" checked={defaults.publish} onChange={(e) => set('publish', e.target.checked)} /> Publicar já para os profissionais (senão ficam como rascunho)</label>
           <div><button className="primary" disabled={busy === 'preview'}>{busy === 'preview' ? 'Conferindo…' : 'Ver prévia'}</button></div>
         </form>
