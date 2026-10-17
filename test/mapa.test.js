@@ -1,24 +1,26 @@
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { test } from 'node:test';
-import { MAP_H, MAP_W, SEG, monthPoints, pathD, sample, stepD } from '../web/src/components/mapa/caminho.ts';
+import { MAPA, MAPA_PROPORCAO, PERSONAGENS, PONTOS, fundoDoMes, imagemPersonagem } from '../web/src/components/mapa/jogo.ts';
 
-test('mapa do ano: 12 meses da esquerda para a direita, cada um no seu trecho, caminho dentro do cenário', () => {
-  const m = monthPoints();
-  assert.equal(m.length, 12);
-  m.forEach((p, i) => {
-    assert.ok(p.x > i * SEG && p.x < (i + 1) * SEG, `mês ${i + 1} no seu trecho`);
-    if (i) assert.ok(p.x > m[i - 1].x, 'ordem');
-    assert.ok(p.y > 120 && p.y < MAP_H - 120, 'bolinha longe da borda');
-  });
-  for (const p of sample()) assert.ok(p.x >= 0 && p.x <= MAP_W && p.y > 60 && p.y < MAP_H - 60, `caminho fora do cenário em ${JSON.stringify(p)}`);
-  assert.match(pathD(), /^M 0 \d+/);
-  for (let i = 0; i < 11; i++) assert.match(stepD(i, i + 1), new RegExp(`^M ${m[i].x} ${m[i].y} C `));
-  assert.throws(() => stepD(2, 5), /consecutivos/);
+const publico = (url) => new URL(`../web/public${url.split('?')[0]}`, import.meta.url);
+
+test('mapa do ano: 12 pontos dentro do panorama, sem bolinhas sobrepostas', () => {
+  assert.equal(PONTOS.length, 12);
+  for (const p of PONTOS) assert.ok(p.x > 2 && p.x < 98 && p.y > 8 && p.y < 92, `ponto fora da imagem: ${JSON.stringify(p)}`);
+  // Distância em "altura do mapa" (largura convertida pela proporção): as bolinhas têm ~12% da altura.
+  for (let i = 0; i < 12; i++) for (let j = i + 1; j < 12; j++) {
+    const dx = ((PONTOS[i].x - PONTOS[j].x) / 100) * MAPA_PROPORCAO;
+    const dy = (PONTOS[i].y - PONTOS[j].y) / 100;
+    assert.ok(Math.hypot(dx, dy) > 0.12, `meses ${i + 1} e ${j + 1} muito perto`);
+  }
+  assert.ok(Math.abs(MAPA_PROPORCAO - 2688 / 1152) < 1e-9);
 });
 
-test('mapa do ano: cada tema de mês fica no próprio arquivo (temas/mes-MM.tsx), sem mexer em arquivo comum', () => {
-  const files = readdirSync(new URL('../web/src/components/mapa/temas/', import.meta.url));
-  for (const f of files) assert.match(f, /^mes-(0[1-9]|1[0-2])\.tsx$/, `arquivo de tema fora do padrão: ${f}`);
-  assert.ok(files.includes('mes-10.tsx'), 'outubro (praia) no PR base');
+test('imagens do jogo: panorama, os 12 fundos de mês e os personagens existem no projeto', () => {
+  assert.ok(existsSync(publico(MAPA.src)) && existsSync(publico(MAPA.srcPequeno)), 'panorama');
+  for (let m = 1; m <= 12; m++) assert.ok(existsSync(publico(fundoDoMes(m))), `fundo do mês ${m}`);
+  assert.equal(PERSONAGENS.length, 5);
+  for (const p of PERSONAGENS) assert.ok(existsSync(publico(imagemPersonagem(p.id))), `personagem ${p.id}`);
+  assert.match(imagemPersonagem('inexistente'), /guerreiro/, 'personagem desconhecido usa o primeiro');
 });

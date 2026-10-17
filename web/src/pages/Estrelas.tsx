@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/icons';
 import { EstrelasMapa, Resumo, monthName, type StarsData } from '../components/Estrelas';
+import { fundoDoMes } from '../components/mapa/jogo';
 import { MapaAno } from '../components/mapa/MapaAno';
 import { Alert, EmptyState, Loading, PageHeader, Stat } from '../components/ui';
 import { api, fmtDateTime, fmtMoney } from '../lib/api';
@@ -11,9 +12,12 @@ export default function Estrelas() {
   const [data, setData] = useState<StarsData>();
   const [error, setError] = useState('');
   const [mes, setMes] = useState<string | null>(null);
+  // Mês visível no calendário: o fundo da tela é a imagem dele.
+  const [fundo, setFundo] = useState<string | null>(null);
   useEffect(() => { api<StarsData>('/me/estrelas').then(setData, (e) => setError(e.message)); }, []);
   return (
     <div className="game-full">
+      {mes && fundo && <div key={fundo} className="g-fundo-mes" style={{ backgroundImage: `url(${fundoDoMes(Number(fundo.slice(5, 7)))})` }} aria-hidden="true" />}
       <div className="game-full-body">
         {/* Sem título visível: o resumo fica no topo, com o voltar dentro dele (o título fica só para leitores de tela). */}
         <h1 className="sr-only">Minhas estrelas</h1>
@@ -24,7 +28,7 @@ export default function Estrelas() {
           </>
         ) : mes ? (
           // Calendário do mês tocado no mapa; o botão "Mapa" volta.
-          <EstrelasMapa key={mes} data={data} month={mes} back={<button type="button" className="g-tomapa" onClick={() => setMes(null)} aria-label="Voltar ao mapa do ano"><Icon name="map" size={18} /><span>Mapa</span></button>} />
+          <EstrelasMapa key={mes} data={data} month={mes} onMonth={setFundo} back={<button type="button" className="g-tomapa" onClick={() => { setMes(null); setFundo(null); }} aria-label="Voltar ao mapa do ano"><Icon name="map" size={18} /><span>Mapa</span></button>} />
         ) : (
           // Mapa do ano: um mês por fase; tocar abre o calendário daquele mês.
           <div className="g-mapa-tela">
