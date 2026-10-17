@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMe } from '../App';
 import { Icon } from '../components/icons';
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge, useAction, useDialog } from '../components/ui';
@@ -35,6 +36,11 @@ export default function Vagas() {
   // Aprovação automática exige os documentos aprovados pela UpService (uma vez só).
   const docsApproved = REQUIRED_DOCS.every((t) => me.documents.some((d) => d.type === t && d.status === 'APROVADO'));
   const [jobs, setJobs] = useState<Job[]>();
+  // ?dia=AAAA-MM-DD (vem do dia livre da tela Estrelas): mostra só as vagas daquele dia.
+  const [params] = useSearchParams();
+  const dia = /^\d{4}-\d{2}-\d{2}$/.test(params.get('dia') ?? '') ? params.get('dia')! : null;
+  const shown = jobs && dia ? jobs.filter((j) => dayKey(j.starts_at) === dia) : jobs;
+  const diaBR = dia && `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
   const [where, setWhere] = useState<{ lat: number; lng: number } | null>(null);
   const [geo, setGeo] = useState<'loading' | 'ok' | 'off'>('loading');
   const [error, setError] = useState('');
@@ -68,11 +74,12 @@ export default function Vagas() {
       {geo === 'off' && <Alert kind="info">Permita a localização no navegador para ver primeiro as lojas mais próximas. Ela só é usada para ordenar a lista.</Alert>}
       {error && <Alert kind="danger">{error}</Alert>}
       {!docsApproved && <Alert kind="warning">Seus documentos estão em análise pela UP Service. Assim que forem aprovados, é só escolher a vaga: a confirmação é na hora.</Alert>}
-      {!jobs ? <Loading text={geo === 'loading' ? 'Buscando sua localização…' : 'Carregando vagas…'} /> : jobs.length === 0 ? (
-        <div className="card"><EmptyState icon="briefcase" title="Nenhuma vaga aberta no momento" text="Novas vagas aparecem aqui assim que forem publicadas." /></div>
+      {dia && <div className="day-filter"><Icon name="calendar" size={16} />Vagas de {diaBR} · <Link className="link" to="/vagas">ver todas</Link></div>}
+      {!shown ? <Loading text={geo === 'loading' ? 'Buscando sua localização…' : 'Carregando vagas…'} /> : shown.length === 0 ? (
+        <div className="card"><EmptyState icon="briefcase" title={dia ? `Nenhuma vaga aberta em ${diaBR}` : 'Nenhuma vaga aberta no momento'} text={dia ? <>Novas vagas aparecem assim que forem publicadas. <Link className="link" to="/vagas">Ver todas as vagas</Link></> : 'Novas vagas aparecem aqui assim que forem publicadas.'} /></div>
       ) : (
         <div className="grid-2">
-          {jobs.map((j) => (
+          {shown.map((j) => (
             <article key={j.id} className="card stack">
               <div className="row between">
                 <h2>{j.title}{whenBadge(j.starts_at, now) && <span className={`when-badge${whenBadge(j.starts_at, now) === 'Hoje' ? ' today' : ''}`}>{whenBadge(j.starts_at, now)}</span>}</h2>

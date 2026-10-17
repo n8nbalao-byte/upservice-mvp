@@ -35,6 +35,11 @@ test('mês = nível: todas as fases (dias), máximo de 3 estrelas por dia e bôn
   assert.equal(m.done, false);
   assert.equal(buildMonth('2026-09', [], [], '2026-10-15').done, true);
   assert.equal(buildMonth('2026-11', []).days.length, 30);
+  // Situação de cada dia: diária feita/agendada; sem diária, livre (cadeado) de hoje em diante e "passou" antes.
+  const st = (day) => m.days[day - 1].status;
+  assert.deepEqual([st(3), st(7), st(25), st(14), st(15), st(16)], ['feita', 'feita', 'agendada', 'passou', 'livre', 'livre']);
+  const hoje = buildMonth('2026-10', [{ day: 15, stars: null, state: 'hoje' }, { day: 14, stars: null, state: 'em_analise' }], [], '2026-10-15');
+  assert.deepEqual([hoje.days[14].status, hoje.days[13].status], ['hoje', 'em_analise']);
 });
 
 test('bônus do mês: soma exata do valor definido, valores crescentes, fora do dia do sorteio', () => {

@@ -524,6 +524,14 @@ test('relatório: indicadores batem com o banco, horas gravadas no fechamento, e
   const mine = (await call(g2, 'GET', `/api/manage/reports?from=${from}&to=${to}`)).body;
   assert.ok(mine.byUnit.every((u) => u.unitId === s.unitB), 'gestor vê só as lojas dele');
   assert.equal((await call(s.admin, 'GET', `/api/manage/reports?from=${day(-40)}&to=${to}`)).status, 400, 'máximo de 31 dias');
+  // Valores de diária só para o administrador: o gestor recebe o relatório sem R$ (total, por loja e por linha).
+  assert.equal(rep.body.money, true);
+  assert.equal(typeof ind.value, 'number');
+  const gest = (await call(s.gestor, 'GET', `/api/manage/reports?from=${from}&to=${to}`)).body;
+  assert.equal(gest.money, false);
+  assert.ok(!('value' in gest.indicators) && gest.byUnit.every((u) => !('value' in u)) && gest.rows.every((x) => !('daily_value' in x)), 'gestor sem valores');
+  const csv = await (await fetch(`${base}/api/manage/reports/export.csv?from=${from}&to=${to}`, { headers: { cookie: s.gestor } })).text();
+  assert.ok(!csv.includes('valor_diaria'), 'CSV do gestor sem a coluna de valor');
 });
 
 test('CSV: BOM, separador, fórmula neutralizada, auditoria e escopo', { skip }, async () => {
@@ -1214,8 +1222,10 @@ test('estrelas: profissional só vê com o interruptor ligado; principal liga; g
   const next = `${year}-12`;
   assert.equal((await call(s.w1, 'GET', `/api/manage/bonus?month=${next}`)).status, 403);
   assert.equal((await call(s.w1, 'PUT', `/api/manage/bonus/${next}`, { total: 100 })).status, 403);
-  assert.equal((await call(s.gestor, 'PUT', `/api/manage/bonus/${next}`, { total: -1 })).status, 400);
-  const set = await call(s.gestor, 'PUT', `/api/manage/bonus/${next}`, { total: 100 });
+  assert.equal((await call(s.gestor, 'GET', `/api/manage/bonus?month=${next}`)).status, 403, 'gestor não vê o bônus do mês');
+  assert.equal((await call(s.gestor, 'PUT', `/api/manage/bonus/${next}`, { total: 100 })).status, 403, 'gestor não define o bônus do mês');
+  assert.equal((await call(s.admin, 'PUT', `/api/manage/bonus/${next}`, { total: -1 })).status, 400);
+  const set = await call(s.admin, 'PUT', `/api/manage/bonus/${next}`, { total: 100 });
   assert.equal(set.status, 200);
   assert.equal(set.body.days.reduce((t, b) => t + b.value, 0), 100);
   const view = await call(s.admin, 'GET', `/api/manage/bonus?month=${next}`);

@@ -59,7 +59,7 @@ async function reportRows(f, limit) {
   return rows;
 }
 
-async function buildReport(f) {
+async function buildReport(f, money) {
   const [where, args] = range(f);
   const rows = await reportRows(f, MAX_ROWS);
   const [[jobs], [apps], sources, exceptions, occurrences, [alerts]] = await Promise.all([
@@ -92,7 +92,7 @@ async function buildReport(f) {
     units.get(row.unit_id).rows.push(row);
   }
 
-  return {
+  const out = {
     period: { from: f.from, to: f.to, unitId: f.unitId },
     indicators: {
       jobs: Number(jobs.jobs), positions: Number(jobs.positions), applications: Number(apps.n), ...sum(rows),
@@ -104,10 +104,21 @@ async function buildReport(f) {
     truncated: rows.length > SCREEN_ROWS,
     totalRows: rows.length,
   };
+  if (money) return { ...out, money };
+  // Gestor não vê valores de diária: sai o total, o valor por loja e o valor de cada linha.
+  delete out.indicators.value;
+  return {
+    ...out, money,
+    byUnit: out.byUnit.map(({ value, ...u }) => u),
+    rows: out.rows.map(({ daily_value, ...x }) => x),
+  };
 }
 
+/** Valores de diária (R$) no relatório: só o administrador. */
+const seesMoney = (user) => user.role === 'ADMINISTRADOR';
+
 r.get('/manage/reports', MANAGERS, async (req, res) => {
-  res.json(await buildReport(await filters(req)));
+  res.json(await buildReport(await filters(req), seesMoney(req.user)));
 });
 
 // Formatadores criados uma vez: toLocale*String com fuso cria um novo a cada chamada e deixava o CSV ~10x mais lento.
@@ -142,7 +153,8 @@ const CSV_COLUMNS = [
 r.get('/manage/reports/export.csv', MANAGERS, async (req, res) => {
   const f = await filters(req);
   const rows = await reportRows(f, MAX_ROWS);
-  const lines = [CSV_COLUMNS.map(([name]) => csvCell(name)).join(';'), ...rows.map((x) => CSV_COLUMNS.map(([, get]) => csvCell(get(x))).join(';'))];
+  const cols = seesMoney(req.user) ? CSV_COLUMNS : CSV_COLUMNS.filter(([name]) => name !== 'valor_diaria');
+  const lines = [cols.map(([name]) => csvCell(name)).join(';'), ...rows.map((x) => cols.map(([, get]) => csvCell(get(x))).join(';'))];
   await audit(q, req, 'REPORT_EXPORT', 'report', null, { after: { from: f.from, to: f.to, unitId: f.unitId, rows: rows.length } });
   res.set({
     'Content-Type': 'text/csv; charset=utf-8',
