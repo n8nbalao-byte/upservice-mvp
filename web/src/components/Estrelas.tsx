@@ -265,26 +265,56 @@ function Celebrate({ title, n, text, onDetails, onClose }: { title: string; n: n
   );
 }
 
-/** Verso do cartão: como valem as estrelas, os bônus e o sorteio. */
+/** Verso do cartão: o jogo inteiro explicado — estrelas, o que cada dia do calendário quer dizer (inclusive o cadeado
+ *  e como desbloquear), bônus em dinheiro, brindes sorteados, o sorteio do fim do ano e o mapa. */
 function Rules({ sorteio }: { sorteio: Sorteio | null }) {
   return (
     <div className="g-rules">
       <h2>Regras</h2>
-      <p>Cada mês é um nível. Cada dia do mês é uma fase e vale até 3 estrelas.</p>
+      <p>Cada <b>mês é um nível</b> e cada <b>dia do mês é uma fase</b>. Cada dia em que você trabalha vale até <b>3 estrelas</b>.</p>
+
+      <h3><Icon name="star" size={18} /> Quanto vale cada dia</h3>
       <ul className="g-legend-list">
         <li><Stars n={3} /><span><b>Tudo certinho</b>: check-in, pausa e checkout pelo app, dentro da loja.</span></li>
         <li><Stars n={2} /><span><b>Uma mancadinha</b>: precisou de exceção ou a pausa passou do tempo.</span></li>
         <li><Stars n={1} /><span><b>Mancada maior</b>: checkout feito pelo gestor ou ocorrência registrada.</span></li>
         <li><Stars n={0} /><span><b>Faltou</b>: nenhuma estrela.</span></li>
       </ul>
-      <h3><Icon name="gift" size={18} /> Bônus</h3>
-      <p>Os dias com presente têm bônus em dinheiro. O valor só aparece no próprio dia. Faça 3 estrelas nesse dia e o bônus entra no seu A receber.</p>
+
+      <h3><Icon name="calendar" size={18} /> Os dias do calendário</h3>
+      <ul className="g-legend-list g-rule-days">
+        <li><span className="g-rule-ico feita">15</span><span><b>Azul com estrelas</b>: dia trabalhado; as estrelas mostram como foi. Toque para ver o resumo e como melhorar.</span></li>
+        <li><span className="g-rule-ico agendada"><Icon name="calendar" size={14} /></span><span><b>Com calendário</b>: você tem diária marcada nesse dia. As estrelas aparecem depois que a diária termina.</span></li>
+        <li><span className="g-rule-ico livre"><Icon name="lock" size={14} /></span><span><b>Com cadeado (bloqueado)</b>: você ainda não tem diária nesse dia, então ele não vale estrelas.</span></li>
+        <li><span className="g-rule-ico passou">8</span><span><b>Apagado</b>: o dia já passou e você não trabalhou nele. Não dá mais para ganhar estrelas nele.</span></li>
+      </ul>
+
+      <h3><Icon name="lock" size={18} /> Como desbloquear um dia</h3>
+      <p>Toque no dia com cadeado e em <b>"Procurar uma vaga neste dia"</b>: aparecem as vagas daquele dia. Quando você pega uma vaga, o cadeado sai e o dia fica agendado. Trabalhe certinho e ganhe as 3 estrelas. Se desistir da vaga, o dia volta a ficar bloqueado.</p>
+
+      <h3><Icon name="gift" size={18} /> Bônus em dinheiro</h3>
+      <p>Os dias com <b>presente amarelo</b> têm bônus em dinheiro. O valor é surpresa e só aparece no próprio dia. Faça <b>3 estrelas nesse dia</b> e o bônus entra no seu <b>A receber</b>: o presente fica verde.</p>
+
+      <h3><Icon name="gift" size={18} /> Brindes sorteados</h3>
+      <p>Em alguns dias a UP Service sorteia um <b>brinde</b> (boné, camiseta, celular…), numa loja ou em todas. Esses dias têm o <b>presente roxo</b>, e o prêmio aparece desde o cadastro.</p>
+      <ul className="g-rule-steps">
+        <li>Concorre quem fizer <b>3 estrelas naquele dia</b> (na loja do brinde, quando for de uma loja só).</li>
+        <li>O sorteio é às <b>9h do dia seguinte</b>.</li>
+        <li>Todo mundo vê o resultado no calendário. Quem ganha é avisado no app e pelo <b>WhatsApp</b>, e a UP Service combina a entrega.</li>
+      </ul>
+
       {sorteio && (
         <>
           <h3><Icon name="tv" size={18} /> {sorteio.label ?? 'Sorteio'}</h3>
-          <p>No dia {dayMonth(sorteio.day)}. Concorre quem tiver {sorteio.need} dias com 3 estrelas no ano e fizer 3 estrelas no dia do sorteio. Você tem {sorteio.threeStarDays} de {sorteio.need}.</p>
+          <p>No dia {dayMonth(sorteio.day)}. Concorre quem tiver <b>{sorteio.need} dias com 3 estrelas no ano</b> e fizer 3 estrelas no dia do sorteio. Você tem <b>{sorteio.threeStarDays} de {sorteio.need}</b>.</p>
         </>
       )}
+
+      <h3><Icon name="map" size={18} /> Mapa do ano</h3>
+      <p>Cada ponto do mapa é um mês, com a sua nota em estrelas. O seu personagem avança um mês a cada mês. Toque num mês para abrir o calendário dele.</p>
+
+      <h3><Icon name="check" size={18} /> Para fazer 3 estrelas</h3>
+      <p>{HOW_TO} Volte da pausa no horário e não esqueça o checkout. Se não puder ir, desista pelo app (ou pelo WhatsApp) até 2 horas antes.</p>
     </div>
   );
 }
