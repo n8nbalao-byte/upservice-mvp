@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
+import { PostadorConfig } from './PostadorConfig';
 import { Alert, Loading, StatusBadge, useAction } from './ui';
 
-type Status = { configured: boolean; source?: 'env' | 'db'; url?: string; instance?: string; hasKey?: boolean; state?: string; message?: string };
+type Status = { configured: boolean; source?: 'env' | 'db'; url?: string; instance?: string; hasKey?: boolean; state?: string; message?: string; number?: string | null };
 const STATE: Record<string, [string, 'success' | 'warning' | 'danger' | 'neutral']> = {
   CONECTADO: ['Conectado', 'success'],
   CONECTANDO: ['Conectando…', 'warning'],
@@ -11,13 +12,14 @@ const STATE: Record<string, [string, 'success' | 'warning' | 'danger' | 'neutral
   ERRO: ['Sem comunicação', 'danger'],
   DESCONHECIDO: ['Desconhecido', 'neutral'],
 };
-const OFFICIAL = '11926746277';
+export const fmtPhone = (d: string) => d.replace(/^(d{2})(d{4,5})(d{4})$/, '($1) $2-$3');
 
 /** Configurações → WhatsApp: Evolution API, conexão por QR Code ou por código de pareamento, teste. */
 export function WhatsappConfig() {
   const { busy, run } = useAction();
   const [st, setSt] = useState<Status>();
   const [pair, setPair] = useState<{ qr?: string | null; pairingCode?: string | null } | null>(null);
+  const [codePhone, setCodePhone] = useState('');
   const [bot, setBot] = useState<boolean>();
   const load = () => api<Status>('/admin/whatsapp').then(setSt, () => setSt({ configured: false }));
   useEffect(() => { load(); api<{ enabled: boolean }>('/admin/whatsapp/bot').then((b) => setBot(b.enabled), () => {}); }, []);
@@ -51,10 +53,10 @@ export function WhatsappConfig() {
     <div className="stack">
       <div className="card stack">
         <div className="row between">
-          <h2>WhatsApp oficial · (11) 92674-6277</h2>
+          <h2>WhatsApp da UP Service{st.number ? ` · ${fmtPhone(st.number)}` : ''}</h2>
           <StatusBadge tone={tone}>{st.configured ? label : 'Não configurado'}</StatusBadge>
         </div>
-        <p className="muted">Usado para enviar o código de acesso por WhatsApp e avisos. A conexão é feita pela Evolution API, lendo o QR Code ou digitando um código no celular do número oficial.</p>
+        <p className="muted">Usado para enviar o código de acesso por WhatsApp e avisos. A conexão é feita pela Evolution API, lendo o QR Code ou digitando um código no celular do número que vai ser usado. Para trocar de número: Desconectar e conectar o novo.</p>
         {st.message && <Alert kind="warning">{st.message}</Alert>}
         {st.url?.startsWith('http://') && <Alert kind="warning">A Evolution está num endereço sem HTTPS: a chave e o texto das mensagens (inclusive códigos de acesso) trafegam sem criptografia. Prefira um endereço https://.</Alert>}
 
@@ -66,8 +68,11 @@ export function WhatsappConfig() {
           <div className="stack">
             <div className="row wrap">
               <button className="primary" disabled={!!busy} onClick={() => connect('qr')}>{busy === 'qr' ? 'Gerando…' : 'Conectar com QR Code'}</button>
-              <button disabled={!!busy} onClick={() => connect('code', OFFICIAL)}>{busy === 'code' ? 'Gerando…' : 'Conectar com código no celular'}</button>
             </div>
+            <form className="row wrap" onSubmit={(e) => { e.preventDefault(); connect('code', codePhone); }}>
+              <label style={{ flex: '1 1 220px' }}>Ou conectar com código: celular do número<input type="tel" inputMode="tel" placeholder="(11) 99999-0000" value={codePhone} onChange={(e) => setCodePhone(e.target.value)} required /></label>
+              <button disabled={!!busy}>{busy === 'code' ? 'Gerando…' : 'Gerar código'}</button>
+            </form>
             {pair?.qr && (
               <div className="stack" style={{ alignItems: 'flex-start' }}>
                 <img src={pair.qr} alt="QR Code para conectar o WhatsApp" width={260} height={260} style={{ border: '1px solid var(--line)', borderRadius: 12 }} />
@@ -102,6 +107,8 @@ export function WhatsappConfig() {
           <div><button className={bot ? 'danger' : 'primary'} disabled={busy === 'bot'} onClick={() => toggleBot(!bot)}>{busy === 'bot' ? 'Salvando…' : bot ? 'Desligar o atendimento' : 'Ligar o atendimento'}</button></div>
         </div>
       )}
+
+      {st.state === 'CONECTADO' && <PostadorConfig />}
 
       <form className="card form" onSubmit={save}>
         <h2>Evolution API</h2>

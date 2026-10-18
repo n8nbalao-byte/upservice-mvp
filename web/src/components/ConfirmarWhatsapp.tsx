@@ -41,7 +41,7 @@ export function ConfirmarWhatsapp({ initial = '', onDone, onSent }: { initial?: 
         </form>
       ) : (
         <form className="form" onSubmit={verify}>
-          <Alert kind="info">O código chega pelo WhatsApp da UP Service, (11) 92674-6277, no número {phone}. Pode levar alguns segundos.</Alert>
+          <Alert kind="info">O código chega pelo WhatsApp da UP Service no número {phone}. Pode levar alguns segundos.</Alert>
           <label>Código de 6 dígitos<input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required autoFocus /></label>
           <button className="primary big" disabled={busy}>{busy ? 'Conferindo…' : 'Confirmar'}</button>
           <div className="row wrap">

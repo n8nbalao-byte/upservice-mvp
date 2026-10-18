@@ -24,7 +24,7 @@ export async function saveWhatsappConfig({ url, key, instance }, userId) {
 }
 
 /** Chamada à Evolution. Erros viram mensagens claras; nunca devolve a chave. */
-export async function evolution(path, { method = 'GET', body, cfg } = {}) {
+export async function evolution(path, { method = 'GET', body, cfg, timeout = 15000 } = {}) {
   cfg ??= await whatsappConfig();
   if (!cfg) fail(503, 'WhatsApp ainda não configurado. Veja Configurações.');
   let resp;
@@ -33,7 +33,7 @@ export async function evolution(path, { method = 'GET', body, cfg } = {}) {
       method,
       headers: { apikey: cfg.key, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeout),
     });
   } catch (e) {
     fail(502, `Não foi possível falar com a Evolution API (${e.name === 'TimeoutError' ? 'tempo esgotado' : 'sem conexão'}).`);
@@ -50,6 +50,41 @@ const toNumber = (phone) => { const d = String(phone).replace(/\D/g, ''); return
 /** Envia texto para um celular brasileiro (DDD + número). `delay` (ms): mostra "digitando…" antes (atendimento). */
 export async function sendWhatsapp(phone, text, { delay } = {}) {
   await evolution('/message/sendText/{instance}', { method: 'POST', body: { number: toNumber(phone), text, ...(delay ? { delay } : {}) } });
+}
+
+/** Texto para um grupo (id "…@g.us"); o número da UP precisa estar no grupo. */
+export async function sendToGroup(groupId, text) {
+  if (!/^[\d-]+@g\.us$/.test(String(groupId))) fail(400, 'Grupo do WhatsApp inválido.');
+  await evolution('/message/sendText/{instance}', { method: 'POST', body: { number: groupId, text } });
+}
+
+/** Grupos em que o número conectado está (a Evolution pode levar uns 20 s para listar). */
+export async function listGroups() {
+  const list = await evolution('/group/fetchAllGroups/{instance}?getParticipants=false', { timeout: 90000 });
+  return (Array.isArray(list) ? list : []).map((g) => ({ id: g.id, subject: g.subject ?? '', size: g.size ?? null, announce: !!g.announce }))
+    .filter((g) => /@g\.us$/.test(g.id)).sort((a, b) => a.subject.localeCompare(b.subject, 'pt-BR'));
+}
+
+// ponytail: cópia de 10 min do número conectado (muda só quando troca o número na Evolution).
+let numero = { at: 0, value: null };
+/** Troca de número (conectar/desconectar): a próxima leitura busca de novo. */
+export const forgetNumber = () => { numero = { at: 0, value: null }; };
+/** Número conectado na instância (DDD + número, sem o 55), lido da Evolution; null se não souber. */
+export async function connectedNumber() {
+  if (Date.now() - numero.at < 10 * 60e3) return numero.value;
+  let value = null;
+  try {
+    const cfg = await whatsappConfig();
+    if (cfg) {
+      const data = await evolution(`/instance/fetchInstances?instanceName=${encodeURIComponent(cfg.instance)}`, { cfg });
+      const inst = Array.isArray(data) ? data[0] : data;
+      const jid = inst?.ownerJid ?? inst?.instance?.owner ?? inst?.owner ?? '';
+      const d = String(jid).split('@')[0].replace(/\D/g, '');
+      value = /^55\d{10,11}$/.test(d) ? d.slice(2) : null;
+    }
+  } catch { /* sem número: as telas e mensagens só não mostram */ }
+  numero = { at: Date.now(), value };
+  return value;
 }
 
 /** Pergunta com opções, como enquete de escolha única: o profissional toca numa opção. As opções vão numeradas

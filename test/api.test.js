@@ -1547,7 +1547,7 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
     const starts = new Date(`${amanha}T10:00:00-03:00`);
     const job = (await call(s.gestor, 'POST', '/api/manage/jobs', { unitId: s.unitA, title: 'Repositor do bot', startsAt: starts, endsAt: new Date(starts.getTime() + 6 * 3600e3), positions: 1, dailyValue: 130, breakCount: 1, breakMinutes: 15, publish: true })).body.id;
 
-    const settle = async () => { let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 120)); } };
+    const settle = async () => { let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 350)); } };
     const msg = (jid, message) => ({ event: 'messages.upsert', instance: 'upservice', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message } });
     const say = async (text, jid = '5511977770123@s.whatsapp.net') => { assert.equal((await post(msg(jid, { conversation: text }))).status, 200); await settle(); };
     const vote = async (name) => { await post({ event: 'messages.update', data: { keyId: `poll-${polls}`, remoteJid: '5511977770123@s.whatsapp.net', fromMe: false, pollUpdates: [{ vote: { selectedOptions: [name] } }] } }); await settle(); };
@@ -1651,7 +1651,7 @@ test('WhatsApp (bot): lembrete da véspera com Vou/Não vou, check-in abrindo, q
     const me = (await userByEmail('bot2@test.dev')).id;
     await q('UPDATE users SET whatsapp = ?, whatsapp_verified_at = ? WHERE id = ?', ['11977770456', new Date(), me]);
     const jid = '5511977770456@s.whatsapp.net';
-    const settle = async () => { let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 120)); } };
+    const settle = async () => { let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 350)); } };
     const say = async (text) => { await post({ event: 'messages.upsert', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message: { conversation: text } } }); await settle(); };
     const poll = () => sent.filter((x) => x.url === '/message/sendPoll/upservice').at(-1).body;
     const texts = () => sent.filter((x) => x.url === '/message/sendText/upservice' && x.body.number === '5511977770456').map((x) => x.body.text);
@@ -1729,6 +1729,74 @@ test('WhatsApp (bot): lembrete da véspera com Vou/Não vou, check-in abrindo, q
     await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: false });
   } finally {
     for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
+    mock.close();
+  }
+});
+
+test('postador: grupo de cada loja (sugestão pelo nome), resumo agrupado depois de 3 min, uma vez só, sem despejar as antigas', { skip }, async () => {
+  const http = await import('node:http');
+  const { postarVagas, chaveNome } = await import('../server/postador.js');
+  const { forgetNumber } = await import('../server/whatsapp.js');
+  assert.equal(chaveNome('UP- STO ANDRÉ ESTADO'), chaveNome('Atacadão Santo André Estado'));
+  assert.equal(chaveNome('UP-GRU BOM SUCESSO'), 'guarulhosbomsucesso');
+  const sent = [];
+  const GRUPO_A = '120363000000000001@g.us';
+  const mock = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (c) => { b += c; });
+    req.on('end', () => {
+      sent.push({ url: req.url, body: JSON.parse(b || '{}') });
+      const out = req.url.startsWith('/group/fetchAllGroups') ? [{ id: GRUPO_A, subject: 'UP- LOJA A', size: 3 }, { id: '120363000000000009@g.us', subject: 'Repositores 1', size: 4, announce: true }]
+        : req.url.startsWith('/instance/fetchInstances') ? [{ ownerJid: '5511988887777@s.whatsapp.net' }] : {};
+      res.end(JSON.stringify(out));
+    });
+  }).listen(0);
+  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  forgetNumber();
+  const grupoMsgs = () => sent.filter((x) => x.url === '/message/sendText/upservice' && x.body.number === GRUPO_A);
+  try {
+    assert.equal((await call(s.gestor, 'GET', '/api/admin/postador')).status, 403, 'só o administrador principal');
+    const g = (await call(s.admin, 'GET', '/api/admin/postador/grupos')).body;
+    assert.equal(g.groups.length, 2);
+    assert.equal(g.sugestoes[s.unitA], GRUPO_A, 'Loja A → "UP- LOJA A"');
+    assert.equal((await call(s.admin, 'PUT', `/api/admin/postador/unidades/${s.unitA}`, { group: '5511999990000@s.whatsapp.net' })).status, 400, 'só grupo');
+    assert.equal((await call(s.admin, 'PUT', `/api/admin/postador/unidades/${s.unitA}`, { group: GRUPO_A, groupName: 'UP- LOJA A' })).status, 200);
+
+    const novaVaga = async (unitId, title, dias, cookie = s.admin) => {
+      const starts = new Date(Date.now() + dias * 86400e3);
+      return (await call(cookie, 'POST', '/api/manage/jobs', { unitId, title, startsAt: starts, endsAt: new Date(starts.getTime() + 6 * 3600e3), positions: 2, dailyValue: 125, breakCount: 1, breakMinutes: 15, publish: true })).body.id;
+    };
+    // Aberta antes de ligar: não vai sozinha (só no "Postar agora").
+    await novaVaga(s.unitA, 'Vaga antiga do postador', 3);
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/postador', { enabled: true })).status, 200);
+    await novaVaga(s.unitA, 'Repositor do postador', 2);
+    await novaVaga(s.unitA, 'Conferente do postador', 4);
+    await novaVaga(s.unitB, 'Vaga da loja sem grupo', 2);
+
+    const now = new Date();
+    await postarVagas(now);
+    assert.equal(grupoMsgs().length, 0, 'espera 3 min sem vaga nova para juntar o resumo');
+    await postarVagas(new Date(now.getTime() + 4 * 60e3));
+    assert.equal(grupoMsgs().length, 1, 'uma mensagem por grupo');
+    const msg = grupoMsgs()[0].body.text;
+    assert.match(msg, /Vagas abertas · Loja A/);
+    assert.match(msg, /Repositor do postador · R\$\s?125,00 · 2 vagas/);
+    assert.match(msg, /Conferente do postador/);
+    assert.doesNotMatch(msg, /Vaga antiga do postador/);
+    assert.match(msg, /wa\.me\/5511988887777/);
+    await postarVagas(new Date(now.getTime() + 8 * 60e3));
+    assert.equal(grupoMsgs().length, 1, 'não posta de novo');
+    assert.equal((await q("SELECT COUNT(*) AS n FROM vagas_postagens WHERE unit_id = ? AND status = 'PENDENTE'", [s.unitB]))[0].n, 1, 'loja sem grupo fica na fila');
+
+    // "Postar agora": todas as abertas com posição livre, inclusive a antiga.
+    const agora = await call(s.admin, 'POST', `/api/admin/postador/unidades/${s.unitA}/postar`, {});
+    assert.ok(agora.body.postadas >= 3);
+    assert.match(grupoMsgs().at(-1).body.text, /Vaga antiga do postador/);
+    assert.equal((await call(s.admin, 'POST', `/api/admin/postador/unidades/${s.unitB}/postar`, {})).status, 409, 'loja sem grupo');
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/postador', { enabled: false })).status, 200);
+  } finally {
+    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
+    forgetNumber();
     mock.close();
   }
 });
