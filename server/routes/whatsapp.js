@@ -4,7 +4,7 @@ import { audit } from '../audit.js';
 import { requireOwner } from '../auth.js';
 import { q } from '../db.js';
 import { fail } from '../http.js';
-import { evolution, saveWhatsappConfig, sendWhatsapp, whatsappConfig } from '../whatsapp.js';
+import { connectedNumber, evolution, forgetNumber, saveWhatsappConfig, sendWhatsapp, whatsappConfig } from '../whatsapp.js';
 
 const r = Router();
 const STATES = { open: 'CONECTADO', connecting: 'CONECTANDO', close: 'DESCONECTADO' };
@@ -21,6 +21,7 @@ r.get('/admin/whatsapp', requireOwner, async (req, res) => {
   try {
     const s = await evolution('/instance/connectionState/{instance}', { cfg });
     out.state = STATES[s?.instance?.state] ?? 'DESCONHECIDO';
+    if (out.state === 'CONECTADO') out.number = await connectedNumber();
   } catch (e) {
     out.state = e.status === 404 ? 'SEM_INSTANCIA' : 'ERRO';
     out.message = e.message;
@@ -53,6 +54,7 @@ r.post('/admin/whatsapp/create', requireOwner, async (req, res) => {
 });
 
 r.post('/admin/whatsapp/connect', requireOwner, async (req, res) => {
+  forgetNumber();
   const number = req.body.method === 'code' ? phoneDigits(req.body.phone) : null;
   const data = await evolution(`/instance/connect/{instance}${number ? `?number=${number}` : ''}`);
   const qr = typeof data?.base64 === 'string' && data.base64.startsWith('data:image/png;base64,') ? data.base64 : null;
@@ -68,6 +70,7 @@ r.post('/admin/whatsapp/connect', requireOwner, async (req, res) => {
 
 r.post('/admin/whatsapp/logout', requireOwner, async (req, res) => {
   await evolution('/instance/logout/{instance}', { method: 'DELETE' });
+  forgetNumber();
   await audit(q, req, 'WHATSAPP_LOGOUT', 'app_settings', 'evolution');
   res.json({ ok: true });
 });

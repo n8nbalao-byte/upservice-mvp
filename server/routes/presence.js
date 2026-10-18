@@ -14,6 +14,7 @@ import {
 import { decodeBase64, removeFile, saveFile, sniff } from '../storage.js';
 import { sortearBrindes } from './brindes.js';
 import { avisar, lembretes } from '../bot.js';
+import { postarVagas } from '../postador.js';
 
 const APP_URL = () => (process.env.APP_URL || 'https://app.upserviceintermed.com').replace(/\/+$/, '');
 
@@ -467,6 +468,9 @@ export async function sweep() {
 
   // 6. Lembretes pelo WhatsApp: véspera da diária (Vou / Não vou), check-in abrindo e pausa acabando.
   await lembretes(now);
+
+  // 7. Postador: vagas abertas novas vão para o grupo de WhatsApp da loja, num resumo.
+  await postarVagas(now);
 }
 
 export default r;
