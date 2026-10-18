@@ -957,6 +957,14 @@ img.avatar { object-fit: cover; }
 .g-legend-list .g-stars { flex: none; }
 .g-legend-list .g-stars svg { width: 20px; height: 20px; fill: #c9b48a; stroke: #1d2b3a; stroke-width: 2; }
 .g-legend-list .g-stars .on svg { fill: #ffe14a; }
+/* Regras: quadradinhos de exemplo iguais aos do calendário (feito, agendado, bloqueado, apagado). */
+.g-rule-days li { align-items: flex-start; }
+.g-rule-ico { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; border: 2px solid #f0d9ae; background: #fdf0d5; color: #5a3210; font-family: 'Luckiest Guy', 'Poppins', sans-serif; font-size: 1rem; }
+.g-rule-ico.feita { background: linear-gradient(170deg, #8cc4ee, #5596d6 55%, #3f7cc0); border-color: #1d2b3a; color: #fff; -webkit-text-stroke: 3px #1d2b3a; paint-order: stroke fill; }
+.g-rule-ico.agendada svg { padding: 3px; border-radius: 50%; background: #2f6db5; color: #fff; box-sizing: content-box; }
+.g-rule-ico.livre { background: #f2dfba; border-color: #e4c48c; color: #7a4a1a; }
+.g-rule-ico.passou { background: #f6e6c8; border-color: #ecd6ae; color: rgba(90, 50, 16, 0.45); }
+.g-rule-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
 @media (prefers-reduced-motion: reduce) { .g-flip-inner { transition: none; } }
 
 /* ---------- Carteira: valor a receber, composição, recebidos com comprovante e pagamento por Pix ---------- */
