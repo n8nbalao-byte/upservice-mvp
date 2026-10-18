@@ -740,56 +740,7 @@ img.avatar { object-fit: cover; }
 .cal-agenda-head > span { display: grid; gap: 2px; }
 .cal-agenda-head small { color: var(--muted); font-size: 0.8rem; font-weight: 500; }
 
-/* ---------- Perfil de cores 2: inspirado no Atacadão (verde, laranja e branco; sem logotipo nem marca) ----------
-   Escolhido pelo administrador principal (Configurações). Só tokens: todas as telas seguem sozinhas.
-   Contraste AA conferido: branco no laranja #c2410c 5,18:1; branco no verde #0e7a3c 5,43:1; o laranja vivo
-   #f26a21 aparece só como faixa decorativa, sem texto. O seletor sem :root também vale para as prévias. */
-/* Perfil 1 declarado também por atributo: as prévias (e qualquer trecho marcado) não herdam o tema ativo. */
-[data-theme-brand='padrao'] {
-  --bg: #f3f6f7;
-  --nav: #e9ecef;
-  --nav-deep: #c3c8cf;
-  --nav-2: rgba(0, 0, 0, 0.06);
-  --nav-active: #2f3640;
-  --nav-ink: #23272e;
-  --nav-line: rgba(0, 0, 0, 0.1);
-  --graphite: #2f3640;
-  --graphite-2: #4a5360;
-  --accent: #2f3640;
-  --accent-hover: #1f242b;
-  --accent-soft: #eceef1;
-  --accent-dark: #2f3640;
-  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
-}
-:root[data-theme-brand='atacadao'], [data-theme-brand='atacadao'] {
-  --bg: #f6f6f3;
-  --nav: #0e7a3c;
-  --nav-deep: #0a5f2e;
-  --nav-2: rgba(255, 255, 255, 0.12);
-  --nav-active: #c2410c;
-  --nav-ink: #ffffff;
-  --nav-line: rgba(255, 255, 255, 0.2);
-  --graphite: #0a5f2e;
-  --graphite-2: #0e7a3c;
-  --accent: #c2410c;
-  --accent-hover: #9a3412;
-  --accent-soft: #fff1e6;
-  --accent-dark: #9a3412;
-  --brand-stripe: #f26a21;
-  font-family: Lato, Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
-}
-[data-theme-brand='atacadao'] .sidebar { border-right-color: var(--nav-deep); }
-[data-theme-brand='atacadao'] .help-card { background: rgba(255, 255, 255, 0.12); border-color: var(--nav-line); color: #fff; }
-[data-theme-brand='atacadao'] .help-card:hover { background: rgba(255, 255, 255, 0.2); }
-[data-theme-brand='atacadao'] .help-card small { color: rgba(255, 255, 255, 0.85); }
-[data-theme-brand='atacadao'] .topbar { box-shadow: inset 0 4px 0 var(--brand-stripe); }
-[data-theme-brand='atacadao'] .topbar .topbar-brand { color: var(--nav); }
-[data-theme-brand='atacadao'] h1, [data-theme-brand='atacadao'] h2 { letter-spacing: -0.01em; font-weight: 800; }
-[data-theme-brand='atacadao'] .hold .ring { stroke: var(--accent); }
-[data-theme-brand='atacadao'] .hold-fill { background: rgba(194, 65, 12, 0.18); }
-[data-theme-brand='atacadao'] .jclock .fill, [data-theme-brand='atacadao'] .jbar-track span { stroke: var(--nav); background: var(--nav); }
-
-/* Perfil 3 — UP Service (cores do site: azul-marinho #07152D e dourado #D6A63B). Contraste AA: dourado só como fundo
+/* ---------- Cores da UP Service (as do site: azul-marinho #07152D e dourado #D6A63B). Contraste AA: dourado só como fundo
    com texto azul (≈8:1) ou como faixa decorativa; textos e ícones de destaque ficam no azul. */
 :root[data-theme-brand='upservice'], [data-theme-brand='upservice'] {
   --bg: #f5f7fa;
@@ -809,7 +760,7 @@ img.avatar { object-fit: cover; }
   font-family: Poppins, Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
 }
 [data-theme-brand='upservice'] .sidebar { border-right-color: var(--nav-deep); }
-[data-theme-brand='upservice'] .nav-link.active, [data-theme-brand='upservice'] .tp-item.active { color: #07152d; }
+[data-theme-brand='upservice'] .nav-link.active { color: #07152d; }
 [data-theme-brand='upservice'] .help-card { background: rgba(255, 255, 255, 0.08); border-color: var(--nav-line); color: #fff; }
 [data-theme-brand='upservice'] .help-card:hover { background: rgba(255, 255, 255, 0.14); }
 [data-theme-brand='upservice'] .help-card small { color: rgba(255, 255, 255, 0.8); }
@@ -821,17 +772,6 @@ img.avatar { object-fit: cover; }
 [data-theme-brand='upservice'] .auth-visual { background: radial-gradient(900px 500px at 85% 15%, rgba(214, 166, 59, 0.22), transparent 60%), linear-gradient(135deg, #07152d 0%, #0d274f 70%, #13305f 100%); }
 [data-theme-brand='upservice'] .auth-kicker { color: #e5bb56; opacity: 1; }
 [data-theme-brand='upservice'] .auth-dots button[aria-current='true'] { background: #d6a63b; }
-
-/* ---------- Configurações: prévia dos perfis de cores ---------- */
-.theme-card.current { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
-.theme-preview { display: grid; grid-template-columns: 110px minmax(0, 1fr); height: 160px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--ink); font-family: inherit; }
-.tp-nav { display: grid; align-content: start; gap: 6px; padding: 12px 8px; background: linear-gradient(180deg, var(--nav) 0%, var(--nav-deep) 100%); }
-.tp-item { padding: 6px 8px; border-radius: 6px; color: var(--nav-ink); font-size: 0.72rem; font-weight: 600; }
-.tp-item.active { background: var(--nav-active); color: #fff; }
-.tp-main { display: grid; align-content: start; gap: 10px; padding: 0 12px 12px; }
-.tp-top { height: 18px; margin: 0 -12px; background: var(--surface); border-bottom: 1px solid var(--line); }
-.theme-preview[data-theme-brand='atacadao'] .tp-top, .theme-preview[data-theme-brand='upservice'] .tp-top { box-shadow: inset 0 3px 0 var(--brand-stripe); }
-.tp-row { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* ---------- Estrelas do profissional (prévia "como um joguinho") ---------- */
 .game { display: grid; gap: 14px; color: #3b2709; }
