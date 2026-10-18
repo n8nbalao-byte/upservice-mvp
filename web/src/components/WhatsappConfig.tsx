@@ -12,7 +12,7 @@ const STATE: Record<string, [string, 'success' | 'warning' | 'danger' | 'neutral
   ERRO: ['Sem comunicação', 'danger'],
   DESCONHECIDO: ['Desconhecido', 'neutral'],
 };
-export const fmtPhone = (d: string) => d.replace(/^(d{2})(d{4,5})(d{4})$/, '($1) $2-$3');
+const fmtPhone = (d: string) => d.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3');
 
 /** Configurações → WhatsApp: Evolution API, conexão por QR Code ou por código de pareamento, teste. */
 export function WhatsappConfig() {

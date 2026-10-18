@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { CHANGED, api, isBlocked, type Me } from './lib/api';
 import { beep } from './lib/device';
-import { applyTheme, type Theme } from './lib/theme';
 import { Shell } from './components/Shell';
 import { DialogProvider, Loading } from './components/ui';
 import AdminUnidades from './pages/AdminUnidades';
@@ -89,7 +88,7 @@ export default function App() {
   const reload = () => api<Me>('/me').then(setMe, () => setMe(null));
   useEffect(() => {
     reload();
-    api<{ theme: Theme; phoneLogin?: boolean }>('/config').then((c) => { applyTheme(c.theme); setWhatsappRequired(!!c.phoneLogin); }, () => {});
+    api<{ phoneLogin?: boolean }>('/config').then((c) => setWhatsappRequired(!!c.phoneLogin), () => {});
   }, []);
 
   const role = me?.user.role;

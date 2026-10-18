@@ -8,10 +8,6 @@ import { fail, text } from '../http.js';
 
 const r = Router();
 
-/** Perfis de cores do app: 1 = prata e grafite, 2 = inspirado no Atacadão, 3 = UP Service (azul e dourado). Escolha global, só do principal. */
-export const THEMES = ['padrao', 'atacadao', 'upservice'];
-const currentTheme = async () => (await q("SELECT value FROM app_settings WHERE name = 'theme'"))[0]?.value ?? 'padrao';
-
 r.get('/config', async (req, res) => {
   res.json({
     googleClientId: process.env.GOOGLE_CLIENT_ID || null,
@@ -20,7 +16,6 @@ r.get('/config', async (req, res) => {
     supportWhatsapp: (process.env.SUPPORT_WHATSAPP || '5511926746277').replace(/\D/g, '') || null,
     // Com o WhatsApp da UP Service no ar: entrar por código e confirmar o número (obrigatório para todos).
     phoneLogin: await phoneLoginEnabled(),
-    theme: await currentTheme(),
     // Estrelas do profissional (prévia): só aparece para ele quando o principal liga em Configurações.
     gamification: await gamificationOn(),
   });
@@ -49,15 +44,6 @@ r.put('/admin/settings/gamification', requireOwner, async (req, res) => {
   await q("INSERT INTO app_settings (name, value, updated_by) VALUES ('gamification', ?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value), updated_by = VALUES(updated_by)", [on ? 'on' : 'off', req.user.id]);
   await audit(q, req, 'SETTING_GAMIFICATION', 'app_settings', 'gamification', { after: { enabled: on } });
   res.json({ enabled: on });
-});
-
-r.put('/admin/settings/theme', requireOwner, async (req, res) => {
-  const theme = String(req.body.theme ?? '');
-  if (!THEMES.includes(theme)) fail(400, 'Perfil de cores inválido.');
-  const before = await currentTheme();
-  await q("INSERT INTO app_settings (name, value, updated_by) VALUES ('theme', ?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value), updated_by = VALUES(updated_by)", [theme, req.user.id]);
-  await audit(q, req, 'SETTING_THEME', 'app_settings', 'theme', { before: { theme: before }, after: { theme } });
-  res.json({ theme });
 });
 
 r.post('/auth/google', async (req, res) => {
