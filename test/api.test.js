@@ -1881,6 +1881,32 @@ test('online e mensagem: último acesso gravado (no máximo 1 vez por minuto) e 
   assert.ok((await call(s.w1, 'GET', '/api/me/avisos')).body.items.find((a) => a.id === m.id).read_at, '"Entendi" marca como lida');
 });
 
+test('fotos da tela de login: públicas para o login, só o administrador principal envia e apaga', { skip }, async () => {
+  const webp = (n) => Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4, n), Buffer.from('WEBPVP8 '), Buffer.alloc(300, n)]).toString('base64');
+  const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(300)]).toString('base64');
+  assert.deepEqual((await call(null, 'GET', '/api/public/login-fotos')).body, [], 'sem fotos ainda');
+  const a3 = await login('admin3@test.dev');
+  assert.equal((await call(a3, 'POST', '/api/admin/login-fotos', { tipo: 'LOJA', big: webp(1), small: webp(2) })).status, 403, 'admin comum não envia');
+  assert.equal((await call(s.gestor, 'POST', '/api/admin/login-fotos', { tipo: 'LOJA', big: webp(1), small: webp(2) })).status, 403);
+  assert.equal((await call(s.admin, 'POST', '/api/admin/login-fotos', { tipo: 'OUTRO', big: webp(1), small: webp(2) })).status, 400);
+  assert.equal((await call(s.admin, 'POST', '/api/admin/login-fotos', { tipo: 'LOJA', big: Buffer.from('%PDF-1.4 x').toString('base64'), small: webp(2) })).status, 400, 'PDF não é foto');
+  assert.equal((await call(s.admin, 'POST', '/api/admin/login-fotos', { tipo: 'LOJA', big: webp(1), small: jpg })).status, 400, 'as duas versões no mesmo formato');
+  const nova = await call(s.admin, 'POST', '/api/admin/login-fotos', { tipo: 'LOJA', big: webp(1), small: webp(2), width: 1920 });
+  assert.equal(nova.status, 201);
+  const lista = (await call(null, 'GET', '/api/public/login-fotos')).body;
+  assert.deepEqual(lista.map((f) => f.tipo), ['LOJA']);
+  const img = await fetch(base + lista[0].src);
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get('content-type'), 'image/webp');
+  assert.match(img.headers.get('cache-control'), /immutable/);
+  assert.equal((await fetch(base + lista[0].small)).status, 200);
+  assert.equal((await fetch(`${base}/api/public/login-fotos/${nova.body.id}/x`)).status, 404);
+  assert.equal((await call(s.admin, 'DELETE', `/api/admin/login-fotos/${nova.body.id}`)).status, 200);
+  assert.equal((await fetch(base + lista[0].src)).status, 404, 'apagada some na hora');
+  assert.deepEqual((await call(null, 'GET', '/api/public/login-fotos')).body, []);
+  assert.equal((await q("SELECT COUNT(*) AS n FROM audit_events WHERE action IN ('LOGIN_FOTO_ADD', 'LOGIN_FOTO_DELETE')"))[0].n, 2);
+});
+
 test('dashboard: usuários, profissionais, habilitados (4 documentos aprovados) e lista de quem tem documento pendente', { skip }, async () => {
   // Três situações novas: só entrou (falta enviar), enviou e espera análise, teve um documento reprovado.
   const falta = await login('cad-falta@test.dev');

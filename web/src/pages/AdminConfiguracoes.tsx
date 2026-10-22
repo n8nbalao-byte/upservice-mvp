@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { PageHeader, StatusBadge, useAction } from '../components/ui';
 import { api } from '../lib/api';
 import { WhatsappConfig } from '../components/WhatsappConfig';
+import { LoginFotosConfig } from '../components/LoginFotosConfig';
 
 /** Configurações globais (só o administrador principal; o servidor confere de novo). */
 export default function AdminConfiguracoes() {
@@ -26,6 +27,10 @@ export default function AdminConfiguracoes() {
           </div>
           {gamification && <StatusBadge status="ATIVA">Ligada: os profissionais veem "Estrelas" no menu</StatusBadge>}
         </div>
+      </section>
+      <section className="stack" style={{ marginTop: 32 }}>
+        <h2 className="section-title">Fotos da tela de login</h2>
+        <LoginFotosConfig />
       </section>
       <section className="stack" style={{ marginTop: 32 }}>
         <h2 className="section-title">WhatsApp</h2>

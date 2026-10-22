@@ -3,6 +3,7 @@ import qrcode from 'qrcode-generator';
 import { useMedia } from '../components/fit';
 import { Alert } from '../components/ui';
 import { api } from '../lib/api';
+import { alternar } from '../lib/carrossel';
 import { isMobile, isStandalone } from '../lib/install';
 
 declare global {
@@ -12,12 +13,9 @@ declare global {
 type Config = { googleClientId: string | null; devLogin: boolean; phoneLogin?: boolean };
 type Method = 'email' | 'phone' | 'qr';
 
-// Fotos do carrossel: qualquer imagem colocada em web/src/assets/login entra sozinha no próximo build. A versão de
-// mesmo nome em login/960 é usada no celular (srcset), para não baixar a foto grande.
-const byName = (m: Record<string, unknown>) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k.split('/').pop()!, v as string]));
-const BIG = byName(import.meta.glob('../assets/login/*.{jpg,jpeg,png,webp,avif}', { eager: true, query: '?url', import: 'default' }));
-const SMALL = byName(import.meta.glob('../assets/login/960/*.{jpg,jpeg,png,webp,avif}', { eager: true, query: '?url', import: 'default' }));
-const IMAGES = Object.keys(BIG).sort().map((f) => ({ src: BIG[f], small: SMALL[f] }));
+// Fotos do carrossel: vêm do servidor (Configurações → Fotos da tela de login), cada uma com a versão de celular
+// (srcset) e o tipo; a ordem alterna profissional e loja e muda a cada abertura.
+type Foto = { id: string; tipo: string; src: string; small: string };
 
 // Depoimentos criados para a tela (ilustrativos, a pedido da UP Service); trocar por depoimentos reais quando houver.
 const QUOTES = [
@@ -30,9 +28,11 @@ const SLIDE_MS = 6500;
 
 function Showcase() {
   const [i, setI] = useState(0);
+  const [fotos, setFotos] = useState<Foto[]>([]);
+  useEffect(() => { api<Foto[]>('/public/login-fotos').then((f) => setFotos(alternar(f)), () => {}); }, []);
   const [paused, setPaused] = useState(false);
   const still = useMedia('(prefers-reduced-motion: reduce)');
-  const n = Math.max(QUOTES.length, IMAGES.length);
+  const n = Math.max(QUOTES.length, fotos.length);
   useEffect(() => {
     if (still || paused) return;
     const t = setInterval(() => setI((v) => (v + 1) % n), SLIDE_MS);
@@ -41,8 +41,8 @@ function Showcase() {
   const q = QUOTES[i % QUOTES.length];
   return (
     <aside className="auth-visual" aria-label="Depoimentos" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
-      {IMAGES.map((im, k) => (
-        <img key={im.src} src={im.src} srcSet={im.small ? `${im.small} 960w, ${im.src} 1920w` : undefined} sizes="(max-width: 1023px) 100vw, 1400px" alt="" className={k === i % IMAGES.length ? 'on' : ''} loading={k === 0 ? 'eager' : 'lazy'} decoding="async" />
+      {fotos.map((im, k) => (
+        <img key={im.id} src={im.src} srcSet={`${im.small} 960w, ${im.src} 1920w`} sizes="(max-width: 1023px) 100vw, 1400px" alt="" className={k === i % fotos.length ? 'on' : ''} loading={k === 0 ? 'eager' : 'lazy'} decoding="async" />
       ))}
       <div className="auth-visual-shade" />
       <div className="auth-visual-body">

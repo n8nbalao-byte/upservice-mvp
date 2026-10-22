@@ -1247,3 +1247,8 @@ h2.g-pill-soft { font-size: clamp(0.95rem, min(4.4vw, 2.6vh), 1.25rem); }
 .msg-ic { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-dark); }
 @keyframes msg-in { from { transform: translateY(12px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .msg-card { animation: none; } }
+/* ---------- Configurações: fotos da tela de login ---------- */
+.login-fotos { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.login-foto { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.login-foto img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
+.login-foto figcaption { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; }
