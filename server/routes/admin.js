@@ -137,9 +137,12 @@ r.get('/admin/users', ADMIN, async (req, res) => {
   const porPapel = await q(`SELECT role, COUNT(*) AS n FROM users WHERE ${where} GROUP BY role`, args);
   const counts = { '': porPapel.reduce((t, r2) => t + Number(r2.n), 0), ...Object.fromEntries(ROLES.map((x) => [x, Number(porPapel.find((r2) => r2.role === x)?.n ?? 0)])) };
   const users = await q(`SELECT * FROM users WHERE ${where}${role ? ' AND role = ?' : ''} ORDER BY role DESC, name, id LIMIT ${PAGINA} OFFSET ${offset}`, role ? [...args, role] : args);
-  const links = users.length ? await q('SELECT user_id, unit_id FROM unit_managers WHERE active = 1 AND user_id IN (?)', [users.map((u) => u.id)]) : [];
+  const ids = users.map((u) => u.id);
+  const links = users.length ? await q('SELECT user_id, unit_id FROM unit_managers WHERE active = 1 AND user_id IN (?)', [ids]) : [];
+  // Foto de perfil: a selfie atual (aprovada ou em análise; a mais recente vence).
+  const selfies = new Map(users.length ? (await q("SELECT user_id, id FROM worker_documents WHERE type = 'SELFIE' AND status IN ('APROVADO', 'PENDENTE') AND user_id IN (?) ORDER BY created_at", [ids])).map((d) => [d.user_id, d.id]) : []);
   res.json({
-    items: users.map((u) => ({ ...publicUser(u), unitIds: links.filter((l) => l.user_id === u.id).map((l) => l.unit_id) })),
+    items: users.map((u) => ({ ...publicUser(u), unitIds: links.filter((l) => l.user_id === u.id).map((l) => l.unit_id), selfieId: selfies.get(u.id) ?? null })),
     total: counts[role ?? ''], counts,
   });
 });

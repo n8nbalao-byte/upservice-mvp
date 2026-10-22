@@ -56,7 +56,7 @@ function groupsFor(me: Me, inboxCount: number, gamification = false, upcoming = 
   return groups;
 }
 
-const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
+export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
 
 /** Busca do topo (gestor/admin): profissionais, vagas e unidades no escopo do usuário. */
 function Search() {

@@ -1951,6 +1951,25 @@ test('online e mensagem: último acesso gravado (no máximo 1 vez por minuto) e 
   assert.ok((await call(s.w1, 'GET', '/api/me/avisos')).body.items.find((a) => a.id === m.id).read_at, '"Entendi" marca como lida');
 });
 
+test('usuários: foto de perfil (selfie) na lista, sem auditoria por miniatura; documento aberto continua auditado', { skip }, async () => {
+  const [u] = (await call(s.admin, 'GET', '/api/admin/users?q=w1@test.dev')).body.items;
+  const [selfie] = await q("SELECT id FROM worker_documents WHERE user_id = ? AND type = 'SELFIE' AND status = 'APROVADO'", [u.id]);
+  assert.equal(u.selfieId, selfie.id);
+  assert.equal((await call(s.admin, 'GET', '/api/admin/users?q=admin@test.dev')).body.items[0].selfieId, null, 'sem selfie: iniciais');
+  const vistos = async () => Number((await q("SELECT COUNT(*) AS n FROM audit_events WHERE action = 'DOCUMENT_VIEW'"))[0].n);
+  const antes = await vistos();
+  const mini = await call(s.admin, 'GET', `/api/files/doc/${u.selfieId}?avatar=1`);
+  assert.equal(mini.status, 200);
+  assert.equal(mini.res.headers.get('cache-control'), 'private, max-age=3600');
+  assert.equal(await vistos(), antes, 'miniatura não audita');
+  assert.equal((await call(s.admin, 'GET', `/api/files/doc/${u.selfieId}`)).res.headers.get('cache-control'), 'private, no-store');
+  assert.equal(await vistos(), antes + 1, 'abrir a selfie audita');
+  const [rg] = await q("SELECT id FROM worker_documents WHERE user_id = ? AND type = 'RG'", [u.id]);
+  await call(s.admin, 'GET', `/api/files/doc/${rg.id}?avatar=1`);
+  assert.equal(await vistos(), antes + 2, 'avatar=1 em outro documento não pula a auditoria');
+  assert.ok([403, 404].includes((await call(s.w2, 'GET', `/api/files/doc/${u.selfieId}?avatar=1`)).status), 'outro profissional não vê');
+});
+
 test('fotos da tela de login: públicas para o login, só o administrador principal envia e apaga', { skip }, async () => {
   const webp = (n) => Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4, n), Buffer.from('WEBPVP8 '), Buffer.alloc(300, n)]).toString('base64');
   const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(300)]).toString('base64');

@@ -1252,3 +1252,6 @@ h2.g-pill-soft { font-size: clamp(0.95rem, min(4.4vw, 2.6vh), 1.25rem); }
 .login-foto { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .login-foto img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
 .login-foto figcaption { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; }
+/* Usuários: foto (selfie) redonda à esquerda do nome. */
+.user-cell { display: flex; align-items: center; gap: 12px; text-align: left; }
+.user-cell > div { min-width: 0; overflow-wrap: break-word; }
