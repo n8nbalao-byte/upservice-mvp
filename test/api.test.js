@@ -1197,6 +1197,62 @@ test('reserva chamada recebe WhatsApp (se tiver número confirmado), só depois 
   }
 });
 
+test('lembrete de cadastro: aviso no app só para quem tem algo a fazer, 1 por semana e no máximo 4; envio manual pela gestão', { skip }, async () => {
+  const { oQueFalta, lembretesCadastro } = await import('../server/cadastroLembretes.js');
+  assert.deepEqual(oQueFalta({ perfil: false, termos: false, docs: { CPF: 'FALTA', RG: 'REJEITADO', COMPROVANTE: 'FALTA', SELFIE: 'PENDENTE' } }),
+    ['preencher seus dados pessoais', 'enviar CPF e comprovante de residência', 'enviar de novo RG (não foi aprovado)', 'aceitar os termos de uso']);
+  assert.deepEqual(oQueFalta({ perfil: true, termos: true, docs: { CPF: 'PENDENTE', RG: 'PENDENTE', COMPROVANTE: 'PENDENTE', SELFIE: 'PENDENTE' } }), [], 'só espera a análise');
+
+  await login('lemb-falta@test.dev');
+  const analise = await login('lemb-analise@test.dev');
+  await completeWorker(analise, '286.415.937-64', { approve: false });
+  const reprov = await login('lemb-reprov@test.dev');
+  await completeWorker(reprov, '913.527.648-73', { approve: false });
+  const id = async (email) => (await userByEmail(email)).id;
+  const [rg] = await q("SELECT id FROM worker_documents WHERE user_id = ? AND type = 'RG'", [await id('lemb-reprov@test.dev')]);
+  assert.equal((await call(s.admin, 'POST', `/api/manage/documents/${rg.id}/review`, { status: 'REJEITADO', reason: 'Foto ilegível' })).status, 200);
+  const meus = ['lemb-falta@test.dev', 'lemb-analise@test.dev', 'lemb-reprov@test.dev'];
+  const avisos = async (email) => q("SELECT title, body, link FROM notifications WHERE user_id = ? AND kind = 'CADASTRO' ORDER BY created_at", [await id(email)]);
+
+  // Recém-cadastrado não recebe na varredura (espera 1 dia); de madrugada não envia.
+  const meioDia = new Date(); meioDia.setUTCHours(15, 0, 0, 0);
+  await lembretesCadastro(meioDia);
+  assert.equal((await avisos('lemb-falta@test.dev')).length, 0, 'cadastrado há menos de 1 dia');
+  await q("UPDATE users SET created_at = NOW() - INTERVAL 2 DAY WHERE email IN (?)", [meus]);
+  const madrugada = new Date(meioDia); madrugada.setUTCHours(6);
+  assert.equal(await lembretesCadastro(madrugada), 0, 'fora do horário');
+
+  await lembretesCadastro(meioDia);
+  const [a] = await avisos('lemb-falta@test.dev');
+  assert.equal(a.title, 'Complete seu cadastro para começar a trabalhar');
+  assert.match(a.body, /^Para pegar vagas, falta preencher seus dados pessoais; enviar CPF, RG, comprovante de residência e selfie; aceitar os termos de uso\.$/);
+  assert.equal(a.link, '/cadastro');
+  assert.match((await avisos('lemb-reprov@test.dev'))[0].body, /enviar de novo RG \(não foi aprovado\)/);
+  assert.equal((await avisos('lemb-analise@test.dev')).length, 0, 'quem só espera a análise não é cobrado');
+
+  // Na mesma semana, nada; depois, de novo; no máximo 4.
+  await lembretesCadastro(new Date(meioDia.getTime() + 3 * 86400e3));
+  assert.equal((await avisos('lemb-falta@test.dev')).length, 1, '1 por semana');
+  for (let sem = 1; sem <= 5; sem++) {
+    await q("UPDATE notifications SET created_at = created_at - INTERVAL 8 DAY WHERE kind = 'CADASTRO' AND user_id = ?", [await id('lemb-falta@test.dev')]);
+    await lembretesCadastro(meioDia);
+  }
+  assert.equal((await avisos('lemb-falta@test.dev')).length, 4, 'no máximo 4');
+
+  // Manual: administrador lembra um (mesmo recém-cadastrado), não repete no mesmo dia; gestor só no escopo; profissional não.
+  const novo = await login('lemb-novo@test.dev');
+  const r = await call(s.admin, 'POST', '/api/manage/cadastros-pendentes/lembrete', { userId: await id('lemb-novo@test.dev') });
+  assert.deepEqual([r.status, r.body.enviados], [200, 1]);
+  assert.equal((await call(s.admin, 'POST', '/api/manage/cadastros-pendentes/lembrete', { userId: await id('lemb-novo@test.dev') })).status, 409, 'já recebeu hoje');
+  assert.equal((await call(s.admin, 'POST', '/api/manage/cadastros-pendentes/lembrete', { userId: await id('lemb-analise@test.dev') })).status, 409, 'nada a fazer');
+  assert.equal((await call(s.gestor, 'POST', '/api/manage/cadastros-pendentes/lembrete', { userId: await id('lemb-reprov@test.dev') })).status, 409, 'fora do escopo do gestor');
+  assert.equal((await call(novo, 'POST', '/api/manage/cadastros-pendentes/lembrete', {})).status, 403);
+  assert.equal((await call(s.admin, 'POST', '/api/manage/cadastros-pendentes/lembrete', {})).status, 200, 'todos');
+  assert.equal((await avisos('lemb-novo@test.dev')).length, 1);
+  assert.ok((await call(novo, 'GET', '/api/me/avisos')).body.items.some((x) => x.kind === 'CADASTRO'), 'aparece nos avisos do app');
+  await q('UPDATE users SET created_at = NOW() WHERE email IN (?)', [meus]);
+});
+
 test('estrelas: profissional só vê com o interruptor ligado; principal liga; gestor confere a ficha; bônus do mês pela gestão', { skip }, async () => {
   assert.equal((await call(null, 'GET', '/api/config')).body.gamification, false);
   assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).status, 403, 'desligado: profissional não vê');
