@@ -60,6 +60,12 @@ export default function Relatorios() {
         </div>
         <p className="muted" style={{ marginTop: 10 }}>O CSV abre direto no Excel, não traz documentos nem e-mail e toda exportação fica registrada na auditoria.</p>
       </div>
+      {me.user.role === 'ADMINISTRADOR' && (
+        <div className="card">
+          <div className="card-header"><h2>Cadastro dos profissionais</h2><a className="btn" href="/api/manage/reports/profissionais.csv"><Icon name="download" size={18} />Baixar lista (CSV)</a></div>
+          <p className="muted">Todos os profissionais com os dados do cadastro (CPF, RG, endereço, contatos, Pix), a situação de cada documento e se estão habilitados para trabalhar. Contém dados pessoais: a exportação fica registrada na auditoria.</p>
+        </div>
+      )}
       {error && <Alert kind="danger">{error}</Alert>}
       {!ind && busy && <Loading text="Gerando relatório…" />}
 

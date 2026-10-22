@@ -13,7 +13,7 @@ const docStatus = (st) => (st.includes('APROVADO') ? 'APROVADO' : st.includes('P
 
 /** Profissionais do escopo e a situação do cadastro de cada um. Habilitado = a mesma regra da candidatura (staffing.js):
  *  conta ativa, termos aceitos e os 4 documentos aprovados. "Documento pendente" = falta algum dos 4 aprovado. */
-async function cadastros(user) {
+export async function cadastros(user) {
   const [wWhere, wArgs] = workerScope(user, 'u.id');
   const base = `FROM users u WHERE u.role = 'PROFISSIONAL' AND u.deleted_at IS NULL AND u.status <> 'INATIVO' AND ${wWhere}`;
   const [pros, docs] = await Promise.all([

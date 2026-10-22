@@ -1915,3 +1915,30 @@ test('dashboard: usuários, profissionais, habilitados (4 documentos aprovados) 
   assert.ok(!(await call(s.gestor, 'GET', '/api/manage/cadastros-pendentes')).body.items.some((i) => i.email === 'cad-falta@test.dev'), 'fora do escopo do gestor');
   assert.equal((await call(falta, 'GET', '/api/manage/cadastros-pendentes')).status, 403);
 });
+
+test('relatórios: CSV com o cadastro de todos os profissionais, só para o administrador e auditado', { skip }, async () => {
+  const r = await call(s.admin, 'GET', '/api/manage/reports/profissionais.csv');
+  assert.equal(r.status, 200);
+  assert.match(r.res.headers.get('content-disposition'), /attachment; filename="upservice-profissionais-\d{4}-\d{2}-\d{2}\.csv"/);
+  const bytes = Buffer.from(await r.res.arrayBuffer());
+  assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'BOM: abre no Excel com acentos');
+  const texto = bytes.subarray(3).toString('utf8');
+  assert.ok(texto.startsWith('"nome";"email";"whatsapp";"telefone";"cpf";"rg"'));
+  const linhas = texto.trim().split('\r\n');
+  const [{ n }] = await q("SELECT COUNT(*) AS n FROM users WHERE role = 'PROFISSIONAL' AND deleted_at IS NULL");
+  assert.equal(linhas.length - 1, Number(n), 'todos os profissionais, inclusive quem não terminou o cadastro');
+  const cab = linhas[0].split(';').map((c) => c.replaceAll('"', ''));
+  const de = (email) => Object.fromEntries(linhas.find((l) => l.includes(`"${email}"`)).split(';').map((c, i) => [cab[i], c.replaceAll('"', '')]));
+  const w1 = de('w1@test.dev');
+  assert.equal(w1.cpf, '529.982.247-25');
+  assert.equal(w1.telefone, '(11) 99999-0000');
+  assert.equal(w1.cidade, 'São Paulo');
+  assert.equal(w1.doc_selfie, 'Aprovado');
+  const falta = de('cad-falta@test.dev');
+  assert.deepEqual([falta.habilitado, falta.situacao_cadastro, falta.cpf, falta.doc_rg], ['Não', 'Falta preencher os dados', '', 'Não enviado']);
+  assert.equal(de('cad-reprov@test.dev').doc_rg, 'Reprovado');
+  assert.equal(de('cad-analise@test.dev').situacao_cadastro, 'Documento em análise');
+  assert.ok((await q("SELECT 1 FROM audit_events WHERE action = 'REPORT_EXPORT' AND JSON_EXTRACT(after_json, '$.relatorio') = 'profissionais'")).length, 'auditado');
+  assert.equal((await call(s.gestor, 'GET', '/api/manage/reports/profissionais.csv')).status, 403, 'gestor não baixa dados pessoais');
+  assert.equal((await call(s.w1, 'GET', '/api/manage/reports/profissionais.csv')).status, 403);
+});
