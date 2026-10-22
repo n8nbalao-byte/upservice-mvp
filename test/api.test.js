@@ -2008,6 +2008,12 @@ test('dashboard: usuários, profissionais, habilitados (4 documentos aprovados) 
   assert.equal(de('cad-analise@test.dev').situacao, 'EM_ANALISE');
   assert.equal(de('cad-reprov@test.dev').docs.RG, 'REJEITADO');
   assert.ok(!de('w2@test.dev'), 'habilitado não aparece');
+  // O card "Habilitados para trabalhar" abre Usuários filtrado: a mesma lista, com o mesmo número.
+  const hab = (await call(s.admin, 'GET', '/api/admin/users?status=HABILITADO')).body;
+  assert.equal(hab.total, d.habilitados);
+  assert.ok(hab.total > 0 && hab.items.every((u) => u.role === 'PROFISSIONAL' && u.status === 'ATIVO'));
+  assert.ok(!hab.items.some((u) => u.email.startsWith('cad-')), 'quem tem documento pendente fica de fora');
+  assert.equal((await call(s.admin, 'GET', '/api/admin/users?status=HABILITADO&q=cad-')).body.total, 0);
   const ordem = lista.map((i) => i.situacao);
   assert.deepEqual(ordem, [...ordem].sort((a, b) => ['EM_ANALISE', 'REPROVADO', 'FALTA'].indexOf(a) - ['EM_ANALISE', 'REPROVADO', 'FALTA'].indexOf(b)), 'em análise primeiro');
 
