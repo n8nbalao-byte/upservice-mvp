@@ -4,6 +4,7 @@ import { useInbox } from '../App';
 import { Icon } from '../components/icons';
 import { PagamentoPix } from '../components/PagamentoPix';
 import { QuebrasCaixa } from '../components/QuebrasCaixa';
+import { MensagemButton, Presenca } from '../components/Mensagem';
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
 import { api, fmtDateTime, label, type Me, type Unit } from '../lib/api';
 
@@ -172,7 +173,7 @@ export default function GestaoProfissional() {
         back={{ to: '/gestao/documentos', label: 'Documentos' }}
         title={data.user.name}
         description={data.user.email}
-        actions={<><StatusBadge status={data.user.status} /><Link className="btn sm" to={`/gestao/profissionais/${id}/estrelas`}>Ver estrelas</Link></>}
+        actions={<><Presenca lastSeenAt={data.user.lastSeenAt} /><StatusBadge status={data.user.status} /><MensagemButton id={id!} name={data.user.name} /><Link className="btn sm" to={`/gestao/profissionais/${id}/estrelas`}>Ver estrelas</Link></>}
       />
       <Alert kind="info">Dados pessoais e documentos: todo acesso fica registrado na auditoria.</Alert>
       <div className="grid-2">

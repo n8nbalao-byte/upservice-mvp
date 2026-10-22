@@ -15,6 +15,7 @@ import { decodeBase64, removeFile, saveFile, sniff } from '../storage.js';
 import { sortearBrindes } from './brindes.js';
 import { avisar, lembretes } from '../bot.js';
 import { postarVagas } from '../postador.js';
+import { lembretesCadastro } from '../cadastroLembretes.js';
 
 const APP_URL = () => (process.env.APP_URL || 'https://app.upserviceintermed.com').replace(/\/+$/, '');
 
@@ -471,6 +472,9 @@ export async function sweep() {
 
   // 7. Postador: vagas abertas novas vão para o grupo de WhatsApp da loja, num resumo.
   await postarVagas(now);
+
+  // 8. Lembrete de cadastro incompleto (e-mail + app), no máximo 1 por semana por profissional.
+  await lembretesCadastro(now);
 }
 
 export default r;

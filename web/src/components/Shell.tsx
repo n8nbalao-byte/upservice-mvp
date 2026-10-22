@@ -1,8 +1,10 @@
 // Estrutura do app: barra lateral (desktop, recolhível), gaveta (celular), abas inferiores do profissional e barra superior com busca.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { CHANGED, api, fmtDate, fmtMoney, isBlocked, label, type Me } from '../lib/api';
+import { CHANGED, api, fmtDate, fmtDateTime, fmtMoney, isBlocked, label, type Me } from '../lib/api';
 import { Icon, type IconName } from './icons';
+
+type Aviso = { id: string; kind: string; title: string; body: string | null; created_at: string; read_at: string | null };
 
 type Item = { to: string; text: string; icon: IconName; count?: number; money?: number };
 type Group = { items: Item[] };
@@ -108,10 +110,16 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
   const selfie = me.documents.find((d) => d.type === 'SELFIE' && d.status !== 'REJEITADO');
   // Profissional: avisos não lidos (sino) e diárias que vêm pela frente (número no botão "Diárias").
   const [avisos, setAvisos] = useState({ unread: 0, upcoming: 0, aReceber: 0 });
+  // Mensagem da gestão ainda não lida: abre na tela, como uma notificação, até tocar em "Entendi".
+  const [mensagem, setMensagem] = useState<Aviso | null>(null);
   const workerActive = worker && !isBlocked(me.user.status);
   useEffect(() => {
     if (!workerActive) return;
-    const load = () => api<{ unread: number; upcoming: number; aReceber: number }>('/me/avisos').then((a) => setAvisos({ unread: a.unread, upcoming: a.upcoming, aReceber: a.aReceber ?? 0 }), () => {});
+    const load = () => api<{ items: Aviso[]; unread: number; upcoming: number; aReceber: number }>('/me/avisos').then((a) => {
+      setAvisos({ unread: a.unread, upcoming: a.upcoming, aReceber: a.aReceber ?? 0 });
+      const nova = [...a.items].reverse().find((i) => i.kind === 'MENSAGEM' && !i.read_at) ?? null;
+      setMensagem((atual) => (atual && nova && atual.id === nova.id ? atual : nova));
+    }, () => {});
     load();
     const t = setInterval(load, 30000);
     window.addEventListener(CHANGED, load);
@@ -208,6 +216,21 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
             </NavLink>
           ))}
         </nav>
+      )}
+      {mensagem && (
+        <div className="msg-overlay" role="dialog" aria-modal="true" aria-labelledby="msg-titulo">
+          <div className="msg-card">
+            <span className="msg-ic" aria-hidden="true"><Icon name="bell" size={26} /></span>
+            <h2 id="msg-titulo">{mensagem.title}</h2>
+            {mensagem.body && <p>{mensagem.body}</p>}
+            <small className="muted">{fmtDateTime(mensagem.created_at)}</small>
+            <button type="button" className="primary" onClick={() => {
+              const id = mensagem.id;
+              setMensagem(null);
+              api('/me/avisos/lidos', { body: { ids: [id] } }).then(() => window.dispatchEvent(new Event(CHANGED)), () => {});
+            }}>Entendi</button>
+          </div>
+        </div>
       )}
     </div>
   );

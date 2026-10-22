@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/icons';
-import { Alert, EmptyState, Loading, PageHeader, StatusBadge, type Tone } from '../components/ui';
+import { Alert, EmptyState, Loading, PageHeader, StatusBadge, useAction, useDialog, type Tone } from '../components/ui';
 import { api, fmtDate } from '../lib/api';
 
 type Situacao = 'EM_ANALISE' | 'REPROVADO' | 'FALTA';
@@ -25,6 +25,16 @@ export default function CadastrosPendentes() {
   const [aba, setAba] = useState<Situacao | ''>('');
   const [busca, setBusca] = useState('');
   useEffect(() => { api<{ items: Item[] }>('/manage/cadastros-pendentes').then((r) => setItems(r.items), (e) => setError(e.message)); }, []);
+  const { busy, run } = useAction();
+  const { confirm, toast } = useDialog();
+  // Lembrete (aviso no app + e-mail) para quem tem algo a fazer; quem só espera a análise não recebe.
+  const lembrar = async (userId?: string) => {
+    if (!userId && !(await confirm({ title: 'Enviar lembrete a todos?', message: 'Recebem (no app e por e-mail) só os que têm algo a fazer: enviar ou reenviar documento, preencher os dados ou aceitar os termos. Quem recebeu lembrete hoje fica de fora.', confirmText: 'Enviar lembretes' }))) return;
+    await run(userId ?? 'todos', async () => {
+      const r = await api<{ enviados: number }>('/manage/cadastros-pendentes/lembrete', { body: userId ? { userId } : {} });
+      toast(r.enviados ? `${r.enviados} lembrete(s) enviado(s).` : 'Ninguém para lembrar agora.');
+    });
+  };
   const shown = useMemo(() => {
     const t = busca.trim().toLowerCase();
     return (items ?? []).filter((i) => (!aba || i.situacao === aba) && (!t || `${i.name} ${i.email}`.toLowerCase().includes(t)));
@@ -37,6 +47,7 @@ export default function CadastrosPendentes() {
         title="Cadastros pendentes"
         description="Profissionais que ainda não podem pegar vagas porque falta algum documento aprovado (CPF, RG, comprovante de residência e selfie)."
         back={{ to: '/gestao/inicio', label: 'Dashboard' }}
+        actions={<button type="button" className="primary" disabled={busy === 'todos'} onClick={() => lembrar()}>{busy === 'todos' ? 'Enviando…' : 'Enviar lembrete a todos'}</button>}
       />
       {error && <Alert kind="danger">{error}</Alert>}
       <div className="filters">
@@ -71,6 +82,7 @@ export default function CadastrosPendentes() {
                       <td data-label="Cadastro" className="nowrap">{fmtDate(i.createdAt)}</td>
                       <td data-label="Ações" className="nowrap">
                         {i.situacao === 'EM_ANALISE' && <Link className="btn sm primary" to="/gestao/documentos">Analisar</Link>}{' '}
+                        {i.situacao !== 'EM_ANALISE' && <button type="button" className="sm" disabled={busy === i.id} onClick={() => lembrar(i.id)}>Lembrar</button>}{' '}
                         <Link className="btn sm" to={`/gestao/profissionais/${i.id}`}><Icon name="user" size={16} />Ficha</Link>
                       </td>
                     </tr>
