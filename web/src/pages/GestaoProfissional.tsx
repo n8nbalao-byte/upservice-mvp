@@ -152,6 +152,13 @@ export default function GestaoProfissional() {
   const load = () => api<Me>(`/manage/workers/${id}`).then(setData, (e) => setError(e.message));
   useEffect(() => { load(); }, [id]);
 
+  // Documento aprovado que precisa ser trocado (vencido, ilegível, selfie antiga): volta para o profissional reenviar.
+  async function atualizar(docId: string, type: string) {
+    const reason = await ask({ title: `Pedir atualização: ${DOC_NAME[type] ?? type}?`, label: 'Motivo (o profissional recebe no app e por e-mail e precisa reenviar; até a nova aprovação, não pega vagas novas)', multiline: true, minLength: 5, maxLength: 450, confirmText: 'Pedir atualização' });
+    if (!reason) return;
+    if (await run(docId, () => api(`/manage/documents/${docId}/atualizar`, { body: { reason } }), 'Atualização pedida. O profissional foi avisado.')) load();
+  }
+
   async function review(docId: string, status: 'APROVADO' | 'REJEITADO') {
     let reason: string | null = null;
     if (status === 'REJEITADO') {
@@ -211,6 +218,7 @@ export default function GestaoProfissional() {
                         <button className="danger sm" disabled={busy === d.id} onClick={() => review(d.id, 'REJEITADO')}>Rejeitar</button>
                       </>
                     )}
+                    {d.status === 'APROVADO' && <button className="sm" disabled={busy === d.id} onClick={() => atualizar(d.id, d.type)}>Atualizar documento</button>}
                   </span>
                 </div>
               ))}
