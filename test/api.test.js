@@ -1865,7 +1865,10 @@ test('online e mensagem: último acesso gravado (no máximo 1 vez por minuto) e 
 
   // Mensagem: administrador para qualquer profissional; gestor só para os do escopo; profissional não envia.
   assert.equal((await call(s.admin, 'POST', `/api/manage/workers/${w1}/mensagem`, { texto: 'oi' })).status, 400, 'curta demais');
+  const [{ name: nomeAdmin }] = await q("SELECT name FROM users WHERE email = 'admin@test.dev'");
+  await q("UPDATE users SET name = 'Marcos Souza' WHERE email = 'admin@test.dev'");
   assert.equal((await call(s.admin, 'POST', `/api/manage/workers/${w1}/mensagem`, { texto: 'Seu RG está ilegível, envie uma foto nova.' })).status, 201);
+  await q("UPDATE users SET name = ? WHERE email = 'admin@test.dev'", [nomeAdmin]);
   assert.equal((await call(s.w2, 'POST', `/api/manage/workers/${w1}/mensagem`, { texto: 'Mensagem de outro profissional' })).status, 403);
   await login('fora-escopo@test.dev'); // sem candidatura em nenhuma loja do gestor
   const fora = (await userByEmail('fora-escopo@test.dev')).id;
@@ -1874,7 +1877,7 @@ test('online e mensagem: último acesso gravado (no máximo 1 vez por minuto) e 
   assert.equal((await call(s.admin, 'POST', `/api/manage/workers/${admin.id}/mensagem`, { texto: 'Para um administrador' })).status, 404, 'só para profissional');
   const avisos = (await call(s.w1, 'GET', '/api/me/avisos')).body.items;
   const m = avisos.find((a) => a.kind === 'MENSAGEM');
-  assert.match(m.title, /^Mensagem de admin · UP Service$/i);
+  assert.equal(m.title, 'Mensagem de Marcos · UP Service', 'primeiro nome de quem enviou');
   assert.equal(m.body, 'Seu RG está ilegível, envie uma foto nova.');
   assert.equal(m.read_at, null);
   assert.equal((await call(s.w1, 'POST', '/api/me/avisos/lidos', { ids: [m.id] })).status, 200);
