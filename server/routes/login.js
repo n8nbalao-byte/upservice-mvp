@@ -26,13 +26,14 @@ async function hit(rawKey, max, windowMs) {
   const key = sha(rawKey);
   const now = new Date();
   const since = new Date(now.getTime() - windowMs);
-  await q(
+  // Um comando só: LAST_INSERT_ID(expr) devolve o contador que ESTE pedido gravou. Com um SELECT depois, pedidos
+  // simultâneos liam o contador já somado por todos e eram todos recusados.
+  const r = await q(
     `INSERT INTO rate_limits (k, window_start, n) VALUES (?, ?, 1)
-     ON DUPLICATE KEY UPDATE n = IF(window_start < ?, 1, n + 1), window_start = IF(window_start < ?, VALUES(window_start), window_start)`,
+     ON DUPLICATE KEY UPDATE n = LAST_INSERT_ID(IF(window_start < ?, 1, n + 1)), window_start = IF(window_start < ?, VALUES(window_start), window_start)`,
     [key, now, since, since],
   );
-  const [row] = await q('SELECT n FROM rate_limits WHERE k = ?', [key]);
-  return row.n <= max;
+  return (r.insertId || 1) <= max; // linha nova: insertId 0 (a tabela não tem auto-incremento) = 1ª tentativa
 }
 const limited = async (key, max, windowMs) => { if (!(await hit(key, max, windowMs))) fail(429, 'Muitas tentativas. Aguarde alguns minutos e tente de novo.'); };
 // Devolve uma tentativa reservada com hit() (o pedido deu certo, então não conta como erro).

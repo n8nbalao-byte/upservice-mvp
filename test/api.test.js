@@ -1007,7 +1007,7 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
   // Pedidos simultâneos não furam o limite: de 15 erros ao mesmo tempo, só 10 passam pela conferência.
   const burst = await Promise.all(Array.from({ length: 15 }, () => call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'errada123' })));
   const conferidas = burst.filter((b) => b.status === 401).length;
-  assert.ok(conferidas <= 10, `no máximo 10 conferências, vieram ${conferidas}`);
+  assert.equal(conferidas, 10, 'exatamente 10 conferências: nem mais (furar o limite) nem menos (recusar todos na corrida)');
   assert.equal(conferidas + burst.filter((b) => b.status === 429).length, 15);
   // Recusas devolvem a reserva: completando até 10 erros, um por vez, o próximo é recusado.
   for (let i = conferidas; i < 10; i++) assert.equal((await call(null, 'POST', '/api/auth/password', { email: 'senha@test.dev', password: 'errada123' })).status, 401);
