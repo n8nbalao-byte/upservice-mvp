@@ -13,7 +13,7 @@ const docStatus = (st) => (st.includes('APROVADO') ? 'APROVADO' : st.includes('P
 
 /** Profissionais do escopo e a situação do cadastro de cada um. Habilitado = a mesma regra da candidatura (staffing.js):
  *  conta ativa, termos aceitos e os 4 documentos aprovados. "Documento pendente" = falta algum dos 4 aprovado. */
-async function cadastros(user) {
+export async function cadastros(user) {
   const [wWhere, wArgs] = workerScope(user, 'u.id');
   const base = `FROM users u WHERE u.role = 'PROFISSIONAL' AND u.deleted_at IS NULL AND u.status <> 'INATIVO' AND ${wWhere}`;
   const [pros, docs] = await Promise.all([
@@ -28,7 +28,7 @@ async function cadastros(user) {
     const vals = Object.values(doc);
     const docsOk = vals.every((v) => v === 'APROVADO');
     return {
-      id: p.id, name: p.name, email: p.email, status: p.status, createdAt: p.created_at, perfil: !!p.perfil, docs: doc,
+      id: p.id, name: p.name, email: p.email, status: p.status, createdAt: p.created_at, perfil: !!p.perfil, termos: !!p.termos, docs: doc,
       habilitado: docsOk && p.status === 'ATIVO' && !!p.termos,
       // O que a gestão precisa fazer primeiro: analisar o que chegou; depois, quem teve documento reprovado; por fim, quem não enviou.
       situacao: docsOk ? null : vals.includes('PENDENTE') ? 'EM_ANALISE' : vals.includes('REJEITADO') ? 'REPROVADO' : 'FALTA',
@@ -38,6 +38,20 @@ async function cadastros(user) {
 
 // Lista de quem ainda não está com os 4 documentos aprovados (em análise primeiro), para cobrar ou analisar.
 const ORDEM = { EM_ANALISE: 0, REPROVADO: 1, FALTA: 2 };
+// "Enviar lembrete" (gestão): para um profissional ou para todos do escopo que têm algo a fazer. Na mão não há limite
+// de quantidade, mas cada pessoa recebe no máximo 1 por dia (evita clique duplo).
+r.post('/manage/cadastros-pendentes/lembrete', MANAGERS, async (req, res) => {
+  const { lembrar, pendentesDeLembrete } = await import('../cadastroLembretes.js'); // o módulo usa cadastros() deste arquivo
+  let alvo = await pendentesDeLembrete(req.user, { intervalo: 86400e3, maximo: Infinity, idadeMin: 0 });
+  if (req.body.userId) {
+    alvo = alvo.filter((p) => p.id === req.body.userId);
+    if (!alvo.length) fail(409, 'Este profissional não tem nada a fazer no cadastro agora ou já recebeu lembrete hoje.');
+  }
+  let enviados = 0;
+  for (const p of alvo) if (await lembrar(p)) enviados++;
+  res.json({ enviados });
+});
+
 r.get('/manage/cadastros-pendentes', MANAGERS, async (req, res) => {
   const items = (await cadastros(req.user)).filter((p) => p.situacao)
     .sort((a, b) => ORDEM[a.situacao] - ORDEM[b.situacao] || String(a.name).localeCompare(String(b.name), 'pt-BR'));
