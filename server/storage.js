@@ -18,7 +18,7 @@ export function sniff(buf) {
   return null;
 }
 
-const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'application/pdf': 'pdf' };
+const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' };
 
 export async function saveFile(dir, buf, mime) {
   const key = `${dir}/${randomUUID()}.${EXT[mime]}`;
