@@ -44,16 +44,17 @@ export default function AdminUsuarios() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('');
+  const [status, setStatus] = useState('');
   const [editing, setEditing] = useState('');
   const [error, setError] = useState('');
 
   type Lista = { items: User[]; total: number; counts: Record<string, number> };
-  // Páginas de 100: busca e papel no servidor; "Carregar mais" acrescenta a próxima página.
-  const fetchPage = (offset: number) => api<Lista>(`/admin/users?q=${encodeURIComponent(search)}&role=${role}&offset=${offset}`);
+  // Páginas de 100: busca, status e papel no servidor; "Carregar mais" acrescenta a próxima página.
+  const fetchPage = (offset: number) => api<Lista>(`/admin/users?q=${encodeURIComponent(search)}&status=${status}&role=${role}&offset=${offset}`);
   const load = () => fetchPage(0).then((r) => { setUsers(r.items); setTotal(r.total); setCounts(r.counts); }, (e) => setError(e.message));
   const more = () => run('more', async () => { const r = await fetchPage(users?.length ?? 0); setUsers((u) => [...(u ?? []), ...r.items]); setTotal(r.total); setCounts(r.counts); });
   useEffect(() => { api<Unit[]>('/units').then(setUnits); }, []);
-  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [search, role]);
+  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [search, status, role]);
 
   async function update(u: User, change: { role?: string; status?: string }) {
     const what = change.role ? `papel para ${label(change.role)}` : `status para ${label(change.status)}`;
@@ -84,6 +85,15 @@ export default function AdminUsuarios() {
       <PageHeader title="Usuários" description="Gestores e administradores entram com Google; promova a conta aqui depois do primeiro acesso." />
       <div className="filters">
         <label style={{ maxWidth: 420 }}>Buscar<input placeholder="Nome ou e-mail" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
+        <label>Status
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">Todos</option>
+            <option value="ATIVO">Ativos</option>
+            <option value="EM_ANALISE">Em análise</option>
+            <option value="BLOQUEADO">Bloqueados</option>
+            <option value="INATIVO">Inativos</option>
+          </select>
+        </label>
       </div>
       {error && <Alert kind="danger">{error}</Alert>}
       <div className="card tight">
@@ -94,7 +104,7 @@ export default function AdminUsuarios() {
             </button>
           ))}
         </div>
-        {!users ? <Loading /> : shown.length === 0 ? <EmptyState icon="users" title="Nenhum usuário encontrado" text="Nenhum usuário com essa busca." /> : (
+        {!users ? <Loading /> : shown.length === 0 ? <EmptyState icon="users" title="Nenhum usuário encontrado" text="Nenhum usuário com essa busca e esse status." /> : (
           <div className="table-wrap">
             <table className="responsive">
               <thead><tr><th>Usuário</th><th>Papel</th><th>Status</th><th>Lojas</th><th>Ações</th></tr></thead>

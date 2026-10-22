@@ -1901,6 +1901,17 @@ test('usuários: lista completa em páginas de 100, com o total real de cada pap
     assert.equal(prof.total, r.counts.PROFISSIONAL);
     const busca = (await call(s.admin, 'GET', '/api/admin/users?q=Lista%2012')).body;
     assert.equal(busca.total, 10, '"Lista 120" a "Lista 129"');
+    // Status no servidor: "Bloqueados" junta o temporário e o permanente; os contadores de papel seguem o filtro.
+    await q("UPDATE users SET status = 'BLOQUEADO_TEMPORARIAMENTE' WHERE email IN ('lista0@test.dev', 'lista1@test.dev')");
+    await q("UPDATE users SET status = 'BLOQUEADO_PERMANENTEMENTE' WHERE email = 'lista2@test.dev'");
+    const conta = async (where) => Number((await q(`SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL AND ${where}`))[0].n);
+    const bloq = (await call(s.admin, 'GET', '/api/admin/users?status=BLOQUEADO')).body;
+    assert.ok(bloq.total >= 3 && bloq.items.every((u) => u.status.startsWith('BLOQUEADO_')));
+    assert.equal(bloq.total, await conta("status LIKE 'BLOQUEADO%'"));
+    const ativos = (await call(s.admin, 'GET', '/api/admin/users?status=ATIVO&role=PROFISSIONAL')).body;
+    assert.ok(ativos.items.every((u) => u.status === 'ATIVO' && u.role === 'PROFISSIONAL'));
+    assert.equal(ativos.counts[''], await conta("status = 'ATIVO'"), 'contadores das abas respeitam o status');
+    assert.equal((await call(s.admin, 'GET', '/api/admin/users?status=QUALQUER')).body.total, r.total, 'status desconhecido = todos');
   } finally {
     await q('DELETE FROM users WHERE email LIKE ?', ['lista%@test.dev']);
   }
