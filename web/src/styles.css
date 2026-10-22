@@ -1233,3 +1233,8 @@ h2.g-pill-soft { font-size: clamp(0.95rem, min(4.4vw, 2.6vh), 1.25rem); }
 .g-trocar:hover { background: #fff7e6; color: #4a2a0c; border-color: #e3c48c; }
 .g-trocar img { width: 30px; height: 30px; object-fit: cover; object-position: top; border-radius: 50%; background: #f6e2bb; }
 @media (prefers-reduced-motion: reduce) { .g-escolha-card img { transition: none; } }
+/* ---------- Configurações: fotos da tela de login ---------- */
+.login-fotos { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.login-foto { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.login-foto img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
+.login-foto figcaption { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; }
