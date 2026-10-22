@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { Alert } from './ui';
 
 /** Confirmar o WhatsApp da conta: número → código de 6 dígitos enviado pelo WhatsApp oficial da UP Service. */
-export function ConfirmarWhatsapp({ initial = '', onDone, onSent }: { initial?: string; onDone: () => void; onSent?: () => void }) {
+export function ConfirmarWhatsapp({ initial = '', onDone, onSent, onFail }: { initial?: string; onDone: () => void; onSent?: () => void; onFail?: (status: number) => void }) {
   const [phone, setPhone] = useState(initial);
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -19,6 +19,7 @@ export function ConfirmarWhatsapp({ initial = '', onDone, onSent }: { initial?: 
       onSent?.();
     } catch (err) {
       setError((err as Error).message);
+      onFail?.(err instanceof ApiError ? err.status : 0);
     }
     setBusy(false);
   }
