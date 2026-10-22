@@ -68,7 +68,21 @@ export async function listGroups() {
 // ponytail: cópia de 10 min do número conectado (muda só quando troca o número na Evolution).
 let numero = { at: 0, value: null };
 /** Troca de número (conectar/desconectar): a próxima leitura busca de novo. */
-export const forgetNumber = () => { numero = { at: 0, value: null }; };
+export const forgetNumber = () => { numero = { at: 0, value: null }; online = { at: 0, value: false }; };
+
+// ponytail: cópia de 1 min do estado da conexão (o /config é chamado em toda abertura do app).
+let online = { at: 0, value: false };
+/** O número está conectado agora? Desconectado ou banido = false: o app não oferece login nem confirmação por WhatsApp. */
+export async function whatsappOnline() {
+  if (!(await whatsappConfig())) return false;
+  if (Date.now() - online.at < 60e3) return online.value;
+  let value = false;
+  try {
+    value = (await evolution('/instance/connectionState/{instance}', { timeout: 5000 }))?.instance?.state === 'open';
+  } catch { /* sem resposta da Evolution: trata como desconectado */ }
+  online = { at: Date.now(), value };
+  return value;
+}
 /** Número conectado na instância (DDD + número, sem o 55), lido da Evolution; null se não souber. */
 export async function connectedNumber() {
   if (Date.now() - numero.at < 10 * 60e3) return numero.value;

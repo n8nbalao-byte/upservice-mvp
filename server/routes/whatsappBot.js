@@ -14,11 +14,12 @@ const APP_URL = () => (process.env.APP_URL || 'https://app.upserviceintermed.com
 
 const sameSecret = (a, b) => !!a && !!b && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
-// Responde na hora (a Evolution não espera) e atende em segundo plano. O token vem no cabeçalho x-webhook-token; só se a
-// Evolution não guardar cabeçalhos (viaHeader false) é que ele vai na URL.
+// Responde na hora (a Evolution não espera) e atende em segundo plano. O token vem no cabeçalho x-webhook-token; na URL
+// só vale se a Evolution não guardar cabeçalhos (viaHeader false) ou se o atendimento foi ligado antes do cabeçalho
+// existir (viaHeader ausente) — senão o bot ficaria mudo até alguém religar.
 r.post('/whatsapp/webhook', async (req, res) => {
   const cfg = await botConfig();
-  const token = req.get('x-webhook-token') ?? (cfg.viaHeader === false ? req.query.token : null);
+  const token = req.get('x-webhook-token') ?? (cfg.viaHeader !== true ? req.query.token : null);
   if (!sameSecret(String(token ?? ''), cfg.secret ?? '')) fail(401, 'Não autorizado.');
   res.json({ ok: true });
   if (cfg.enabled) setImmediate(() => handleWebhook(req.body).catch((e) => console.error('whatsapp-bot', e.message)));

@@ -9,7 +9,7 @@ import { canLogin, requireLogin, startSession } from '../auth.js';
 import { q, tx } from '../db.js';
 import { fail } from '../http.js';
 import { sendMailSafe } from '../mail.js';
-import { sendWhatsapp, whatsappConfig } from '../whatsapp.js';
+import { sendWhatsapp, whatsappOnline } from '../whatsapp.js';
 
 const r = Router();
 const scryptAsync = promisify(scrypt);
@@ -213,7 +213,8 @@ r.get('/auth/qr/:id/status', async (req, res) => {
 // O login por código só vale para o número que a própria pessoa confirmou (users.whatsapp, único entre contas):
 // o telefone digitado no cadastro não basta, senão um número errado daria acesso a quem fosse o dono dele.
 
-export const phoneLoginEnabled = async () => !!(await whatsappConfig());
+// Só com o número conectado de verdade: desconectado ou banido, o app não oferece login nem confirmação por WhatsApp.
+export const phoneLoginEnabled = () => whatsappOnline();
 const phoneOf = (v) => {
   const d = String(v ?? '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
   if (!/^\d{10,11}$/.test(d)) fail(400, 'Informe o celular com DDD.');
@@ -222,7 +223,7 @@ const phoneOf = (v) => {
 const newCode = () => String(randomInt(0, 1000000)).padStart(6, '0');
 const PHONE_OK = { ok: true, message: 'Se este número estiver confirmado em uma conta, você vai receber um código no WhatsApp em instantes.' };
 const VERIFY_OK = { ok: true, message: 'Se o número puder ser usado, o código chega no WhatsApp em instantes. Não chegou? Se o número já estiver em outra conta, fale com a UP Service.' };
-const requireWhatsapp = async () => { if (!(await phoneLoginEnabled())) fail(503, 'O WhatsApp da UP Service ainda não está disponível.'); };
+const requireWhatsapp = async () => { if (!(await phoneLoginEnabled())) fail(503, 'O WhatsApp da UP Service está indisponível no momento. Entre com e-mail e senha ou com o Google.'); };
 
 // Confirmação (logado): envia um código para o número informado; ele só vira o WhatsApp da conta depois do código.
 r.post('/me/whatsapp/start', requireLogin, async (req, res) => {
