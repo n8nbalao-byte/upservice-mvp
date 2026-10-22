@@ -12,6 +12,7 @@ type Dash = {
   workers: number;
   openJobs: { jobs: number; positions: number; filled: number };
   pendingDocuments: { documents: number; people: number };
+  cadastros: { usuarios: number | null; profissionais: number; habilitados: number; docPendentes: number; emAnalise: number };
   today: Record<string, number>;
   latestJobs: { id: string; title: string; unit_name: string; starts_at: string; ends_at: string; daily_value: string; positions: number; status: string; applications: number; approved: number }[];
 };
@@ -101,6 +102,7 @@ export default function Dashboard() {
   const dayTotal = parts.reduce((t, p) => t + p.value, 0);
   const done = count(['FINALIZADA']);
   const working = count(['EM_ATIVIDADE', 'EM_PAUSA', 'PAUSA_EXCEDIDA']);
+  const c = data.cadastros;
   const jobs = data.latestJobs.slice(0, fit ? jobsFit || JOBS : JOBS);
   const quick: { to: string; icon: IconName; text: string; short: string }[] = [
     { to: '/gestao/vagas', icon: 'briefcase', text: 'Publicar vaga', short: 'Vagas' },
@@ -128,7 +130,10 @@ export default function Dashboard() {
       {error && <Alert kind="danger">{error}</Alert>}
 
       <div className="kpis">
-        <Kpi to="/gestao/atividades" icon="users" tone="accent" title="Profissionais ativos" value={data.workers} sub={`${working} em atividade agora`} />
+        {/* Cadastro: quantos estão habilitados para trabalhar (4 documentos aprovados, termos e conta ativa) e quantos não. */}
+        <Kpi to={c.usuarios == null ? '/gestao/atividades' : '/admin/usuarios'} icon="users" tone="accent" title={c.usuarios == null ? 'Profissionais cadastrados' : 'Usuários cadastrados'} value={c.usuarios ?? c.profissionais} sub={c.usuarios == null ? `${working} em atividade agora` : `${c.profissionais.toLocaleString('pt-BR')} profissionais`} />
+        <Kpi to={c.usuarios == null ? '/gestao/atividades' : '/admin/usuarios'} icon="check" tone="success" title="Habilitados para trabalhar" value={c.habilitados} sub={`de ${c.profissionais.toLocaleString('pt-BR')} profissionais${c.profissionais ? ` (${Math.round((c.habilitados / c.profissionais) * 100)}%)` : ''}`} />
+        <Kpi to="/gestao/cadastros" icon="alert" tone="danger" title="Com documento pendente" value={c.docPendentes} sub={c.emAnalise ? `${c.emAnalise} em análise · ver a lista` : 'Ver a lista'} hot={c.docPendentes > 0} />
         <Kpi to="/gestao/vagas" icon="briefcase" tone="info" title="Vagas abertas" value={data.openJobs.jobs} sub={`${data.openJobs.filled} de ${data.openJobs.positions} posições preenchidas`} />
         <Kpi to="/gestao/pendencias" icon="alert" tone="warning" title="Pendências" value={items.length} sub={urgent ? `${urgent} ${urgent === 1 ? 'pede' : 'pedem'} atenção agora` : 'Nada urgente no momento'} hot={items.length > 0} />
         <Kpi to="/gestao/documentos" icon="file" tone="purple" title="Documentos em análise" value={data.pendingDocuments.documents} sub={`de ${data.pendingDocuments.people} profissional(is)`} />
@@ -144,7 +149,7 @@ export default function Dashboard() {
             <div className="recent" ref={recentRef}>
               {recent.map((i) => {
                 const tone: Tone = GROUPS[rank(i.kind)]?.tone ?? 'info';
-                return (
+  return (
                   <Link key={i.key} to={i.link}>
                     <span className={`ic tone-${tone}`}><Icon name={iconOf(i.kind)} /></span>
                     <span className="what"><strong>{i.title}</strong><small>{i.detail.split(' · ').map(label).join(' · ')}</small></span>
