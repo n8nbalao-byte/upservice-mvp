@@ -1070,7 +1070,11 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
   const mock = http.createServer((req, res) => {
     let b = '';
     req.on('data', (c) => { b += c; });
-    req.on('end', () => { sent.push({ url: req.url, key: req.headers.apikey, body: JSON.parse(b) }); res.end('{}'); });
+    req.on('end', () => {
+      // Estado da conexão: conectado (não conta como mensagem enviada).
+      if (req.url.startsWith('/instance/connectionState')) return res.end(JSON.stringify({ instance: { state: 'open' } }));
+      sent.push({ url: req.url, key: req.headers.apikey, body: JSON.parse(b) }); res.end('{}');
+    });
   }).listen(0);
   Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}/`, EVOLUTION_API_KEY: 'chave-teste', EVOLUTION_INSTANCE: 'upservice' });
   const waA = await login('wa-a@test.dev');
@@ -1530,6 +1534,13 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
     const post = (body, tk = token) => fetch(`${base}/api/whatsapp/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-webhook-token': tk }, body: JSON.stringify(body) });
     assert.equal((await post({}, 'errado')).status, 401);
     assert.equal((await call(null, 'POST', `/api/whatsapp/webhook?token=${token}`, {})).status, 401);
+    // Ligado antes do cabeçalho existir (configuração sem viaHeader, webhook com o token na URL): continua atendendo.
+    const [cfgRow] = await q("SELECT value FROM app_settings WHERE name = 'whatsapp_bot'");
+    const { viaHeader: _, ...antiga } = JSON.parse(cfgRow.value);
+    await q("UPDATE app_settings SET value = ? WHERE name = 'whatsapp_bot'", [JSON.stringify(antiga)]);
+    assert.equal((await call(null, 'POST', `/api/whatsapp/webhook?token=${token}`, {})).status, 200, 'config antiga aceita o token na URL');
+    assert.equal((await call(null, 'POST', '/api/whatsapp/webhook?token=errado', {})).status, 401);
+    await q("UPDATE app_settings SET value = ? WHERE name = 'whatsapp_bot'", [cfgRow.value]);
 
     // Profissional habilitado, com o WhatsApp confirmado; uma vaga amanhã na loja A.
     const bot = await login('bot1@test.dev');
@@ -1540,10 +1551,11 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
     const starts = new Date(`${amanha}T10:00:00-03:00`);
     const job = (await call(s.gestor, 'POST', '/api/manage/jobs', { unitId: s.unitA, title: 'Repositor do bot', startsAt: starts, endsAt: new Date(starts.getTime() + 6 * 3600e3), positions: 1, dailyValue: 130, breakCount: 1, breakMinutes: 15, publish: true })).body.id;
 
-    const settle = async () => { let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 350)); } };
+    // Espera a resposta chegar (até 5 s) e depois o silêncio: não depende da velocidade do banco.
+    const settle = async (n0) => { for (let i = 0; i < 50 && n0 !== undefined && sent.length === n0; i++) await new Promise((r) => setTimeout(r, 100)); let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 300)); } };
     const msg = (jid, message) => ({ event: 'messages.upsert', instance: 'upservice', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message } });
-    const say = async (text, jid = '5511977770123@s.whatsapp.net') => { assert.equal((await post(msg(jid, { conversation: text }))).status, 200); await settle(); };
-    const vote = async (name) => { await post({ event: 'messages.update', data: { keyId: `poll-${polls}`, remoteJid: '5511977770123@s.whatsapp.net', fromMe: false, pollUpdates: [{ vote: { selectedOptions: [name] } }] } }); await settle(); };
+    const say = async (text, jid = '5511977770123@s.whatsapp.net') => { const n0 = sent.length; assert.equal((await post(msg(jid, { conversation: text }))).status, 200); await settle(n0); };
+    const vote = async (name) => { const n0 = sent.length; await post({ event: 'messages.update', data: { keyId: `poll-${polls}`, remoteJid: '5511977770123@s.whatsapp.net', fromMe: false, pollUpdates: [{ vote: { selectedOptions: [name] } }] } }); await settle(n0); };
     const poll = () => sent.filter((x) => x.url === '/message/sendPoll/upservice').at(-1).body;
     const texts = () => sent.filter((x) => x.url === '/message/sendText/upservice').map((x) => x.body.text);
     const pick = (re) => { const i = poll().values.findIndex((v) => re.test(v)); assert.ok(i >= 0, `opção ${re} em ${poll().values}`); return String(i + 1); };
@@ -1644,8 +1656,9 @@ test('WhatsApp (bot): lembrete da véspera com Vou/Não vou, check-in abrindo, q
     const me = (await userByEmail('bot2@test.dev')).id;
     await q('UPDATE users SET whatsapp = ?, whatsapp_verified_at = ? WHERE id = ?', ['11977770456', new Date(), me]);
     const jid = '5511977770456@s.whatsapp.net';
-    const settle = async () => { let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 350)); } };
-    const say = async (text) => { await post({ event: 'messages.upsert', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message: { conversation: text } } }); await settle(); };
+    // Espera a resposta chegar (até 5 s) e depois o silêncio: não depende da velocidade do banco.
+    const settle = async (n0) => { for (let i = 0; i < 50 && n0 !== undefined && sent.length === n0; i++) await new Promise((r) => setTimeout(r, 100)); let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 300)); } };
+    const say = async (text) => { const n0 = sent.length; await post({ event: 'messages.upsert', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message: { conversation: text } } }); await settle(n0); };
     const poll = () => sent.filter((x) => x.url === '/message/sendPoll/upservice').at(-1).body;
     const texts = () => sent.filter((x) => x.url === '/message/sendText/upservice' && x.body.number === '5511977770456').map((x) => x.body.text);
     const pick = (re) => { const i = poll().values.findIndex((v) => re.test(v)); assert.ok(i >= 0, `opção ${re} em ${poll().values}`); return String(i + 1); };
@@ -1787,6 +1800,24 @@ test('postador: grupo de cada loja (sugestão pelo nome), resumo agrupado depois
     assert.match(grupoMsgs().at(-1).body.text, /Vaga antiga do postador/);
     assert.equal((await call(s.admin, 'POST', `/api/admin/postador/unidades/${s.unitB}/postar`, {})).status, 409, 'loja sem grupo');
     assert.equal((await call(s.admin, 'PUT', '/api/admin/postador', { enabled: false })).status, 200);
+  } finally {
+    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
+    forgetNumber();
+    mock.close();
+  }
+});
+
+test('WhatsApp desconectado (ou banido): o app não oferece login nem confirmação por WhatsApp', { skip }, async () => {
+  const http = await import('node:http');
+  const { forgetNumber } = await import('../server/whatsapp.js');
+  const mock = http.createServer((req, res) => res.end(JSON.stringify(req.url.startsWith('/instance/connectionState') ? { instance: { state: 'close' } } : {}))).listen(0);
+  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  forgetNumber();
+  try {
+    assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, false, 'sem aba Telefone e sem confirmação obrigatória');
+    const r = await call(null, 'POST', '/api/auth/phone/start', { phone: '11999990000' });
+    assert.equal(r.status, 503);
+    assert.match(r.body.error, /indisponível no momento/);
   } finally {
     for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
     forgetNumber();
