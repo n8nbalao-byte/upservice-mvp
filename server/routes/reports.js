@@ -5,6 +5,7 @@ import { assertUnit, requireRole } from '../auth.js';
 import { q } from '../db.js';
 import { fail } from '../http.js';
 import { csvCell } from '../rules.js';
+import { cadastros } from './dashboard.js';
 import { storeWorkedTime } from './presence.js';
 
 const r = Router();
@@ -148,6 +149,56 @@ const CSV_COLUMNS = [
   ['ocorrencias', (x) => x.occurrences ?? ''],
   ['observacao', (x) => x.note ?? ''],
 ];
+
+// Cadastro completo de todos os profissionais (dados pessoais, Pix e situação dos documentos): só o administrador,
+// com auditoria. Os arquivos dos documentos não vão; a situação de cada um, sim.
+const SITUACAO = { EM_ANALISE: 'Documento em análise', REPROVADO: 'Documento reprovado', FALTA: 'Falta enviar documento' };
+const DOC = { APROVADO: 'Aprovado', PENDENTE: 'Em análise', REJEITADO: 'Reprovado', FALTA: 'Não enviado' };
+const cpfFmt = (c) => (c ? c.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : '');
+const telFmt = (t) => (t ? t.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3') : '');
+const PROF_COLUMNS = [
+  ['nome', (x) => x.name],
+  ['email', (x) => x.email],
+  ['whatsapp', (x) => telFmt(x.whatsapp)],
+  ['telefone', (x) => telFmt(x.phone)],
+  ['cpf', (x) => cpfFmt(x.cpf)],
+  ['rg', (x) => x.rg],
+  ['endereco', (x) => x.address],
+  ['cidade', (x) => x.city],
+  ['uf', (x) => x.uf],
+  ['contato_emergencia', (x) => x.emergency_name],
+  ['telefone_emergencia', (x) => telFmt(x.emergency_phone)],
+  ['pix_tipo', (x) => x.pix_type],
+  ['pix_chave', (x) => x.pix_key],
+  ['status_conta', (x) => x.status],
+  ['habilitado', (x) => (x.c?.habilitado ? 'Sim' : 'Não')],
+  ['situacao_cadastro', (x) => (x.c?.habilitado ? 'Habilitado' : !x.c ? '' : !x.c.perfil ? 'Falta preencher os dados' : SITUACAO[x.c.situacao] ?? (x.status !== 'ATIVO' ? 'Conta não ativa' : 'Falta aceitar os termos'))],
+  ['doc_cpf', (x) => DOC[x.c?.docs.CPF] ?? ''],
+  ['doc_rg', (x) => DOC[x.c?.docs.RG] ?? ''],
+  ['doc_comprovante', (x) => DOC[x.c?.docs.COMPROVANTE] ?? ''],
+  ['doc_selfie', (x) => DOC[x.c?.docs.SELFIE] ?? ''],
+  ['termos_aceitos_em', (x) => (x.terms_accepted_at ? `${date(x.terms_accepted_at)} ${time(x.terms_accepted_at)}` : '')],
+  ['cadastrado_em', (x) => date(x.created_at)],
+];
+
+r.get('/manage/reports/profissionais.csv', requireRole('ADMINISTRADOR'), async (req, res) => {
+  const [rows, cads] = await Promise.all([
+    q(`SELECT u.id, u.name, u.email, u.whatsapp, u.status, u.created_at, p.phone, p.cpf, p.rg, p.address, p.city, p.uf,
+              p.emergency_name, p.emergency_phone, p.pix_type, p.pix_key, p.terms_accepted_at
+       FROM users u LEFT JOIN worker_profiles p ON p.user_id = u.id
+       WHERE u.role = 'PROFISSIONAL' AND u.deleted_at IS NULL ORDER BY u.name, u.id`),
+    cadastros(req.user),
+  ]);
+  const porId = new Map(cads.map((c) => [c.id, c])); // inativos não entram na regra do Dashboard: situação em branco
+  const lines = [PROF_COLUMNS.map(([name]) => csvCell(name)).join(';'), ...rows.map((x) => PROF_COLUMNS.map(([, get]) => csvCell(get({ ...x, c: porId.get(x.id) }))).join(';'))];
+  await audit(q, req, 'REPORT_EXPORT', 'report', null, { after: { relatorio: 'profissionais', rows: rows.length } });
+  res.set({
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="upservice-profissionais-${new Date().toISOString().slice(0, 10)}.csv"`,
+    'Cache-Control': 'private, no-store',
+  });
+  res.send(`\uFEFF${lines.join('\r\n')}\r\n`);
+});
 
 // Sem documentos e sem e-mail do profissional; toda exportação fica na auditoria.
 r.get('/manage/reports/export.csv', MANAGERS, async (req, res) => {
