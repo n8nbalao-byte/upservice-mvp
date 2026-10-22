@@ -24,7 +24,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
 export type Role = 'PROFISSIONAL' | 'GESTOR' | 'ADMINISTRADOR';
 export type Doc = { id: string; type: 'CPF' | 'RG' | 'COMPROVANTE' | 'SELFIE'; status: string; rejection_reason: string | null };
 export type Me = {
-  user: { id: string; name: string; email: string; role: Role; status: string; isOwner?: boolean; whatsapp?: string | null };
+  user: { id: string; name: string; email: string; role: Role; status: string; isOwner?: boolean; whatsapp?: string | null; lastSeenAt?: string | null };
   profile: Record<string, any> | null;
   documents: Doc[];
   complete: boolean;
