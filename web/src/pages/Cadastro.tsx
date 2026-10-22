@@ -70,7 +70,7 @@ export default function Cadastro() {
                 <div>
                   <span className="strong">{d.name}</span> {current && <StatusBadge status={current.status} />}
                   <span className="muted" style={{ display: 'block' }}>{d.hint}</span>
-                  {current?.rejection_reason && <span className="text-danger" style={{ display: 'block' }}>Motivo da rejeição: {current.rejection_reason}</span>}
+                  {current?.rejection_reason && <span className="text-danger" style={{ display: 'block' }}>{current.rejection_reason.startsWith('Atualização solicitada') ? '' : 'Motivo da rejeição: '}{current.rejection_reason}</span>}
                 </div>
                 {d.type === 'SELFIE' && current && <img className="selfie-thumb" src={`/api/files/doc/${current.id}`} alt="Sua selfie" />}
                 {d.type === 'SELFIE' ? current?.status !== 'APROVADO' && (

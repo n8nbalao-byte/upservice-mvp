@@ -1876,6 +1876,37 @@ test('fotos da tela de login: públicas para o login, só o administrador princi
   assert.equal((await q("SELECT COUNT(*) AS n FROM audit_events WHERE action IN ('LOGIN_FOTO_ADD', 'LOGIN_FOTO_DELETE')"))[0].n, 2);
 });
 
+test('atualizar documento: aprovado volta para o profissional reenviar, com aviso no app; gestor só no escopo', { skip }, async () => {
+  const atu = await login('atu@test.dev');
+  await completeWorker(atu, '627.418.359-00');
+  const id = (await userByEmail('atu@test.dev')).id;
+  const [selfie] = await q("SELECT id FROM worker_documents WHERE user_id = ? AND type = 'SELFIE' AND status = 'APROVADO'", [id]);
+  const habilitado = async () => (await call(atu, 'GET', '/api/me')).body.complete;
+  assert.equal(await habilitado(), true);
+
+  assert.equal((await call(s.admin, 'POST', `/api/manage/documents/${selfie.id}/atualizar`, { reason: 'oi' })).status, 400, 'motivo curto');
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/documents/${selfie.id}/atualizar`, { reason: 'Foto antiga, sem óculos' })).status, 404, 'fora do escopo do gestor');
+  assert.equal((await call(atu, 'POST', `/api/manage/documents/${selfie.id}/atualizar`, { reason: 'Foto antiga, sem óculos' })).status, 403);
+  assert.equal((await call(s.admin, 'POST', `/api/manage/documents/${selfie.id}/atualizar`, { reason: 'Foto antiga, sem óculos' })).status, 200);
+  assert.equal((await call(s.admin, 'POST', `/api/manage/documents/${selfie.id}/atualizar`, { reason: 'Foto antiga, sem óculos' })).status, 409, 'só documento aprovado');
+
+  const [doc] = await q('SELECT status, rejection_reason FROM worker_documents WHERE id = ?', [selfie.id]);
+  assert.deepEqual([doc.status, doc.rejection_reason], ['REJEITADO', 'Atualização solicitada: Foto antiga, sem óculos']);
+  assert.equal(await habilitado(), false, 'até reenviar, não está habilitado');
+  const aviso = (await call(atu, 'GET', '/api/me/avisos')).body.items.find((a) => a.kind === 'DOCUMENTO');
+  assert.equal(aviso.title, 'Atualize seu documento: selfie');
+  assert.equal(aviso.body, 'A UP Service pediu que você envie de novo: selfie. Motivo: Foto antiga, sem óculos');
+  assert.equal(aviso.link, '/cadastro');
+  assert.ok((await q("SELECT 1 FROM audit_events WHERE action = 'DOCUMENT_UPDATE_REQUEST' AND entity_id = ?", [selfie.id])).length);
+
+  // Reenvia: o antigo vira substituído e o novo entra em análise.
+  assert.equal((await call(atu, 'POST', '/api/me/documents', { type: 'SELFIE', file: JPEG })).status, 200);
+  const atuais = await q("SELECT id, status FROM worker_documents WHERE user_id = ? AND type = 'SELFIE' ORDER BY created_at", [id]);
+  assert.deepEqual(atuais.map((d) => d.status), ['SUBSTITUIDO', 'PENDENTE']);
+  assert.equal((await call(s.admin, 'POST', `/api/manage/documents/${atuais[1].id}/review`, { status: 'APROVADO' })).status, 200);
+  assert.equal(await habilitado(), true, 'aprovado de novo: habilitado');
+});
+
 test('dashboard: usuários, profissionais, habilitados (4 documentos aprovados) e lista de quem tem documento pendente', { skip }, async () => {
   // Três situações novas: só entrou (falta enviar), enviou e espera análise, teve um documento reprovado.
   const falta = await login('cad-falta@test.dev');

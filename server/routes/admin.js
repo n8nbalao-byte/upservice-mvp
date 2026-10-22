@@ -8,6 +8,7 @@ import { geocode, lookupCep } from '../geo.js';
 import { applyBlock, ctx, endBlock, flush } from '../penalties.js';
 import { BLOCK_DAYS } from '../rules.js';
 import { fail, int, num, requireReason, text } from '../http.js';
+import { sendMailSafe } from '../mail.js';
 import { promoteFromWaitlist } from '../staffing.js';
 import { removeFile } from '../storage.js';
 import { profileState } from './worker.js';
@@ -295,6 +296,27 @@ r.post('/manage/documents/:id/review', MANAGERS, async (req, res) => {
   if (doc.status !== 'PENDENTE') fail(409, 'Documento já analisado.');
   await q('UPDATE worker_documents SET status = ?, rejection_reason = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?', [status, reason, req.user.id, new Date(), doc.id]);
   await audit(q, req, 'DOCUMENT_REVIEW', 'worker_document', doc.id, { before: { status: doc.status }, after: { status }, reason });
+  res.json({ ok: true });
+});
+
+// "Atualizar documento": um documento já aprovado (vencido, ilegível, foto antiga) volta para o profissional reenviar.
+// Fica como reprovado com o motivo, então o app libera o reenvio e ele deixa de estar habilitado até a nova aprovação.
+const APP_URL = () => (process.env.APP_URL || 'https://app.upserviceintermed.com').replace(/\/+$/, '');
+const DOC_NOME = { CPF: 'CPF', RG: 'RG', COMPROVANTE: 'comprovante de residência', SELFIE: 'selfie' };
+r.post('/manage/documents/:id/atualizar', MANAGERS, async (req, res) => {
+  const motivo = text(req.body.reason, 'motivo', { min: 5, max: 450 });
+  const [doc] = await q('SELECT d.id, d.user_id, d.type, d.status, u.name, u.email FROM worker_documents d JOIN users u ON u.id = d.user_id WHERE d.id = ?', [req.params.id]);
+  if (!doc || !(await workerAllowed(req.user, doc.user_id))) fail(404, 'Não encontrado.');
+  const reason = `Atualização solicitada: ${motivo}`;
+  const { affectedRows } = await q("UPDATE worker_documents SET status = 'REJEITADO', rejection_reason = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ? AND status = 'APROVADO'", [reason, req.user.id, new Date(), doc.id]);
+  if (!affectedRows) fail(409, 'Só um documento aprovado pode ter atualização pedida. Se está em análise, rejeite.');
+  await audit(q, req, 'DOCUMENT_UPDATE_REQUEST', 'worker_document', doc.id, { before: { status: 'APROVADO' }, after: { status: 'REJEITADO' }, reason });
+  const nome = DOC_NOME[doc.type] ?? doc.type;
+  const titulo = `Atualize seu documento: ${nome}`;
+  const corpo = `A UP Service pediu que você envie de novo: ${nome}. Motivo: ${motivo}`;
+  await q('INSERT INTO notifications SET ?', [{ id: randomUUID(), user_id: doc.user_id, kind: 'DOCUMENTO', title: titulo, body: corpo, link: '/cadastro' }]);
+  await sendMailSafe(doc.email, `UP Service: ${titulo.toLowerCase()}`,
+    `Olá, ${String(doc.name).trim().split(/\s+/)[0]}.\n\n${corpo}\n\nEntre no app, toque em "Cadastro e documentos" e envie o documento atualizado. Até a nova aprovação, você não consegue pegar vagas novas.\n\n${APP_URL()}/cadastro\n\nEquipe UP Service`);
   res.json({ ok: true });
 });
 
