@@ -52,7 +52,7 @@ r.get('/manage/dashboard', MANAGERS, async (req, res) => {
   // ponytail: dia operacional em UTC-3, igual a /manage/sessions.
   const dayStart = new Date(`${now.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })}T00:00:00-03:00`);
   const today = [dayStart, new Date(dayStart.getTime() + 86400e3), ...uArgs];
-  const [[workers], [jobs], [docs], sessions, [exceptions], latest, pros, [usuarios]] = await Promise.all([
+  const [[workers], [jobs], [docs], sessions, [exceptions], latest, pros, papeis] = await Promise.all([
     q(`SELECT COUNT(*) AS n FROM users d WHERE d.role = 'PROFISSIONAL' AND d.status = 'ATIVO' AND ${wWhere}`, wArgs),
     q(`SELECT COUNT(*) AS n, COALESCE(SUM(j.positions), 0) AS positions,
               COALESCE(SUM((SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status = 'APROVADA')), 0) AS filled
@@ -68,8 +68,8 @@ r.get('/manage/dashboard', MANAGERS, async (req, res) => {
               (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status = 'APROVADA') AS approved
        FROM jobs j JOIN units un ON un.id = j.unit_id WHERE ${uWhere} ORDER BY j.created_at DESC LIMIT 12`, uArgs),
     cadastros(req.user),
-    // Total de contas (todos os papéis): só o administrador vê.
-    req.user.role === 'ADMINISTRADOR' ? q('SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL') : [{ n: null }],
+    // Total de contas por papel: só o administrador vê.
+    req.user.role === 'ADMINISTRADOR' ? q('SELECT role, COUNT(*) AS n FROM users WHERE deleted_at IS NULL GROUP BY role') : null,
   ]);
   res.json({
     serverNow: now,
@@ -79,7 +79,8 @@ r.get('/manage/dashboard', MANAGERS, async (req, res) => {
     today: { ...Object.fromEntries(sessions.map((x) => [x.status, Number(x.n)])), exceptions: Number(exceptions.n) },
     latestJobs: latest,
     cadastros: {
-      usuarios: usuarios.n == null ? null : Number(usuarios.n),
+      usuarios: papeis && papeis.reduce((t, p) => t + Number(p.n), 0),
+      papeis: papeis && Object.fromEntries(papeis.map((p) => [p.role, Number(p.n)])),
       profissionais: pros.length,
       habilitados: pros.filter((p) => p.habilitado).length,
       docPendentes: pros.filter((p) => p.situacao).length,
