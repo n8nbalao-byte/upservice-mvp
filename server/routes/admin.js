@@ -282,7 +282,7 @@ r.post('/manage/workers/:id/mensagem', MANAGERS, async (req, res) => {
   if (!user) fail(404, 'Não encontrado.');
   const body = text(req.body.texto, 'mensagem', { min: 3, max: 500 });
   const id = randomUUID();
-  await q('INSERT INTO notifications SET ?', [{ id, user_id: user.id, kind: 'MENSAGEM', title: `Mensagem de ${String(req.user.name).trim().split(/s+/)[0]} · UP Service`, body, link: null }]);
+  await q('INSERT INTO notifications SET ?', [{ id, user_id: user.id, kind: 'MENSAGEM', title: `Mensagem de ${String(req.user.name).trim().split(/\s+/)[0]} · UP Service`, body, link: null }]);
   await audit(q, req, 'MENSAGEM_ENVIADA', 'user', user.id, { after: { notificacao: id, tamanho: body.length } });
   res.status(201).json({ ok: true });
 });
