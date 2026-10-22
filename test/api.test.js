@@ -1980,6 +1980,8 @@ test('dashboard: usuários, profissionais, habilitados (4 documentos aprovados) 
     q("SELECT COUNT(*) AS n FROM users WHERE role = 'PROFISSIONAL' AND deleted_at IS NULL AND status <> 'INATIVO'"),
   ]);
   assert.equal(d.usuarios, Number(u.n), 'todas as contas');
+  const porPapel = Object.fromEntries((await q('SELECT role, COUNT(*) AS n FROM users WHERE deleted_at IS NULL GROUP BY role')).map((r) => [r.role, Number(r.n)]));
+  assert.deepEqual(d.papeis, porPapel, 'divisão por papel no card de usuários');
   assert.equal(d.profissionais, Number(p.n));
   assert.ok(d.habilitados > 0 && d.habilitados + d.docPendentes <= d.profissionais);
 
@@ -1998,6 +2000,7 @@ test('dashboard: usuários, profissionais, habilitados (4 documentos aprovados) 
   // Gestor: só profissionais das lojas dele, e sem o total de contas.
   const g = (await call(s.gestor, 'GET', '/api/manage/dashboard')).body.cadastros;
   assert.equal(g.usuarios, null);
+  assert.equal(g.papeis, null);
   assert.ok(g.profissionais <= d.profissionais);
   assert.ok(!(await call(s.gestor, 'GET', '/api/manage/cadastros-pendentes')).body.items.some((i) => i.email === 'cad-falta@test.dev'), 'fora do escopo do gestor');
   assert.equal((await call(falta, 'GET', '/api/manage/cadastros-pendentes')).status, 403);
