@@ -1849,3 +1849,34 @@ test('usuários: lista completa em páginas de 100, com o total real de cada pap
     await q('DELETE FROM users WHERE email LIKE ?', ['lista%@test.dev']);
   }
 });
+
+test('online e mensagem: último acesso gravado (no máximo 1 vez por minuto) e mensagem da gestão no app do profissional', { skip }, async () => {
+  const w1 = (await userByEmail('w1@test.dev')).id;
+  await q('UPDATE users SET last_seen_at = NULL WHERE id = ?', [w1]);
+  await call(s.w1, 'GET', '/api/me');
+  await new Promise((r) => setTimeout(r, 100));
+  const [{ last_seen_at: visto }] = await q('SELECT last_seen_at FROM users WHERE id = ?', [w1]);
+  assert.ok(visto && Date.now() - new Date(visto).getTime() < 10000, 'acesso grava o último acesso');
+  await call(s.w1, 'GET', '/api/me');
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(new Date((await q('SELECT last_seen_at FROM users WHERE id = ?', [w1]))[0].last_seen_at).getTime(), new Date(visto).getTime(), 'não regrava antes de 1 min');
+  const lista = (await call(s.admin, 'GET', '/api/admin/users?q=w1@test.dev')).body.items;
+  assert.ok(lista[0].lastSeenAt, 'a lista de usuários mostra o último acesso');
+
+  // Mensagem: administrador para qualquer profissional; gestor só para os do escopo; profissional não envia.
+  assert.equal((await call(s.admin, 'POST', `/api/manage/workers/${w1}/mensagem`, { texto: 'oi' })).status, 400, 'curta demais');
+  assert.equal((await call(s.admin, 'POST', `/api/manage/workers/${w1}/mensagem`, { texto: 'Seu RG está ilegível, envie uma foto nova.' })).status, 201);
+  assert.equal((await call(s.w2, 'POST', `/api/manage/workers/${w1}/mensagem`, { texto: 'Mensagem de outro profissional' })).status, 403);
+  await login('fora-escopo@test.dev'); // sem candidatura em nenhuma loja do gestor
+  const fora = (await userByEmail('fora-escopo@test.dev')).id;
+  assert.equal((await call(s.gestor, 'POST', `/api/manage/workers/${fora}/mensagem`, { texto: 'Fora do meu escopo' })).status, 404);
+  const [admin] = await q("SELECT id FROM users WHERE email = 'admin@test.dev'");
+  assert.equal((await call(s.admin, 'POST', `/api/manage/workers/${admin.id}/mensagem`, { texto: 'Para um administrador' })).status, 404, 'só para profissional');
+  const avisos = (await call(s.w1, 'GET', '/api/me/avisos')).body.items;
+  const m = avisos.find((a) => a.kind === 'MENSAGEM');
+  assert.match(m.title, /^Mensagem de admin · UP Service$/i);
+  assert.equal(m.body, 'Seu RG está ilegível, envie uma foto nova.');
+  assert.equal(m.read_at, null);
+  assert.equal((await call(s.w1, 'POST', '/api/me/avisos/lidos', { ids: [m.id] })).status, 200);
+  assert.ok((await call(s.w1, 'GET', '/api/me/avisos')).body.items.find((a) => a.id === m.id).read_at, '"Entendi" marca como lida');
+});

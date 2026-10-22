@@ -50,7 +50,13 @@ export async function loadUser(req, res, next) {
   if (token) {
     const [user] = await q('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?', [hash(token), new Date()]);
     // Bloqueio vale na hora, inclusive para sessões já abertas.
-    if (user && canLogin(user)) req.user = user;
+    if (user && canLogin(user)) {
+      req.user = user;
+      // "Visto por último" (quem está online): grava no máximo 1 vez por minuto; o app aberto consulta a cada 30–60 s.
+      if (!user.last_seen_at || Date.now() - new Date(user.last_seen_at).getTime() > 60e3) {
+        q('UPDATE users SET last_seen_at = ? WHERE id = ?', [new Date(), user.id]).catch(() => {});
+      }
+    }
   }
   next();
 }
@@ -100,7 +106,7 @@ export const unitScope = (user, col) => (user.role === 'ADMINISTRADOR'
   ? ['1 = 1', []]
   : [`${col} IN (SELECT unit_id FROM unit_managers WHERE user_id = ? AND active = 1)`, [user.id]]);
 
-export const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, isOwner: !!u.is_owner, whatsapp: u.whatsapp_verified_at ? u.whatsapp : null });
+export const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, isOwner: !!u.is_owner, whatsapp: u.whatsapp_verified_at ? u.whatsapp : null, lastSeenAt: u.last_seen_at ?? null });
 
 /**
  * Administrador principal: papel ADMINISTRADOR + users.is_owner = 1. A flag só é gravada por SSH para a conta com

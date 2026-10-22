@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMe } from '../App';
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
+import { MensagemButton, Presenca } from '../components/Mensagem';
 import { api, label, type Unit } from '../lib/api';
 
-type User = { id: string; name: string; email: string; role: string; status: string; isOwner: boolean; unitIds: string[] };
+type User = { id: string; name: string; email: string; role: string; status: string; isOwner: boolean; unitIds: string[]; lastSeenAt: string | null };
 const ROLES = ['PROFISSIONAL', 'GESTOR', 'ADMINISTRADOR'];
 const STATUS = ['ATIVO', 'EM_ANALISE', 'BLOQUEADO_TEMPORARIAMENTE', 'BLOQUEADO_PERMANENTEMENTE', 'INATIVO'];
 const FILTERS = [{ key: '', text: 'Todos' }, { key: 'PROFISSIONAL', text: 'Profissionais' }, { key: 'GESTOR', text: 'Gestores' }, { key: 'ADMINISTRADOR', text: 'Administradores' }];
@@ -104,7 +105,7 @@ export default function AdminUsuarios() {
                   const locked = isMe || u.isOwner || (u.role === 'ADMINISTRADOR' && !me.user.isOwner);
                   return [
                     <tr key={u.id}>
-                      <td data-label="Usuário"><span className="strong">{u.name}{isMe && ' (você)'}</span><span className="muted">{u.email}</span></td>
+                      <td data-label="Usuário"><span className="strong">{u.name}{isMe && ' (você)'}</span><span className="muted">{u.email}</span><Presenca lastSeenAt={u.lastSeenAt} /></td>
                       <td data-label="Papel">
                         {locked ? label(u.role) : (
                           <select value={u.role} onChange={(e) => update(u, { role: e.target.value })} aria-label={`Papel de ${u.name}`}>
@@ -123,6 +124,7 @@ export default function AdminUsuarios() {
                       <td data-label="Ações">
                         <div className="row">
                           {u.role === 'PROFISSIONAL' && <Link className="btn sm" to={`/gestao/profissionais/${u.id}`}>Ver perfil</Link>}
+                          {u.role === 'PROFISSIONAL' && <MensagemButton id={u.id} name={u.name} className="sm ghost" />}
                           {u.isOwner && <span className="badge tone-accent plain">Administrador principal</span>}
                           {me.user.isOwner && !locked && <button className="sm ghost text-danger" onClick={() => remove(u)}>Excluir</button>}
                         </div>

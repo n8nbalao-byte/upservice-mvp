@@ -1227,3 +1227,17 @@ h2.g-pill-soft { font-size: clamp(0.95rem, min(4.4vw, 2.6vh), 1.25rem); }
 .g-trocar:hover { background: #fff7e6; color: #4a2a0c; border-color: #e3c48c; }
 .g-trocar img { width: 30px; height: 30px; object-fit: cover; object-position: top; border-radius: 50%; background: #f6e2bb; }
 @media (prefers-reduced-motion: reduce) { .g-escolha-card img { transition: none; } }
+/* Presença: online agora (verde) ou visto há… */
+.presenca { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.78rem; }
+.presenca i { width: 8px; height: 8px; border-radius: 50%; background: #c3cad0; }
+.presenca.on { color: var(--success); font-weight: 600; }
+.presenca.on i { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+/* Mensagem da gestão para o profissional: abre por cima de tudo, até tocar em "Entendi". */
+.msg-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 16px; background: rgba(7, 21, 45, 0.55); }
+.msg-card { display: grid; justify-items: center; gap: 10px; width: min(420px, 100%); padding: 24px 20px; border-radius: 18px; background: var(--surface); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25); text-align: center; animation: msg-in 0.25s ease-out; }
+.msg-card h2 { margin: 0; font-size: 1.15rem; }
+.msg-card p { margin: 0; white-space: pre-wrap; font-size: 1rem; }
+.msg-card button { width: 100%; margin-top: 6px; }
+.msg-ic { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-dark); }
+@keyframes msg-in { from { transform: translateY(12px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .msg-card { animation: none; } }
