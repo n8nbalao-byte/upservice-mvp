@@ -423,7 +423,7 @@ dialog.dialog .counter { justify-self: end; color: var(--muted); font-size: 0.78
 .dash-when .lines span { display: inline-flex; align-items: center; gap: 8px; }
 .dash-when .icon-btn { width: 44px; height: 44px; border-color: var(--line); background: var(--surface); box-shadow: var(--shadow); }
 .live { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
-.kpis { display: grid; gap: 20px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kpis { display: grid; gap: 16px 20px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .kpi { display: flex; align-items: flex-start; gap: 14px; padding: 20px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow); color: inherit; text-decoration: none; transition: border-color 0.12s, transform 0.12s; }
 .kpi:hover { border-color: var(--line-strong); transform: translateY(-1px); }
 .kpi > span:last-child { display: grid; min-width: 0; }
@@ -436,6 +436,10 @@ dialog.dialog .counter { justify-self: end; color: var(--muted); font-size: 0.78
 .kpi.tone-warning .ic { background: #fdebc8; color: var(--warning); }
 .kpi.tone-warning.hot { background: #fffaf0; border-color: #f4e1b8; }
 .kpi.tone-purple .ic { background: var(--purple-soft); color: var(--purple); }
+.doc-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.kpi.tone-success .ic { background: var(--success-soft); color: var(--success); }
+.kpi.tone-danger .ic { background: var(--danger-soft); color: var(--danger); }
+.kpi.tone-danger.hot { background: #fff8f7; border-color: #f6d3cd; }
 .dash-grid { display: grid; gap: 20px; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; }
 .dash-grid.bottom { grid-template-columns: minmax(0, 1fr) 250px; }
 .dash-card { padding: 22px 24px; }
@@ -494,12 +498,14 @@ dialog.dialog .counter { justify-self: end; color: var(--muted); font-size: 0.78
 
 /* Dashboard em tela larga e alta: ocupa exatamente a janela, sem rolagem. Listas mostram só as linhas que cabem
    (useFit no Dashboard.tsx); rosca e acesso rápido compactam por container query conforme a altura do cartão. */
+/* Telas bem largas: os 6 indicadores numa linha só. */
+@media (min-width: 1500px) and (min-height: 600px) { .dashboard .kpis { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; } }
 @media (min-width: 1100px) and (min-height: 600px) {
   .content:has(.dashboard) { padding-top: 20px; padding-bottom: 20px; }
   .dashboard { height: calc(100dvh - 73px - 40px); grid-template-rows: auto auto minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
   .dashboard .dash-head h1 { font-size: 1.6rem; }
   .dashboard .dash-head .desc { margin-top: 2px; }
-  .dashboard .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+  .dashboard .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; }
   .dashboard .kpi { padding: 14px 16px; align-items: center; }
   .dashboard .kpi .ic { width: 44px; height: 44px; }
   .dashboard .kpi .v { margin: 2px 0; font-size: 1.6rem; }

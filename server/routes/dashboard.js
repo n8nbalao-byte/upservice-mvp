@@ -3,9 +3,46 @@ import { Router } from 'express';
 import { assertUnit, requireRole, unitScope, workerScope } from '../auth.js';
 import { q } from '../db.js';
 import { fail } from '../http.js';
+import { DOC_TYPES } from './worker.js';
 
 const r = Router();
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
+
+/** Situação de um tipo de documento: aprovado vale mais que em análise, que vale mais que reprovado; sem envio = FALTA. */
+const docStatus = (st) => (st.includes('APROVADO') ? 'APROVADO' : st.includes('PENDENTE') ? 'PENDENTE' : st.includes('REJEITADO') ? 'REJEITADO' : 'FALTA');
+
+/** Profissionais do escopo e a situação do cadastro de cada um. Habilitado = a mesma regra da candidatura (staffing.js):
+ *  conta ativa, termos aceitos e os 4 documentos aprovados. "Documento pendente" = falta algum dos 4 aprovado. */
+async function cadastros(user) {
+  const [wWhere, wArgs] = workerScope(user, 'u.id');
+  const base = `FROM users u WHERE u.role = 'PROFISSIONAL' AND u.deleted_at IS NULL AND u.status <> 'INATIVO' AND ${wWhere}`;
+  const [pros, docs] = await Promise.all([
+    q(`SELECT u.id, u.name, u.email, u.status, u.created_at, p.user_id IS NOT NULL AS perfil, p.terms_accepted_at IS NOT NULL AS termos
+       FROM users u LEFT JOIN worker_profiles p ON p.user_id = u.id WHERE u.role = 'PROFISSIONAL' AND u.deleted_at IS NULL AND u.status <> 'INATIVO' AND ${wWhere}`, wArgs),
+    q(`SELECT d.user_id, d.type, GROUP_CONCAT(DISTINCT d.status) AS st FROM worker_documents d WHERE d.user_id IN (SELECT u.id ${base}) GROUP BY d.user_id, d.type`, wArgs),
+  ]);
+  const porUsuario = new Map();
+  for (const d of docs) { if (!porUsuario.has(d.user_id)) porUsuario.set(d.user_id, {}); porUsuario.get(d.user_id)[d.type] = docStatus(String(d.st)); }
+  return pros.map((p) => {
+    const doc = Object.fromEntries(DOC_TYPES.map((t) => [t, porUsuario.get(p.id)?.[t] ?? 'FALTA']));
+    const vals = Object.values(doc);
+    const docsOk = vals.every((v) => v === 'APROVADO');
+    return {
+      id: p.id, name: p.name, email: p.email, status: p.status, createdAt: p.created_at, perfil: !!p.perfil, docs: doc,
+      habilitado: docsOk && p.status === 'ATIVO' && !!p.termos,
+      // O que a gestão precisa fazer primeiro: analisar o que chegou; depois, quem teve documento reprovado; por fim, quem não enviou.
+      situacao: docsOk ? null : vals.includes('PENDENTE') ? 'EM_ANALISE' : vals.includes('REJEITADO') ? 'REPROVADO' : 'FALTA',
+    };
+  });
+}
+
+// Lista de quem ainda não está com os 4 documentos aprovados (em análise primeiro), para cobrar ou analisar.
+const ORDEM = { EM_ANALISE: 0, REPROVADO: 1, FALTA: 2 };
+r.get('/manage/cadastros-pendentes', MANAGERS, async (req, res) => {
+  const items = (await cadastros(req.user)).filter((p) => p.situacao)
+    .sort((a, b) => ORDEM[a.situacao] - ORDEM[b.situacao] || String(a.name).localeCompare(String(b.name), 'pt-BR'));
+  res.json({ items });
+});
 
 r.get('/manage/dashboard', MANAGERS, async (req, res) => {
   const [uWhere, uArgs] = unitScope(req.user, 'j.unit_id');
@@ -15,7 +52,7 @@ r.get('/manage/dashboard', MANAGERS, async (req, res) => {
   // ponytail: dia operacional em UTC-3, igual a /manage/sessions.
   const dayStart = new Date(`${now.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })}T00:00:00-03:00`);
   const today = [dayStart, new Date(dayStart.getTime() + 86400e3), ...uArgs];
-  const [[workers], [jobs], [docs], sessions, [exceptions], latest] = await Promise.all([
+  const [[workers], [jobs], [docs], sessions, [exceptions], latest, pros, [usuarios]] = await Promise.all([
     q(`SELECT COUNT(*) AS n FROM users d WHERE d.role = 'PROFISSIONAL' AND d.status = 'ATIVO' AND ${wWhere}`, wArgs),
     q(`SELECT COUNT(*) AS n, COALESCE(SUM(j.positions), 0) AS positions,
               COALESCE(SUM((SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status = 'APROVADA')), 0) AS filled
@@ -30,6 +67,9 @@ r.get('/manage/dashboard', MANAGERS, async (req, res) => {
               (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status <> 'CANCELADA') AS applications,
               (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status = 'APROVADA') AS approved
        FROM jobs j JOIN units un ON un.id = j.unit_id WHERE ${uWhere} ORDER BY j.created_at DESC LIMIT 12`, uArgs),
+    cadastros(req.user),
+    // Total de contas (todos os papéis): só o administrador vê.
+    req.user.role === 'ADMINISTRADOR' ? q('SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL') : [{ n: null }],
   ]);
   res.json({
     serverNow: now,
@@ -38,6 +78,13 @@ r.get('/manage/dashboard', MANAGERS, async (req, res) => {
     pendingDocuments: { documents: Number(docs.n), people: Number(docs.people) },
     today: { ...Object.fromEntries(sessions.map((x) => [x.status, Number(x.n)])), exceptions: Number(exceptions.n) },
     latestJobs: latest,
+    cadastros: {
+      usuarios: usuarios.n == null ? null : Number(usuarios.n),
+      profissionais: pros.length,
+      habilitados: pros.filter((p) => p.habilitado).length,
+      docPendentes: pros.filter((p) => p.situacao).length,
+      emAnalise: pros.filter((p) => p.situacao === 'EM_ANALISE').length,
+    },
   });
 });
 
