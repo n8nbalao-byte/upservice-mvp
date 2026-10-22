@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMe } from '../App';
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
 import { api, label, type Unit } from '../lib/api';
@@ -43,7 +43,7 @@ export default function AdminUsuarios() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(useSearchParams()[0].get('status') ?? '');
   const [editing, setEditing] = useState('');
   const [error, setError] = useState('');
 
@@ -91,6 +91,7 @@ export default function AdminUsuarios() {
             <option value="EM_ANALISE">Em análise</option>
             <option value="BLOQUEADO">Bloqueados</option>
             <option value="INATIVO">Inativos</option>
+            <option value="HABILITADO">Habilitados para trabalhar</option>
           </select>
         </label>
       </div>

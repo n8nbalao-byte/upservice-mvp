@@ -10,6 +10,7 @@ import { BLOCK_DAYS } from '../rules.js';
 import { fail, int, num, requireReason, text } from '../http.js';
 import { promoteFromWaitlist } from '../staffing.js';
 import { removeFile } from '../storage.js';
+import { cadastros } from './dashboard.js';
 import { profileState } from './worker.js';
 
 const r = Router();
@@ -129,8 +130,10 @@ r.get('/admin/users', ADMIN, async (req, res) => {
   const role = ROLES.includes(req.query.role) ? req.query.role : null;
   const offset = Math.max(0, Math.min(1e6, Number.parseInt(req.query.offset, 10) || 0));
   const status = FILTRO_STATUS[req.query.status];
-  const where = `deleted_at IS NULL AND (name LIKE ? OR email LIKE ?)${status ? ' AND status IN (?)' : ''}`;
-  const args = status ? [term, term, status] : [term, term];
+  // "Habilitados para trabalhar": mesma regra do Dashboard (conta ativa, termos e os 4 documentos aprovados).
+  const habilitados = req.query.status === 'HABILITADO' && (await cadastros(req.user)).filter((p) => p.habilitado).map((p) => p.id);
+  const where = `deleted_at IS NULL AND (name LIKE ? OR email LIKE ?)${status ? ' AND status IN (?)' : ''}${habilitados ? ' AND id IN (?)' : ''}`;
+  const args = [term, term, ...(status ? [status] : []), ...(habilitados ? [habilitados.length ? habilitados : ['']] : [])];
   const porPapel = await q(`SELECT role, COUNT(*) AS n FROM users WHERE ${where} GROUP BY role`, args);
   const counts = { '': porPapel.reduce((t, r2) => t + Number(r2.n), 0), ...Object.fromEntries(ROLES.map((x) => [x, Number(porPapel.find((r2) => r2.role === x)?.n ?? 0)])) };
   const users = await q(`SELECT * FROM users WHERE ${where}${role ? ' AND role = ?' : ''} ORDER BY role DESC, name, id LIMIT ${PAGINA} OFFSET ${offset}`, role ? [...args, role] : args);
