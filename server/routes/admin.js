@@ -17,6 +17,8 @@ const ADMIN = requireRole('ADMINISTRADOR');
 const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
 const ROLES = ['PROFISSIONAL', 'GESTOR', 'ADMINISTRADOR'];
 const USER_STATUS = ['ATIVO', 'EM_ANALISE', 'BLOQUEADO_TEMPORARIAMENTE', 'BLOQUEADO_PERMANENTEMENTE', 'INATIVO'];
+// Filtro de status da lista de usuários: os dois bloqueios entram juntos em "Bloqueados".
+const FILTRO_STATUS = { ATIVO: ['ATIVO'], EM_ANALISE: ['EM_ANALISE'], BLOQUEADO: ['BLOQUEADO_TEMPORARIAMENTE', 'BLOQUEADO_PERMANENTEMENTE'], INATIVO: ['INATIVO'] };
 const UNIT_STATUS = ['ATIVA', 'BLOQUEADA_FINANCEIRA', 'INATIVA'];
 
 // ---------- Unidades ----------
@@ -126,10 +128,12 @@ r.get('/admin/users', ADMIN, async (req, res) => {
   const term = `%${String(req.query.q ?? '').trim()}%`;
   const role = ROLES.includes(req.query.role) ? req.query.role : null;
   const offset = Math.max(0, Math.min(1e6, Number.parseInt(req.query.offset, 10) || 0));
-  const where = 'deleted_at IS NULL AND (name LIKE ? OR email LIKE ?)';
-  const porPapel = await q(`SELECT role, COUNT(*) AS n FROM users WHERE ${where} GROUP BY role`, [term, term]);
+  const status = FILTRO_STATUS[req.query.status];
+  const where = `deleted_at IS NULL AND (name LIKE ? OR email LIKE ?)${status ? ' AND status IN (?)' : ''}`;
+  const args = status ? [term, term, status] : [term, term];
+  const porPapel = await q(`SELECT role, COUNT(*) AS n FROM users WHERE ${where} GROUP BY role`, args);
   const counts = { '': porPapel.reduce((t, r2) => t + Number(r2.n), 0), ...Object.fromEntries(ROLES.map((x) => [x, Number(porPapel.find((r2) => r2.role === x)?.n ?? 0)])) };
-  const users = await q(`SELECT * FROM users WHERE ${where}${role ? ' AND role = ?' : ''} ORDER BY role DESC, name, id LIMIT ${PAGINA} OFFSET ${offset}`, role ? [term, term, role] : [term, term]);
+  const users = await q(`SELECT * FROM users WHERE ${where}${role ? ' AND role = ?' : ''} ORDER BY role DESC, name, id LIMIT ${PAGINA} OFFSET ${offset}`, role ? [...args, role] : args);
   const ids = users.map((u) => u.id);
   const links = users.length ? await q('SELECT user_id, unit_id FROM unit_managers WHERE active = 1 AND user_id IN (?)', [ids]) : [];
   // Foto de perfil: a selfie atual (aprovada ou em análise; a mais recente vence).

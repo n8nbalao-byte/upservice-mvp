@@ -13,7 +13,7 @@ const docStatus = (st) => (st.includes('APROVADO') ? 'APROVADO' : st.includes('P
 
 /** Profissionais do escopo e a situação do cadastro de cada um. Habilitado = a mesma regra da candidatura (staffing.js):
  *  conta ativa, termos aceitos e os 4 documentos aprovados. "Documento pendente" = falta algum dos 4 aprovado. */
-async function cadastros(user) {
+export async function cadastros(user) {
   const [wWhere, wArgs] = workerScope(user, 'u.id');
   const base = `FROM users u WHERE u.role = 'PROFISSIONAL' AND u.deleted_at IS NULL AND u.status <> 'INATIVO' AND ${wWhere}`;
   const [pros, docs] = await Promise.all([
@@ -28,7 +28,7 @@ async function cadastros(user) {
     const vals = Object.values(doc);
     const docsOk = vals.every((v) => v === 'APROVADO');
     return {
-      id: p.id, name: p.name, email: p.email, status: p.status, createdAt: p.created_at, perfil: !!p.perfil, docs: doc,
+      id: p.id, name: p.name, email: p.email, status: p.status, createdAt: p.created_at, perfil: !!p.perfil, termos: !!p.termos, docs: doc,
       habilitado: docsOk && p.status === 'ATIVO' && !!p.termos,
       // O que a gestão precisa fazer primeiro: analisar o que chegou; depois, quem teve documento reprovado; por fim, quem não enviou.
       situacao: docsOk ? null : vals.includes('PENDENTE') ? 'EM_ANALISE' : vals.includes('REJEITADO') ? 'REPROVADO' : 'FALTA',
@@ -38,6 +38,20 @@ async function cadastros(user) {
 
 // Lista de quem ainda não está com os 4 documentos aprovados (em análise primeiro), para cobrar ou analisar.
 const ORDEM = { EM_ANALISE: 0, REPROVADO: 1, FALTA: 2 };
+// "Enviar lembrete" (gestão): para um profissional ou para todos do escopo que têm algo a fazer. Na mão não há limite
+// de quantidade, mas cada pessoa recebe no máximo 1 por dia (evita clique duplo).
+r.post('/manage/cadastros-pendentes/lembrete', MANAGERS, async (req, res) => {
+  const { lembrar, pendentesDeLembrete } = await import('../cadastroLembretes.js'); // o módulo usa cadastros() deste arquivo
+  let alvo = await pendentesDeLembrete(req.user, { intervalo: 86400e3, maximo: Infinity, idadeMin: 0 });
+  if (req.body.userId) {
+    alvo = alvo.filter((p) => p.id === req.body.userId);
+    if (!alvo.length) fail(409, 'Este profissional não tem nada a fazer no cadastro agora ou já recebeu lembrete hoje.');
+  }
+  let enviados = 0;
+  for (const p of alvo) if (await lembrar(p)) enviados++;
+  res.json({ enviados });
+});
+
 r.get('/manage/cadastros-pendentes', MANAGERS, async (req, res) => {
   const items = (await cadastros(req.user)).filter((p) => p.situacao)
     .sort((a, b) => ORDEM[a.situacao] - ORDEM[b.situacao] || String(a.name).localeCompare(String(b.name), 'pt-BR'));
@@ -52,7 +66,7 @@ r.get('/manage/dashboard', MANAGERS, async (req, res) => {
   // ponytail: dia operacional em UTC-3, igual a /manage/sessions.
   const dayStart = new Date(`${now.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })}T00:00:00-03:00`);
   const today = [dayStart, new Date(dayStart.getTime() + 86400e3), ...uArgs];
-  const [[workers], [jobs], [docs], sessions, [exceptions], latest, pros, [usuarios]] = await Promise.all([
+  const [[workers], [jobs], [docs], sessions, [exceptions], latest, pros, papeis] = await Promise.all([
     q(`SELECT COUNT(*) AS n FROM users d WHERE d.role = 'PROFISSIONAL' AND d.status = 'ATIVO' AND ${wWhere}`, wArgs),
     q(`SELECT COUNT(*) AS n, COALESCE(SUM(j.positions), 0) AS positions,
               COALESCE(SUM((SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status = 'APROVADA')), 0) AS filled
@@ -68,8 +82,8 @@ r.get('/manage/dashboard', MANAGERS, async (req, res) => {
               (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id AND a.status = 'APROVADA') AS approved
        FROM jobs j JOIN units un ON un.id = j.unit_id WHERE ${uWhere} ORDER BY j.created_at DESC LIMIT 12`, uArgs),
     cadastros(req.user),
-    // Total de contas (todos os papéis): só o administrador vê.
-    req.user.role === 'ADMINISTRADOR' ? q('SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL') : [{ n: null }],
+    // Total de contas por papel: só o administrador vê.
+    req.user.role === 'ADMINISTRADOR' ? q('SELECT role, COUNT(*) AS n FROM users WHERE deleted_at IS NULL GROUP BY role') : null,
   ]);
   res.json({
     serverNow: now,
@@ -79,7 +93,8 @@ r.get('/manage/dashboard', MANAGERS, async (req, res) => {
     today: { ...Object.fromEntries(sessions.map((x) => [x.status, Number(x.n)])), exceptions: Number(exceptions.n) },
     latestJobs: latest,
     cadastros: {
-      usuarios: usuarios.n == null ? null : Number(usuarios.n),
+      usuarios: papeis && papeis.reduce((t, p) => t + Number(p.n), 0),
+      papeis: papeis && Object.fromEntries(papeis.map((p) => [p.role, Number(p.n)])),
       profissionais: pros.length,
       habilitados: pros.filter((p) => p.habilitado).length,
       docPendentes: pros.filter((p) => p.situacao).length,

@@ -12,7 +12,7 @@ type Dash = {
   workers: number;
   openJobs: { jobs: number; positions: number; filled: number };
   pendingDocuments: { documents: number; people: number };
-  cadastros: { usuarios: number | null; profissionais: number; habilitados: number; docPendentes: number; emAnalise: number };
+  cadastros: { usuarios: number | null; papeis: Record<string, number> | null; profissionais: number; habilitados: number; docPendentes: number; emAnalise: number };
   today: Record<string, number>;
   latestJobs: { id: string; title: string; unit_name: string; starts_at: string; ends_at: string; daily_value: string; positions: number; status: string; applications: number; approved: number }[];
 };
@@ -76,6 +76,12 @@ function Donut({ parts, center, caption }: { parts: { value: number; color: stri
 }
 
 /** Painel inicial do gestor/admin: resumo do dia com dados reais, no escopo de unidades do usuário. */
+// "408 profissionais, 3 gestores e 5 administradores" (papéis sem ninguém ficam de fora).
+const PAPEIS = [['PROFISSIONAL', 'profissional', 'profissionais'], ['GESTOR', 'gestor', 'gestores'], ['ADMINISTRADOR', 'administrador', 'administradores']] as const;
+function porPapel(p: Record<string, number>) {
+  const xs = PAPEIS.filter(([k]) => p[k]).map(([k, um, varios]) => `${p[k].toLocaleString('pt-BR')} ${p[k] === 1 ? um : varios}`);
+  return xs.length > 1 ? `${xs.slice(0, -1).join(', ')} e ${xs.at(-1)}` : (xs[0] ?? '');
+}
 export default function Dashboard() {
   const { me } = useMe();
   const { items, refresh: refreshInbox } = useInbox();
@@ -131,7 +137,7 @@ export default function Dashboard() {
 
       <div className="kpis">
         {/* Cadastro: quantos estão habilitados para trabalhar (4 documentos aprovados, termos e conta ativa) e quantos não. */}
-        <Kpi to={c.usuarios == null ? '/gestao/atividades' : '/admin/usuarios'} icon="users" tone="accent" title={c.usuarios == null ? 'Profissionais cadastrados' : 'Usuários cadastrados'} value={c.usuarios ?? c.profissionais} sub={c.usuarios == null ? `${working} em atividade agora` : `${c.profissionais.toLocaleString('pt-BR')} profissionais`} />
+        <Kpi to={c.usuarios == null ? '/gestao/atividades' : '/admin/usuarios'} icon="users" tone="accent" title={c.usuarios == null ? 'Profissionais cadastrados' : 'Usuários cadastrados'} value={c.usuarios ?? c.profissionais} sub={c.papeis ? porPapel(c.papeis) : `${working} em atividade agora`} />
         <Kpi to={c.usuarios == null ? '/gestao/atividades' : '/admin/usuarios'} icon="check" tone="success" title="Habilitados para trabalhar" value={c.habilitados} sub={`de ${c.profissionais.toLocaleString('pt-BR')} profissionais${c.profissionais ? ` (${Math.round((c.habilitados / c.profissionais) * 100)}%)` : ''}`} />
         <Kpi to="/gestao/cadastros" icon="alert" tone="danger" title="Com documento pendente" value={c.docPendentes} sub={c.emAnalise ? `${c.emAnalise} em análise · ver a lista` : 'Ver a lista'} hot={c.docPendentes > 0} />
         <Kpi to="/gestao/vagas" icon="briefcase" tone="info" title="Vagas abertas" value={data.openJobs.jobs} sub={`${data.openJobs.filled} de ${data.openJobs.positions} posições preenchidas`} />
