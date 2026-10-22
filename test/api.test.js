@@ -827,7 +827,7 @@ test('administrador principal: só ele exclui usuários e dá/tira papel de admi
   }
   assert.equal((await q('SELECT status FROM applications WHERE id = ?', [reserve.id]))[0].status, 'APROVADA', 'reserva promovida');
   assert.equal((await call(h, 'GET', '/api/me')).status, 401);
-  assert.ok(!(await call(s.admin, 'GET', '/api/admin/users')).body.some((u) => u.id === hId), 'excluído some da lista');
+  assert.ok(!(await call(s.admin, 'GET', '/api/admin/users')).body.items.some((u) => u.id === hId), 'excluído some da lista');
   const [log] = await q("SELECT before_json, after_json FROM audit_events WHERE action = 'USER_DELETE' AND entity_id = ?", [hId]);
   assert.ok(!/comhistorico|274\.185/.test(log.before_json + log.after_json), 'auditoria sem dados pessoais');
 
@@ -1822,5 +1822,30 @@ test('WhatsApp desconectado (ou banido): o app não oferece login nem confirmaç
     for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
     forgetNumber();
     mock.close();
+  }
+});
+
+test('usuários: lista completa em páginas de 100, com o total real de cada papel (não para em 100)', { skip }, async () => {
+  const { randomUUID } = await import('node:crypto');
+  const extras = Array.from({ length: 130 }, (_, i) => [randomUUID(), `lista${i}@test.dev`, `Lista ${String(i).padStart(3, '0')}`]);
+  await q('INSERT INTO users (id, email, name) VALUES ?', [extras]);
+  try {
+    const [db] = await q('SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL');
+    const r = (await call(s.admin, 'GET', '/api/admin/users')).body;
+    assert.equal(r.counts[''], Number(db.n), 'total de todos');
+    assert.equal(r.counts.PROFISSIONAL + r.counts.GESTOR + r.counts.ADMINISTRADOR, r.counts['']);
+    assert.equal(r.items.length, 100, 'primeira página');
+    // Todas as páginas: ninguém repetido e ninguém de fora.
+    const ids = new Set(r.items.map((u) => u.id));
+    for (let off = 100; off < r.total; off += 100) for (const u of (await call(s.admin, 'GET', `/api/admin/users?offset=${off}`)).body.items) ids.add(u.id);
+    assert.equal(ids.size, Number(db.n));
+    // Papel e busca no servidor, com o total certo.
+    const prof = (await call(s.admin, 'GET', '/api/admin/users?role=PROFISSIONAL')).body;
+    assert.ok(prof.items.every((u) => u.role === 'PROFISSIONAL'));
+    assert.equal(prof.total, r.counts.PROFISSIONAL);
+    const busca = (await call(s.admin, 'GET', '/api/admin/users?q=Lista%2012')).body;
+    assert.equal(busca.total, 10, '"Lista 120" a "Lista 129"');
+  } finally {
+    await q('DELETE FROM users WHERE email LIKE ?', ['lista%@test.dev']);
   }
 });

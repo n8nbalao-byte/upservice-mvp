@@ -36,17 +36,23 @@ function UnitLinks({ user, units, onSaved }: { user: User; units: Unit[]; onSave
 export default function AdminUsuarios() {
   const { me } = useMe();
   const { ask } = useDialog();
-  const { run } = useAction();
+  const { busy, run } = useAction();
   const [users, setUsers] = useState<User[]>();
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [total, setTotal] = useState(0);
   const [units, setUnits] = useState<Unit[]>([]);
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('');
   const [editing, setEditing] = useState('');
   const [error, setError] = useState('');
 
-  const load = () => api<User[]>(`/admin/users?q=${encodeURIComponent(search)}`).then(setUsers, (e) => setError(e.message));
+  type Lista = { items: User[]; total: number; counts: Record<string, number> };
+  // Páginas de 100: busca e papel no servidor; "Carregar mais" acrescenta a próxima página.
+  const fetchPage = (offset: number) => api<Lista>(`/admin/users?q=${encodeURIComponent(search)}&role=${role}&offset=${offset}`);
+  const load = () => fetchPage(0).then((r) => { setUsers(r.items); setTotal(r.total); setCounts(r.counts); }, (e) => setError(e.message));
+  const more = () => run('more', async () => { const r = await fetchPage(users?.length ?? 0); setUsers((u) => [...(u ?? []), ...r.items]); setTotal(r.total); setCounts(r.counts); });
   useEffect(() => { api<Unit[]>('/units').then(setUnits); }, []);
-  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [search]);
+  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [search, role]);
 
   async function update(u: User, change: { role?: string; status?: string }) {
     const what = change.role ? `papel para ${label(change.role)}` : `status para ${label(change.status)}`;
@@ -71,7 +77,7 @@ export default function AdminUsuarios() {
     if (await run(u.id, () => api(`/admin/users/${u.id}`, { method: 'DELETE', body: { reason } }), 'Usuário excluído.')) load();
   }
 
-  const shown = (users ?? []).filter((u) => !role || u.role === role);
+  const shown = users ?? [];
   return (
     <div className="page">
       <PageHeader title="Usuários" description="Gestores e administradores entram com Google; promova a conta aqui depois do primeiro acesso." />
@@ -83,11 +89,11 @@ export default function AdminUsuarios() {
         <div className="tabs" role="tablist">
           {FILTERS.map((f) => (
             <button key={f.key} role="tab" aria-selected={role === f.key} className={`tab${role === f.key ? ' active' : ''}`} onClick={() => setRole(f.key)}>
-              {f.text}<span className="count">{(users ?? []).filter((u) => !f.key || u.role === f.key).length}</span>
+              {f.text}<span className="count">{counts[f.key] ?? 0}</span>
             </button>
           ))}
         </div>
-        {!users ? <Loading /> : shown.length === 0 ? <EmptyState icon="users" title="Nenhum usuário encontrado" text="A busca mostra até 100 resultados; refine pelo nome ou e-mail." /> : (
+        {!users ? <Loading /> : shown.length === 0 ? <EmptyState icon="users" title="Nenhum usuário encontrado" text="Nenhum usuário com essa busca." /> : (
           <div className="table-wrap">
             <table className="responsive">
               <thead><tr><th>Usuário</th><th>Papel</th><th>Status</th><th>Lojas</th><th>Ações</th></tr></thead>
@@ -129,6 +135,12 @@ export default function AdminUsuarios() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+        {users && users.length > 0 && (
+          <div className="card-footer">
+            <span className="muted">Mostrando {users.length} de {total}</span>
+            {users.length < total && <button type="button" className="sm" disabled={busy === 'more'} onClick={more}>{busy === 'more' ? 'Carregando…' : `Carregar mais ${Math.min(100, total - users.length)}`}</button>}
           </div>
         )}
       </div>
