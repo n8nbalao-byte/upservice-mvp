@@ -16,6 +16,7 @@ import Dashboard from './pages/Dashboard';
 import GestaoAtividades from './pages/GestaoAtividades';
 import GestaoCandidaturas from './pages/GestaoCandidaturas';
 import GestaoDocumentos from './pages/GestaoDocumentos';
+import CadastrosPendentes from './pages/CadastrosPendentes';
 import GestaoOcorrencias from './pages/GestaoOcorrencias';
 import GestaoProfissional from './pages/GestaoProfissional';
 import GestaoVagas from './pages/GestaoVagas';
@@ -149,6 +150,7 @@ export default function App() {
                 <Route path="/gestao/profissionais/:id" element={<GestaoProfissional />} />
                 <Route path="/gestao/profissionais/:id/estrelas" element={<GestaoEstrelas />} />
                 <Route path="/gestao/documentos" element={<GestaoDocumentos />} />
+                <Route path="/gestao/cadastros" element={<CadastrosPendentes />} />
                 <Route path="/gestao/ocorrencias" element={<GestaoOcorrencias />} />
                 <Route path="/gestao/relatorios" element={<Relatorios />} />
                 {role === 'ADMINISTRADOR' && <Route path="/gestao/bonus" element={<GestaoBonus />} />}

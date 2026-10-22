@@ -1849,3 +1849,43 @@ test('usuários: lista completa em páginas de 100, com o total real de cada pap
     await q('DELETE FROM users WHERE email LIKE ?', ['lista%@test.dev']);
   }
 });
+
+test('dashboard: usuários, profissionais, habilitados (4 documentos aprovados) e lista de quem tem documento pendente', { skip }, async () => {
+  // Três situações novas: só entrou (falta enviar), enviou e espera análise, teve um documento reprovado.
+  const falta = await login('cad-falta@test.dev');
+  const analise = await login('cad-analise@test.dev');
+  await completeWorker(analise, '846.215.937-73', { approve: false });
+  const reprov = await login('cad-reprov@test.dev');
+  await completeWorker(reprov, '715.938.264-19', { approve: false });
+  const idReprov = (await userByEmail('cad-reprov@test.dev')).id;
+  const [doc] = await q("SELECT id FROM worker_documents WHERE user_id = ? AND type = 'RG'", [idReprov]);
+  assert.equal((await call(s.admin, 'POST', `/api/manage/documents/${doc.id}/review`, { status: 'REJEITADO', reason: 'Foto ilegível' })).status, 200);
+
+  const d = (await call(s.admin, 'GET', '/api/manage/dashboard')).body.cadastros;
+  const [[u], [p]] = await Promise.all([
+    q('SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL'),
+    q("SELECT COUNT(*) AS n FROM users WHERE role = 'PROFISSIONAL' AND deleted_at IS NULL AND status <> 'INATIVO'"),
+  ]);
+  assert.equal(d.usuarios, Number(u.n), 'todas as contas');
+  assert.equal(d.profissionais, Number(p.n));
+  assert.ok(d.habilitados > 0 && d.habilitados + d.docPendentes <= d.profissionais);
+
+  const lista = (await call(s.admin, 'GET', '/api/manage/cadastros-pendentes')).body.items;
+  assert.equal(lista.length, d.docPendentes, 'a lista tem os mesmos que o número do dashboard');
+  assert.ok(lista.every((i) => Object.values(i.docs).some((x) => x !== 'APROVADO')), 'só quem tem documento faltando');
+  const de = (email) => lista.find((i) => i.email === email);
+  assert.equal(de('cad-falta@test.dev').situacao, 'FALTA');
+  assert.ok(Object.values(de('cad-falta@test.dev').docs).every((x) => x === 'FALTA'));
+  assert.equal(de('cad-analise@test.dev').situacao, 'EM_ANALISE');
+  assert.equal(de('cad-reprov@test.dev').docs.RG, 'REJEITADO');
+  assert.ok(!de('w2@test.dev'), 'habilitado não aparece');
+  const ordem = lista.map((i) => i.situacao);
+  assert.deepEqual(ordem, [...ordem].sort((a, b) => ['EM_ANALISE', 'REPROVADO', 'FALTA'].indexOf(a) - ['EM_ANALISE', 'REPROVADO', 'FALTA'].indexOf(b)), 'em análise primeiro');
+
+  // Gestor: só profissionais das lojas dele, e sem o total de contas.
+  const g = (await call(s.gestor, 'GET', '/api/manage/dashboard')).body.cadastros;
+  assert.equal(g.usuarios, null);
+  assert.ok(g.profissionais <= d.profissionais);
+  assert.ok(!(await call(s.gestor, 'GET', '/api/manage/cadastros-pendentes')).body.items.some((i) => i.email === 'cad-falta@test.dev'), 'fora do escopo do gestor');
+  assert.equal((await call(falta, 'GET', '/api/manage/cadastros-pendentes')).status, 403);
+});
