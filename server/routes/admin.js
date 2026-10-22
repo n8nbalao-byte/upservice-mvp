@@ -120,11 +120,21 @@ r.post('/units/:id/status', ADMIN, async (req, res) => {
 
 // ---------- Usuários ----------
 
+const PAGINA = 100;
+/** Lista de usuários em páginas de 100 (busca e papel no servidor), com o total de cada papel para as abas. */
 r.get('/admin/users', ADMIN, async (req, res) => {
   const term = `%${String(req.query.q ?? '').trim()}%`;
-  const users = await q('SELECT * FROM users WHERE deleted_at IS NULL AND (name LIKE ? OR email LIKE ?) ORDER BY role DESC, name LIMIT 100', [term, term]);
+  const role = ROLES.includes(req.query.role) ? req.query.role : null;
+  const offset = Math.max(0, Math.min(1e6, Number.parseInt(req.query.offset, 10) || 0));
+  const where = 'deleted_at IS NULL AND (name LIKE ? OR email LIKE ?)';
+  const porPapel = await q(`SELECT role, COUNT(*) AS n FROM users WHERE ${where} GROUP BY role`, [term, term]);
+  const counts = { '': porPapel.reduce((t, r2) => t + Number(r2.n), 0), ...Object.fromEntries(ROLES.map((x) => [x, Number(porPapel.find((r2) => r2.role === x)?.n ?? 0)])) };
+  const users = await q(`SELECT * FROM users WHERE ${where}${role ? ' AND role = ?' : ''} ORDER BY role DESC, name, id LIMIT ${PAGINA} OFFSET ${offset}`, role ? [term, term, role] : [term, term]);
   const links = users.length ? await q('SELECT user_id, unit_id FROM unit_managers WHERE active = 1 AND user_id IN (?)', [users.map((u) => u.id)]) : [];
-  res.json(users.map((u) => ({ ...publicUser(u), unitIds: links.filter((l) => l.user_id === u.id).map((l) => l.unit_id) })));
+  res.json({
+    items: users.map((u) => ({ ...publicUser(u), unitIds: links.filter((l) => l.user_id === u.id).map((l) => l.unit_id) })),
+    total: counts[role ?? ''], counts,
+  });
 });
 
 r.patch('/admin/users/:id', ADMIN, async (req, res) => {
