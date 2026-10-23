@@ -250,7 +250,7 @@ input[readonly] { background: var(--surface-2); color: var(--muted); }
 
 /* ---------- Abas ---------- */
 .tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); }
-.tab { min-height: 0; padding: 10px 14px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); font-weight: 600; }
+.tab { min-height: 0; padding: 10px 14px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); font-weight: 600; text-decoration: none; white-space: nowrap; }
 .tab:hover { background: none; color: var(--ink); }
 .tab.active { color: var(--ink); border-bottom-color: var(--accent); }
 .tab .count { margin-left: 6px; padding: 0 7px; border-radius: 99px; background: #eef2f4; font-size: 0.75rem; }
