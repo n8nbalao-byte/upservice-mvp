@@ -23,6 +23,7 @@ const MODELO: Record<string, [string, Tone]> = {
   DISABLED: ['Desativado', 'danger'],
 };
 const QUALIDADE: Record<string, string> = { GREEN: 'alta', YELLOW: 'média', RED: 'baixa' };
+const SALVO = '****************************'; // segredo salvo: nunca volta para a tela
 const fmtPhone = (d: string) => d.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3');
 const fmtTier = (t: string) => (t === 'TIER_UNLIMITED' ? 'sem limite' : `${t.replace('TIER_', '').replace('K', ' mil')} pessoas por dia`);
 
@@ -137,8 +138,8 @@ export function WhatsappConfig() {
               <label>Phone Number ID<input name="phoneId" inputMode="numeric" required defaultValue={st.phoneId} pattern="\d{5,25}" /></label>
               <label>WhatsApp Business Account ID<input name="wabaId" inputMode="numeric" required defaultValue={st.wabaId} pattern="\d{5,25}" /></label>
             </div>
-            <label>Token de acesso (usuário do sistema)<input name="token" type="password" autoComplete="off" placeholder={st.hasToken ? 'Token salvo. Deixe em branco para manter.' : ''} required={!st.hasToken} /></label>
-            <label>Chave secreta do app<input name="appSecret" type="password" autoComplete="off" placeholder={st.hasSecret ? 'Chave salva. Deixe em branco para manter.' : ''} required={!st.hasSecret} /><span className="hint">O token e a chave ficam só no servidor e não aparecem de novo.</span></label>
+            <label>Token de acesso (usuário do sistema)<input name="token" type="password" autoComplete="off" placeholder={st.hasToken ? SALVO : ''} required={!st.hasToken} /></label>
+            <label>Chave secreta do app<input name="appSecret" type="password" autoComplete="off" placeholder={st.hasSecret ? SALVO : ''} required={!st.hasSecret} /><span className="hint">O token e a chave ficam só no servidor e não aparecem de novo. Em branco, continua valendo o que já está salvo.</span></label>
             <div><button className="primary" disabled={busy === 'save'}>{busy === 'save' ? 'Salvando…' : 'Salvar'}</button></div>
           </>
         )}
