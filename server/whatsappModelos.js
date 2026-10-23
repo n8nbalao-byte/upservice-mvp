@@ -1,6 +1,7 @@
 // Modelos (templates) de mensagem da API oficial do WhatsApp. Mensagem que a UP manda primeiro só sai por modelo
 // aprovado pela Meta; o app cadastra estes em Configurações → WhatsApp → "Enviar modelos para aprovação".
-// Regras da Meta: o texto não começa nem termina com variável; variável não tem quebra de linha (o envio troca por espaço).
+// Regras da Meta: o texto não começa nem termina com variável; duas variáveis nunca separadas só por espaço ou
+// pontuação; no máximo 1 variável a cada 3 palavras; variável sem quebra de linha (o envio troca por espaço).
 // `aviso`: chave do liga/desliga em Configurações (o código de acesso não desliga).
 const APP_URL = () => (process.env.APP_URL || 'https://app.upserviceintermed.com').replace(/\/+$/, '');
 const abrir = (text, exemplo) => ({ type: 'URL', text, url: `${APP_URL()}/{{1}}`, example: [`${APP_URL()}/${exemplo}`] });
@@ -23,7 +24,7 @@ export const MODELOS = {
   codigo_acesso: { categoria: 'AUTHENTICATION', label: 'Código de acesso e de confirmação do número' },
   saiu_da_reserva: {
     aviso: 'reserva',
-    texto: 'Olá, {{1}}! Boa notícia: abriu uma vaga e você saiu da reserva. ✅\n\nVocê está confirmado(a) em {{2}}, {{3}}, {{4}}.\n\nNo dia, faça o check-in pelo app. Se não puder ir, desista pelo app ou pelo botão abaixo, para chamar o próximo da reserva.',
+    texto: 'Olá, {{1}}! Boa notícia: abriu uma vaga e você saiu da reserva. ✅\n\nVocê está confirmado(a) em {{2}}, na loja {{3}}, no dia {{4}}.\n\nNo dia, faça o check-in pelo app. Se não puder ir, desista pelo app ou pelo botão abaixo, para chamar o próximo da reserva.',
     exemplo: ['Maria', 'Repositor', 'Atacadão Itaquera', 'sex 24/10 08:00'],
     botoes: [fixo('Minhas diárias', 'minhas'), resposta('Não vou poder ir')],
   },
@@ -35,7 +36,7 @@ export const MODELOS = {
   },
   checkin_aberto: {
     aviso: 'checkin',
-    texto: 'O check-in da sua diária de *{{1}}* ({{2}}, {{3}}) já está aberto. Faça pelo app, dentro da loja.',
+    texto: 'O check-in da sua diária de *{{1}}* (loja {{2}}, às {{3}}) já está aberto. Faça pelo app, dentro da loja.',
     exemplo: ['Repositor', 'ATC-001', '08:00'],
     botoes: [abrir('Fazer check-in', 'atividade/1')],
   },
