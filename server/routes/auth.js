@@ -4,16 +4,18 @@ import { devLoginEnabled, endSession, findOrCreateUser, requireOwner, startSessi
 import { q } from '../db.js';
 import { gamificationOn } from './estrelas.js';
 import { phoneLoginEnabled } from './login.js';
+import { connectedNumber } from '../whatsapp.js';
 import { fail, text } from '../http.js';
 
 const r = Router();
 
 r.get('/config', async (req, res) => {
+  const num = await connectedNumber();
   res.json({
     googleClientId: process.env.GOOGLE_CLIENT_ID || null,
     devLogin: devLoginEnabled(),
-    // WhatsApp oficial da UP Service (o mesmo do site); SUPPORT_WHATSAPP no painel troca o número.
-    supportWhatsapp: (process.env.SUPPORT_WHATSAPP || '5511926746277').replace(/\D/g, '') || null,
+    // WhatsApp oficial da UP Service: o número conectado na Meta; sem ele, SUPPORT_WHATSAPP do painel.
+    supportWhatsapp: (num ? `55${num}` : (process.env.SUPPORT_WHATSAPP || '').replace(/\D/g, '')) || null,
     // Com o WhatsApp da UP Service no ar: entrar por código e confirmar o número (obrigatório para todos).
     phoneLogin: await phoneLoginEnabled(),
     // Estrelas do profissional (prévia): só aparece para ele quando o principal liga em Configurações.

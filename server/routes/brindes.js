@@ -7,7 +7,7 @@ import { audit } from '../audit.js';
 import { assertUnit, requireRole, unitScope } from '../auth.js';
 import { q, tx } from '../db.js';
 import { fail, text } from '../http.js';
-import { sendWhatsappSafe } from '../whatsapp.js';
+import { sendTemplateSafe } from '../whatsapp.js';
 import { diaries } from './estrelas.js';
 
 const r = Router();
@@ -90,7 +90,7 @@ export async function sortearBrindes(now = Date.now()) {
       await tq('INSERT INTO notifications (id, user_id, kind, title, body, link) VALUES ?', [notes]);
       await audit(tq, null, 'BRINDE_SORTEADO', 'brinde', id, { after: { winner, participants: people.length } });
       // WhatsApp só para número confirmado (depois da transação).
-      return w.whatsapp_verified_at && w.whatsapp ? () => sendWhatsappSafe(w.whatsapp, `UP Service: ${title} ${body}`) : null;
+      return w.whatsapp_verified_at && w.whatsapp ? () => sendTemplateSafe(w.whatsapp, 'sorteio_ganho', { vars: [b.premio, ddmm(day), String(people.length)] }) : null;
     });
     if (zap) await zap();
   }

@@ -9,7 +9,7 @@ import { canLogin, requireLogin, startSession } from '../auth.js';
 import { q, tx } from '../db.js';
 import { fail } from '../http.js';
 import { sendMailSafe } from '../mail.js';
-import { sendWhatsapp, whatsappOnline } from '../whatsapp.js';
+import { modeloAprovado, sendTemplate, whatsappOnline } from '../whatsapp.js';
 
 const r = Router();
 const scryptAsync = promisify(scrypt);
@@ -214,8 +214,8 @@ r.get('/auth/qr/:id/status', async (req, res) => {
 // O login por código só vale para o número que a própria pessoa confirmou (users.whatsapp, único entre contas):
 // o telefone digitado no cadastro não basta, senão um número errado daria acesso a quem fosse o dono dele.
 
-// Só com o número conectado de verdade: desconectado ou banido, o app não oferece login nem confirmação por WhatsApp.
-export const phoneLoginEnabled = () => whatsappOnline();
+// Só com o número no ar e o modelo do código aprovado pela Meta: senão o app não oferece login nem confirmação por WhatsApp.
+export const phoneLoginEnabled = async () => (await whatsappOnline()) && modeloAprovado('codigo_acesso');
 const phoneOf = (v) => {
   const d = String(v ?? '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
   if (!/^\d{10,11}$/.test(d)) fail(400, 'Informe o celular com DDD.');
@@ -243,7 +243,7 @@ r.post('/me/whatsapp/start', requireLogin, async (req, res) => {
     const code = newCode();
     await q("UPDATE auth_tokens SET used_at = ? WHERE kind = 'VERIFY' AND user_id = ? AND used_at IS NULL", [new Date(), userId]);
     await q('INSERT INTO auth_tokens SET ?', [{ id: randomUUID(), kind: 'VERIFY', user_id: userId, token_hash: sha(`verify:${randomUUID()}`), secret_hash: sha(`${phone}:${code}`), target: phone, expires_at: new Date(Date.now() + OTP_MS), created_ip: req.ip }]);
-    await sendWhatsapp(phone, `Código para confirmar seu WhatsApp no app UP Service: ${code}\nVale por 5 minutos. Se não foi você, ignore.`);
+    await sendTemplate(phone, 'codigo_acesso', { vars: [code] });
   });
 });
 
@@ -296,7 +296,7 @@ r.post('/auth/phone/start', async (req, res) => {
     if (!u || !canLogin(u)) return;
     const code = newCode();
     await q('INSERT INTO auth_tokens SET ?', [{ id: randomUUID(), kind: 'OTP', user_id: u.id, token_hash: sha(`otpdev:${device}`), secret_hash: sha(`${phone}:${code}`), target: phone, expires_at: new Date(Date.now() + OTP_MS), created_ip: ip }]);
-    await sendWhatsapp(phone, `Seu código de acesso UP Service: ${code}\nVale por 5 minutos. Não compartilhe com ninguém.`);
+    await sendTemplate(phone, 'codigo_acesso', { vars: [code] });
   });
 });
 

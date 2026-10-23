@@ -6,7 +6,6 @@ import { audit } from './audit.js';
 import { fail } from './http.js';
 import { DOC_TYPES } from './routes/worker.js';
 
-const APP_URL = () => process.env.APP_URL || 'https://app.upserviceintermed.com';
 const fmt = (d) => new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
 
 /**
@@ -104,12 +103,7 @@ export async function promoteFromWaitlist(c, jobId) {
     await c.tq('INSERT INTO notifications SET ?', [{ id: randomUUID(), user_id: r.user_id, kind: 'RESERVA_CHAMADA', title: 'Você saiu da reserva!', body: `Abriu uma vaga e você está confirmado(a) em "${job.title}" — ${job.unit_name}, ${fmt(job.starts_at)}.`, link: '/minhas' }]);
     // WhatsApp confirmado: avisa na hora que saiu da reserva e já está aprovado.
     if (r.whatsapp) {
-      c.whatsapp.push([r.whatsapp, `Olá, ${r.name.split(' ')[0]}! Boa notícia: abriu uma vaga e você saiu da reserva. ✅
-
-Você está confirmado(a) em "${job.title}" — ${job.unit_name}, ${fmt(job.starts_at)}.
-
-No dia, faça o check-in pelo app: ${APP_URL()}/minhas
-Se não puder ir, desista aqui ou pelo app, para chamar o próximo da reserva.`, { userId: r.user_id, step: 'diaria', ctx: { appId: r.id } }]);
+      c.whatsapp.push([r.user_id, 'saiu_da_reserva', { vars: [r.name.split(' ')[0], job.title, job.unit_name, fmt(job.starts_at)], respostas: [{ s: 'diaria_confirma', c: { appId: r.id } }] }]);
     }
     promoted.push(r.id);
     free -= 1;
