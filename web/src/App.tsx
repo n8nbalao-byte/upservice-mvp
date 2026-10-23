@@ -160,7 +160,7 @@ export default function App() {
                 {role === 'ADMINISTRADOR' && <Route path="/admin/unidades" element={<AdminUnidades />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/usuarios" element={<AdminUsuarios />} />}
                 {role === 'ADMINISTRADOR' && <Route path="/admin/pagamentos" element={<AdminPagamentos />} />}
-                {me.user.isOwner && <Route path="/admin/configuracoes" element={<AdminConfiguracoes />} />}
+                {me.user.isOwner && <Route path="/admin/configuracoes/:aba?" element={<AdminConfiguracoes />} />}
                 <Route path="*" element={<Navigate to="/gestao/inicio" />} />
               </Routes>
             )}

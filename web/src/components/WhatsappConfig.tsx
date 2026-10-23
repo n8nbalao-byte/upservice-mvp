@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Alert, Loading, StatusBadge, useAction, type Tone } from './ui';
 
@@ -27,8 +28,9 @@ const SALVO = '****************************'; // segredo salvo: nunca volta para
 const fmtPhone = (d: string) => d.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3');
 const fmtTier = (t: string) => (t === 'TIER_UNLIMITED' ? 'sem limite' : `${t.replace('TIER_', '').replace('K', ' mil')} pessoas por dia`);
 
-/** Configurações → WhatsApp: API oficial da Meta, modelos de mensagem, avisos, atendimento e teste. */
-export function WhatsappConfig() {
+/** Configurações → WhatsApp (parte "uso": situação, teste, modelos, avisos e atendimento) e → API do WhatsApp
+ *  (parte "api": conta da Meta e webhook). A situação do número aparece nas duas. */
+export function WhatsappConfig({ parte }: { parte: 'uso' | 'api' }) {
   const { busy, run } = useAction();
   const [st, setSt] = useState<Status>();
   const [bot, setBot] = useState<boolean>();
@@ -68,7 +70,8 @@ export function WhatsappConfig() {
         {st.state === 'CONECTADO' && (
           <p className="muted">{st.name ? `Nome: ${st.name} · ` : ''}{st.quality ? `Qualidade: ${QUALIDADE[st.quality] ?? st.quality} · ` : ''}{st.tier ? `Limite: ${fmtTier(st.tier)}` : ''}</p>
         )}
-        {st.state === 'CONECTADO' && (
+        {parte === 'uso' && !st.configured && <Alert kind="info">Primeiro configure a conta da Meta na aba <Link className="link" to="/admin/configuracoes/whatsapp-api">API do WhatsApp</Link>.</Alert>}
+        {parte === 'uso' && st.state === 'CONECTADO' && (
           <form className="row wrap" onSubmit={(e) => { e.preventDefault(); const phone = new FormData(e.currentTarget).get('phone') as string; run('test', () => api('/admin/whatsapp/test', { body: { phone } }), 'Mensagem de teste enviada (código 123456).'); }}>
             <label style={{ flex: '1 1 220px' }}>Enviar teste para<input name="phone" type="tel" inputMode="tel" placeholder="(11) 99999-0000" required /></label>
             <button disabled={!!busy}>{busy === 'test' ? 'Enviando…' : 'Enviar teste'}</button>
@@ -76,7 +79,7 @@ export function WhatsappConfig() {
         )}
       </div>
 
-      {st.configured && st.modelos && (
+      {parte === 'uso' && st.configured && st.modelos && (
         <div className="card stack">
           <div className="row between">
             <h2>Modelos de mensagem</h2>
@@ -98,7 +101,7 @@ export function WhatsappConfig() {
         </div>
       )}
 
-      {st.configured && (
+      {parte === 'uso' && st.configured && (
         <div className="card stack">
           <h2>Avisos pelo WhatsApp</h2>
           <p className="muted">Cada aviso enviado é cobrado pela Meta (cerca de R$ 0,04). Desligado, o aviso continua no app e no e-mail.</p>
@@ -108,7 +111,7 @@ export function WhatsappConfig() {
         </div>
       )}
 
-      {st.configured && bot !== undefined && (
+      {parte === 'uso' && st.configured && bot !== undefined && (
         <div className="card stack">
           <div className="row between">
             <h2>Atendimento automático (bot)</h2>
@@ -119,7 +122,7 @@ export function WhatsappConfig() {
         </div>
       )}
 
-      {st.verifyToken && (
+      {parte === 'api' && st.verifyToken && (
         <div className="card stack">
           <h2>Webhook (painel da Meta)</h2>
           <p className="muted">No app da Meta → WhatsApp → Configuração → Webhook, cole estes dois valores e assine o campo <strong>messages</strong>. Sem isso, o app envia, mas não recebe respostas.</p>
@@ -128,7 +131,7 @@ export function WhatsappConfig() {
         </div>
       )}
 
-      <form className="card form" onSubmit={save}>
+      {parte === 'api' && <form className="card form" onSubmit={save}>
         <h2>Conta da Meta</h2>
         {st.source === 'env' ? (
           <Alert kind="info">A configuração vem das variáveis do servidor (WHATSAPP_*) e é alterada no painel da hospedagem.</Alert>
@@ -143,7 +146,7 @@ export function WhatsappConfig() {
             <div><button className="primary" disabled={busy === 'save'}>{busy === 'save' ? 'Salvando…' : 'Salvar'}</button></div>
           </>
         )}
-      </form>
+      </form>}
     </div>
   );
 }
