@@ -1,17 +1,17 @@
-// Atendimento do profissional pelo WhatsApp: um bot que conversa por enquetes (o profissional toca numa opção) e faz
+// Atendimento do profissional pelo WhatsApp: um bot que conversa por botões e listas (o profissional toca numa opção) e faz
 // pelo WhatsApp o que ele faz no app (menos as Estrelas). Só responde a quem tem o WhatsApp confirmado na conta; as
 // ações usam as mesmas funções do app (mesmas regras) e pedem Sim/Não antes de mudar algo.
 //
 // Cada passo (STEPS) monta { text?, question, options: [[rótulo, próximo passo, contexto extra?]] }. A conversa de cada
 // número fica em whatsapp_conversas: passo atual, contexto e as opções mostradas (para entender a resposta).
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { audit } from './audit.js';
 import { canLogin, isBlocked } from './auth.js';
 import { q } from './db.js';
 import { byNearThenSoon, distanceMeters } from './rules.js';
 import { loadFile } from './storage.js';
 import { OCC_LABEL as OCORRENCIA } from './penalties.js';
-import { sendOptions, sendWhatsapp, sendWhatsappMediaSafe, whatsappConfig } from './whatsapp.js';
+import { avisar, sendOptions, sendWhatsapp, sendWhatsappMediaSafe, whatsappConfig } from './whatsapp.js';
 import { wallet } from './routes/carteira.js';
 import { candidatar, desistir, WITHDRAW_LIMIT_MS } from './routes/jobs.js';
 import { history, openContestation } from './routes/penalties.js';
@@ -19,7 +19,7 @@ import { history, openContestation } from './routes/penalties.js';
 const TZ = 'America/Sao_Paulo';
 const EXPIRA_MS = 30 * 60e3; // conversa parada volta ao Menu
 const HUMANO_MS = 4 * 3600e3; // "falar com uma pessoa": o bot fica quieto
-const POR_PAGINA = 9;
+const POR_PAGINA = 7; // + "Ver mais", "Outro dia" e "Menu" = 10, o máximo de uma lista do WhatsApp
 const APP_URL = () => (process.env.APP_URL || 'https://app.upserviceintermed.com').replace(/\/+$/, '');
 
 const dayOf = (d) => new Date(d).toLocaleDateString('sv-SE', { timeZone: TZ });
@@ -133,7 +133,7 @@ const STEPS = {
   async diarias(u) {
     const rows = await minhasDiarias(u.id);
     if (!rows.length) return { text: 'Você não tem diárias marcadas.', question: 'Quer procurar uma vaga?', options: [['Procurar vagas', 'vagas_dia'], MENU] };
-    const options = rows.slice(0, 10).map((a) => [
+    const options = rows.slice(0, 9).map((a) => [
       `${fmtDia(a.starts_at)} ${fmtHora(a.starts_at)} · ${a.code} · ${a.title}${a.status === 'PENDENTE' ? ` · reserva nº ${a.reserve_position}` : ''}`,
       'diaria', { appId: a.id },
     ]);
@@ -187,7 +187,7 @@ const STEPS = {
   async quebras(u) {
     const w = await wallet(u.id);
     if (!w.abatimentos.length) return { text: 'Você não tem quebra de caixa.', question: 'E agora?', options: [['Carteira', 'carteira'], MENU] };
-    const options = w.abatimentos.slice(0, 10).map((a) => [`${fmtDia(a.date)} · ${brl(a.finalAmount ?? a.amount)}${a.status === 'CANCELADA' ? ' · cancelada' : a.review ? ' · revisão' : ''}`, 'quebra', { breakId: a.id }]);
+    const options = w.abatimentos.slice(0, 8).map((a) => [`${fmtDia(a.date)} · ${brl(a.finalAmount ?? a.amount)}${a.status === 'CANCELADA' ? ' · cancelada' : a.review ? ' · revisão' : ''}`, 'quebra', { breakId: a.id }]);
     return { question: 'Quebras de caixa. Toque numa para ver o motivo ou pedir revisão:', options: [...options, ['Carteira', 'carteira'], MENU] };
   },
 
@@ -225,7 +225,7 @@ const STEPS = {
     ];
     const text = `Faltas e ocorrências que contam: ${h.strikes} de ${h.strikesToBlock} (com ${h.strikesToBlock}, a conta é bloqueada por 15 dias).`;
     if (!itens.length) return { text: `${text}\nVocê não tem ocorrências. 👏`, question: 'E agora?', options: [MENU] };
-    return { text, question: 'Toque numa para ver o detalhe ou contestar:', options: [...itens, MENU] };
+    return { text, question: 'Toque numa para ver o detalhe ou contestar:', options: [...itens.slice(0, 9), MENU] };
   },
 
   async ocorrencia(u, c) {
@@ -263,18 +263,14 @@ const STEPS = {
     return { text: rows.map((n) => `*${n.title}* (${fmtDia(n.created_at)})${n.body ? `\n${n.body}` : ''}`).join('\n\n'), question: 'Seus últimos avisos. E agora?', options: [MENU] };
   },
 
-  // ----- lembrete da véspera (enviado pelo sistema) -----
-  async vespera() {
-    return { question: 'Você vai?', options: [['Vou, está confirmado', 'vou'], ['Não vou, quero desistir', 'diaria_confirma'], MENU] };
-  },
-
+  // ----- botão "Vou" do lembrete da véspera (modelo lembrete_vespera) -----
   async vou() {
     return { text: 'Combinado! 👍 No dia, chegue um pouco antes: o check-in abre 15 minutos antes do início, pelo app, dentro da loja. Eu aviso você quando abrir.' };
   },
 
   async recebidos(u) {
     const w = await wallet(u.id);
-    const options = w.pagamentos.slice(0, 10).map((p) => [`${fmtDia(p.paidAt)} · ${brl(p.amount)}${p.receipt ? '' : ' · sem comprovante'}`, 'comprovante', { payId: p.id }]);
+    const options = w.pagamentos.slice(0, 8).map((p) => [`${fmtDia(p.paidAt)} · ${brl(p.amount)}${p.receipt ? '' : ' · sem comprovante'}`, 'comprovante', { payId: p.id }]);
     return { question: 'Pagamentos recebidos. Toque num para receber o comprovante:', options: [...options, ['Carteira', 'carteira'], MENU] };
   },
 
@@ -342,36 +338,11 @@ async function acao(u, action, entity, id, fn) {
 
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 const RESET = new Set(['menu', 'oi', 'ola', 'inicio', 'comecar', 'bom dia', 'boa tarde', 'boa noite', '0']);
-const sha = (s) => createHash('sha256').update(s).digest();
+// Botões de resposta dos avisos (modelos): o toque volta com { s: passo, c: { appId } } e a conversa segue dali.
+const PELO_AVISO = new Set(['vou', 'diaria_confirma', 'quebras']);
 
-/** Votos da enquete, em qualquer formato que a Evolution entregue (nome da opção ou hash SHA-256 dela). */
-function pollVotes(data) {
-  let found = null;
-  const walk = (o, depth) => {
-    if (found || !o || typeof o !== 'object' || depth > 10) return;
-    for (const [k, v] of Object.entries(o)) {
-      if (/^selected(Options|OptionNames)$/i.test(k) && Array.isArray(v) && v.length) { found = v; return; }
-      walk(v, depth + 1);
-    }
-  };
-  walk(data, 0);
-  return found;
-}
-
-/** Índice da opção escolhida: número digitado, texto igual ao rótulo, ou voto da enquete. */
-export function escolha(labels, { text, votes }) {
-  if (votes) {
-    for (const v of votes) {
-      const name = typeof v === 'string' ? v : v?.name ?? v?.optionName;
-      const i = labels.findIndex((l) => l === name || norm(l) === norm(name));
-      if (i >= 0) return i;
-      // Hash da opção: Buffer serializado, base64 ou hex.
-      const raw = Buffer.isBuffer(v) ? v : v?.type === 'Buffer' ? Buffer.from(v.data) : typeof v === 'string' && /^[0-9a-f]{64}$/i.test(v) ? Buffer.from(v, 'hex') : typeof v === 'string' ? Buffer.from(v, 'base64') : null;
-      const j = raw ? labels.findIndex((l) => sha(l).equals(raw)) : -1;
-      if (j >= 0) return j;
-    }
-    return -1;
-  }
+/** Índice da opção escolhida: número digitado (o toque num botão ou na lista chega como o número) ou texto igual ao rótulo. */
+export function escolha(labels, { text }) {
   const t = norm(text);
   if (/^\d{1,2}$/.test(t)) return Number(t) - 1 < labels.length ? Number(t) - 1 : -1;
   return labels.findIndex((l) => norm(l) === t || norm(l.replace(/^\d+\.\s*/, '')) === t);
@@ -383,11 +354,11 @@ const numbered = (opts) => opts.map(([label], i) => `${i + 1}. ${label}`);
 
 async function show(phone, u, step, c) {
   const out = await STEPS[step](u, c, phone);
-  if (out.text) await sendWhatsapp(phone, out.text, { delay: 600 });
+  if (out.text) await sendWhatsapp(phone, out.text);
   const options = out.options ?? [];
   let pollId = null;
   if (options.length) pollId = await sendOptions(phone, out.question, numbered(options));
-  else if (out.question) await sendWhatsapp(phone, out.question, { delay: 400 });
+  else if (out.question) await sendWhatsapp(phone, out.question);
   await q(
     `INSERT INTO whatsapp_conversas (phone, user_id, step, ctx, options, poll_id, updated_at) VALUES (?,?,?,?,?,?,?)
      ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), step = VALUES(step), ctx = VALUES(ctx), options = VALUES(options), poll_id = VALUES(poll_id), updated_at = VALUES(updated_at)`,
@@ -402,31 +373,32 @@ const vistos = new Set();
 const contagem = new Map();
 const fila = new Map();
 
-/** Mensagem recebida pelo webhook da Evolution (messages.upsert / messages.update). */
+/** Chamada do webhook da Meta: mensagens recebidas (texto, toque em botão ou na lista) e situação das enviadas. */
 export async function handleWebhook(body) {
-  const event = String(body?.event ?? '').toLowerCase().replace('_', '.');
-  const list = Array.isArray(body?.data) ? body.data : [body?.data];
-  for (const data of list) {
-    if (!data || !['messages.upsert', 'messages.update'].includes(event)) continue;
-    const key = data.key ?? {};
-    const jid = key.remoteJid ?? data.remoteJid ?? '';
-    if (key.fromMe || data.fromMe || /@g\.us$|@broadcast$|@newsletter$/.test(jid)) continue;
-    const phone = phoneFromJid(/@lid$/.test(jid) ? key.remoteJidAlt ?? key.senderPn ?? data.senderPn : jid);
+  const values = (body?.entry ?? []).flatMap((e) => e?.changes ?? []).filter((c) => c?.field === 'messages').map((c) => c.value ?? {});
+  // Mensagem que não chegou (número sem WhatsApp, modelo pausado…): só no log, sem o número inteiro.
+  for (const s of values.flatMap((v) => v.statuses ?? [])) {
+    if (s?.status === 'failed') console.error(`whatsapp: não entregue para …${String(s.recipient_id ?? '').slice(-4)}:`, (s.errors ?? []).map((e) => `${e.code} ${e.title ?? e.message ?? ''}`).join('; '));
+  }
+  const msgs = values.flatMap((v) => v.messages ?? []);
+  if (!msgs.length || !(await botConfig()).enabled) return;
+  for (const m of msgs) {
+    const phone = phoneFromJid(m?.from);
     if (!phone) continue;
-    const m = data.message ?? {};
-    const text = m.conversation ?? m.extendedTextMessage?.text ?? m.buttonsResponseMessage?.selectedDisplayText ?? m.listResponseMessage?.title ?? null;
-    const votes = pollVotes(data);
-    if (text == null && !votes) {
-      if (event === 'messages.upsert' && !m.pollCreationMessage && !m.protocolMessage && !m.reactionMessage) console.log('whatsapp-bot: mensagem sem texto', Object.keys(m).join(','));
+    const reply = m.interactive?.button_reply ?? m.interactive?.list_reply;
+    const text = m.text?.body ?? reply?.id ?? m.button?.text ?? null;
+    let payload = null;
+    try { payload = m.button?.payload ? JSON.parse(m.button.payload) : null; } catch { /* botão sem payload nosso: vale o texto */ }
+    if (text == null) {
+      console.log('whatsapp-bot: mensagem sem texto', m.type);
       continue;
     }
-    const msgId = `${key.id ?? data.keyId ?? data.messageId ?? ''}:${votes ? JSON.stringify(votes).slice(0, 80) : ''}`;
-    if (vistos.has(msgId)) continue;
-    vistos.add(msgId);
+    if (vistos.has(m.id)) continue;
+    vistos.add(m.id);
     if (vistos.size > 2000) vistos.delete(vistos.values().next().value);
     // Uma conversa por vez por número, na ordem de chegada.
     const prev = fila.get(phone) ?? Promise.resolve();
-    const next = prev.then(() => responder(phone, { text, votes })).catch((e) => console.error('whatsapp-bot', e.message));
+    const next = prev.then(() => responder(phone, { text, payload })).catch((e) => console.error('whatsapp-bot', e.message));
     fila.set(phone, next);
     next.finally(() => { if (fila.get(phone) === next) fila.delete(phone); });
   }
@@ -444,7 +416,7 @@ async function responder(phone, msg) {
   const [u] = await q("SELECT id, name, role, status FROM users WHERE whatsapp = ? AND whatsapp_verified_at IS NOT NULL", [phone]);
   // Mesmas regras do login do app: inativo não é atendido; bloqueado fica restrito (BLOQUEADO_PODE).
   if (!u || u.role !== 'PROFISSIONAL' || !canLogin(u)) {
-    if (msg.votes || (avisados.get(phone) ?? 0) > now - 12 * 3600e3) return;
+    if ((avisados.get(phone) ?? 0) > now - 12 * 3600e3) return;
     avisados.set(phone, now);
     await sendWhatsapp(phone, !u
       ? `Olá! Aqui é a UP Service. Para usar o atendimento pelo WhatsApp, entre no app e confirme este número em *Meu perfil → WhatsApp*: ${APP_URL()}/perfil`
@@ -458,22 +430,29 @@ async function responder(phone, msg) {
   const t = norm(msg.text);
   // "Falar com uma pessoa": o bot fica quieto até a pessoa mandar "menu" (ou passarem 4 h).
   if (conv?.step === 'humano' && age < HUMANO_MS && t !== 'menu') return;
-  if (!conv || age > EXPIRA_MS || (msg.text != null && RESET.has(t))) return show(phone, u, 'menu', {});
+  // Toque num botão de aviso ("Vou", "Não vou"…): segue no passo dele. Os passos conferem que a diária é da pessoa.
+  const p = msg.payload;
+  if (p && PELO_AVISO.has(p.s)) {
+    if (isBlocked(u) && !BLOQUEADO_PODE.has(p.s)) return show(phone, u, 'menu', {});
+    return show(phone, u, p.s, typeof p.c?.appId === 'string' ? { appId: p.c.appId } : {});
+  }
+  if (!conv || age > EXPIRA_MS || RESET.has(t)) return show(phone, u, 'menu', {});
 
   const options = JSON.parse(conv.options ?? '[]');
   if (!options.length) return show(phone, u, 'menu', {}); // passo sem pergunta (ex.: "Combinado!"): recomeça
   const i = escolha(numbered(options), msg);
   // Passo de escrever: o que não for uma das opções é o texto (o motivo).
   const input = STEPS[conv.step]?.input;
-  if (i < 0 && input && msg.text != null) {
+  if (i < 0 && input) {
     if (isBlocked(u) && !BLOQUEADO_PODE.has(input)) return show(phone, u, 'menu', {});
     return show(phone, u, input, { ...JSON.parse(conv.ctx ?? '{}'), input: msg.text.trim().slice(0, 1000) });
   }
   if (i < 0) {
-    // Voto numa enquete antiga (ou em formato que ainda não reconhecemos): não responde, só registra para conferir.
-    if (msg.votes) { console.log('whatsapp-bot: voto não reconhecido', JSON.stringify(msg.votes).slice(0, 200)); return; }
-    await sendWhatsapp(phone, 'Não entendi. Toque numa opção da enquete ou responda só com o número. Para recomeçar, envie *menu*.');
-    return show(phone, u, conv.step, JSON.parse(conv.ctx ?? '{}'));
+    // Repete só as opções: refazer o passo repetiria a ação dele (desistir, candidatar, contestar).
+    await sendWhatsapp(phone, 'Não entendi. Toque numa opção ou responda só com o número. Para recomeçar, envie *menu*.');
+    await sendOptions(phone, 'Escolha uma opção:', numbered(options));
+    await q('UPDATE whatsapp_conversas SET updated_at = ? WHERE phone = ?', [new Date(), phone]);
+    return;
   }
   const [, next, extra] = options[i];
   // Opção de uma conversa de antes do bloqueio: o bloqueado volta ao Menu restrito.
@@ -486,25 +465,7 @@ async function responder(phone, msg) {
 
 export async function botConfig() {
   const [row] = await q("SELECT value FROM app_settings WHERE name = 'whatsapp_bot'");
-  return row ? JSON.parse(row.value) : { enabled: false, secret: null };
-}
-
-/** Aviso pelo WhatsApp confirmado. Com o atendimento ligado, já deixa as opções do passo `step` (ex.: "saiu da reserva"
- *  → ver a diária ou desistir); sem ele, ou com a conversa com uma pessoa, vai só o texto. Nunca derruba a operação. */
-export async function avisar(userId, { text, step, ctx = {} }) {
-  try {
-    const [u] = await q('SELECT id, name, role, status, whatsapp FROM users WHERE id = ? AND whatsapp IS NOT NULL AND whatsapp_verified_at IS NOT NULL', [userId]);
-    if (!u || !(await whatsappConfig())) return false;
-    await sendWhatsapp(u.whatsapp, text);
-    if (step && u.role === 'PROFISSIONAL' && canLogin(u) && (!isBlocked(u) || BLOQUEADO_PODE.has(step)) && (await botConfig()).enabled) {
-      const [conv] = await q('SELECT step, updated_at FROM whatsapp_conversas WHERE phone = ?', [u.whatsapp]);
-      if (!(conv?.step === 'humano' && Date.now() - new Date(conv.updated_at).getTime() < HUMANO_MS)) await show(u.whatsapp, u, step, ctx);
-    }
-    return true;
-  } catch (e) {
-    console.error('falha ao avisar pelo WhatsApp', e.message);
-    return false;
-  }
+  return row ? JSON.parse(row.value) : { enabled: false };
 }
 
 /** Marca o lembrete como enviado; devolve false se já tinha ido (um por diária e tipo, mesmo com várias varreduras). */
@@ -513,7 +474,7 @@ const quando = (d) => (dayOf(d) === dayOf(Date.now()) ? 'Hoje' : dayOf(d) === ad
 
 /** Lembretes pela varredura periódica: véspera (Vou / Não vou), check-in abrindo e pausa acabando. */
 export async function lembretes(now = new Date()) {
-  if (!(await whatsappConfig())) return;
+  if (!(await whatsappConfig())?.token) return;
   const t = now.getTime();
   const base = `FROM applications a JOIN jobs j ON j.id = a.job_id JOIN units un ON un.id = j.unit_id JOIN work_sessions ws ON ws.application_id = a.id
                 JOIN users u ON u.id = a.user_id AND u.whatsapp_verified_at IS NOT NULL`;
@@ -527,7 +488,9 @@ export async function lembretes(now = new Date()) {
       [new Date(t + 2 * 3600e3), new Date(t + 24 * 3600e3), new Date(t - 6 * 3600e3)],
     );
     for (const r of rows) {
-      if (await marcar(r.id, 'VESPERA')) await avisar(r.user_id, { text: `Lembrete da UP Service: ${quando(r.starts_at)} às ${fmtHora(r.starts_at)} você tem diária de *${r.title}* em ${r.code} · ${r.unit_name}.`, step: 'vespera', ctx: { appId: r.id } });
+      if (await marcar(r.id, 'VESPERA')) {
+        await avisar(r.user_id, 'lembrete_vespera', { vars: [quando(r.starts_at), fmtHora(r.starts_at), r.title, `${r.code} · ${r.unit_name}`], respostas: [{ s: 'vou', c: { appId: r.id } }, { s: 'diaria_confirma', c: { appId: r.id } }] });
+      }
     }
   }
   // Check-in abrindo: 15 min antes do início (até o fim da janela, 15 min depois).
@@ -537,7 +500,7 @@ export async function lembretes(now = new Date()) {
        AND NOT EXISTS (SELECT 1 FROM whatsapp_lembretes l WHERE l.application_id = a.id AND l.kind = 'CHECKIN')`,
     [new Date(t - 15 * 60e3), new Date(t + 15 * 60e3)],
   )) {
-    if (await marcar(r.id, 'CHECKIN')) await avisar(r.user_id, { text: `O check-in da sua diária de *${r.title}* (${r.code}, ${fmtHora(r.starts_at)}) já está aberto. Faça pelo app, dentro da loja: ${APP_URL()}/atividade/${r.session_id}` });
+    if (await marcar(r.id, 'CHECKIN')) await avisar(r.user_id, 'checkin_aberto', { vars: [r.title, r.code, fmtHora(r.starts_at)], link: `atividade/${r.session_id}` });
   }
   // Pausa acabando: 2 min antes do fim (uma vez por pausa).
   for (const r of await q(
@@ -545,6 +508,6 @@ export async function lembretes(now = new Date()) {
      WHERE ws.status = 'EM_PAUSA' AND ws.break_ends_at BETWEEN ? AND ?`,
     [new Date(t - 60e3), new Date(t + 2 * 60e3)],
   )) {
-    if (await marcar(r.id, `PAUSA${r.breaks_used}`)) await avisar(r.user_id, { text: `Sua pausa termina às ${fmtHora(r.break_ends_at)}. Volte e registre o retorno pelo app: ${APP_URL()}/atividade/${r.session_id}` });
+    if (await marcar(r.id, `PAUSA${r.breaks_used}`)) await avisar(r.user_id, 'pausa_terminando', { vars: [fmtHora(r.break_ends_at)], link: `atividade/${r.session_id}` });
   }
 }

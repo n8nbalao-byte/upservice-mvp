@@ -89,6 +89,59 @@ const userByEmail = async (email) => (await q('SELECT id, status FROM users WHER
 
 const sessionStatus = async (id) => (await q('SELECT status FROM work_sessions WHERE id = ?', [id]))[0].status;
 
+/** API do WhatsApp (Meta) falsa: guarda o que o app manda. `aprovados`: modelos já aprovados (padrão: todos).
+ *  `env: false` só aponta o endereço (a configuração vem da tela). */
+async function fakeMeta({ status = 'CONNECTED', aprovados, env = true } = {}) {
+  const http = await import('node:http');
+  const { MODELOS } = await import('../server/whatsappModelos.js');
+  const { forgetNumber } = await import('../server/whatsapp.js');
+  const meta = { calls: [], sent: [], created: [], status, aprovados: aprovados ?? Object.keys(MODELOS) };
+  const mock = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString();
+      const body = String(req.headers['content-type']).includes('json') && raw ? JSON.parse(raw) : null;
+      meta.calls.push({ method: req.method, url: req.url, auth: req.headers.authorization, body, raw });
+      const send = (code, b) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(b)); };
+      if (req.headers.authorization !== 'Bearer token-teste') return send(401, { error: { message: 'Invalid OAuth access token', code: 190 } });
+      const p = req.url.split('?')[0];
+      if (req.method === 'GET' && p === '/111222333') return send(200, { status: meta.status, display_phone_number: '+55 11 92674-6277', verified_name: 'UP Service', quality_rating: 'GREEN', messaging_limit_tier: 'TIER_250' });
+      if (p === '/444555666/message_templates') {
+        if (req.method === 'POST') { meta.created.push(body); return send(200, { id: '1', status: 'PENDING' }); }
+        return send(200, { data: meta.aprovados.map((name) => ({ name, status: 'APPROVED', language: 'pt_BR' })) });
+      }
+      if (req.method === 'POST' && p === '/111222333/messages') { meta.sent.push(body); return send(200, { messages: [{ id: `wamid.${meta.sent.length}` }] }); }
+      if (req.method === 'POST' && p === '/111222333/media') return send(200, { id: 'media-1' });
+      send(404, { error: { message: 'not found' } });
+    });
+  }).listen(0);
+  meta.env = { WHATSAPP_GRAPH_URL: `http://localhost:${mock.address().port}`, WHATSAPP_TOKEN: 'token-teste', WHATSAPP_PHONE_ID: '111222333', WHATSAPP_WABA_ID: '444555666', WHATSAPP_APP_SECRET: 'a'.repeat(32), WHATSAPP_VERIFY_TOKEN: 'verifica' };
+  Object.assign(process.env, env ? meta.env : { WHATSAPP_GRAPH_URL: meta.env.WHATSAPP_GRAPH_URL });
+  forgetNumber();
+  meta.close = () => { for (const k of Object.keys(meta.env)) delete process.env[k]; mock.close(); forgetNumber(); };
+  /** Modelos enviados a um número (DDD + número): [{ nome, vars, comps }]. */
+  meta.para = (phone) => meta.sent.filter((m) => m.to === `55${phone}` && m.type === 'template')
+    .map((m) => ({ nome: m.template.name, vars: (m.template.components.find((c) => c.type === 'body')?.parameters ?? []).map((x) => x.text), comps: m.template.components }));
+  /** Respostas do atendimento a um número (texto, botões, lista): o texto de cada uma. */
+  meta.conversa = (phone) => meta.sent.filter((m) => m.to === `55${phone}` && m.type !== 'template').map((m) => m.text?.body ?? m.interactive?.body?.text ?? m.document?.caption ?? m.image?.caption);
+  /** Opções da última pergunta para um número (botões ou lista). */
+  meta.opcoes = (phone) => {
+    const m = meta.sent.filter((x) => x.to === `55${phone}` && x.type === 'interactive').at(-1)?.interactive;
+    return m?.type === 'button' ? m.action.buttons.map((b) => b.reply.title) : (m?.action.sections[0].rows ?? []).map((r) => r.description ?? r.title);
+  };
+  return meta;
+}
+
+/** Chamada assinada do webhook da Meta (mensagens de `phone`), com a chave secreta do fakeMeta. */
+async function webhook(phone, message, secret = 'a'.repeat(32)) {
+  const { createHmac } = await import('node:crypto');
+  const raw = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: '444555666', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', messages: [{ from: `55${phone}`, id: `wamid.in.${Math.random()}`, timestamp: String(Math.floor(Date.now() / 1000)), ...message }] } }] }] });
+  return fetch(`${base}/api/whatsapp/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': `sha256=${createHmac('sha256', secret).update(raw).digest('hex')}` }, body: raw });
+}
+const texto = (body) => ({ type: 'text', text: { body } });
+const toque = (n) => ({ type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: String(n), title: '' } } });
+
 before(async () => {
   if (skip) return;
   const server0 = new URL(url);
@@ -604,7 +657,7 @@ test('API nunca em cache e WhatsApp do suporte só com dígitos', { skip }, asyn
   delete process.env.SUPPORT_WHATSAPP;
   const before = await call(null, 'GET', '/api/config');
   assert.equal(before.res.headers.get('cache-control'), 'no-store');
-  assert.equal(before.body.supportWhatsapp, '5511926746277', 'sem variável: WhatsApp oficial da UP Service');
+  assert.equal(before.body.supportWhatsapp, null, 'sem número conectado nem variável: a ajuda abre o e-mail');
   process.env.SUPPORT_WHATSAPP = '+55 (11) 99999-0000';
   assert.equal((await call(null, 'GET', '/api/config')).body.supportWhatsapp, '5511999990000');
   delete process.env.SUPPORT_WHATSAPP;
@@ -869,77 +922,86 @@ test('visual único da UP Service: não existe mais troca de perfil de cores', {
   assert.equal((await call(a3, 'GET', '/api/me')).status, 200);
 });
 
-test('Configurações → WhatsApp: só o principal, chave nunca volta, instância, QR/código, teste e desconexão', { skip }, async () => {
-  const http = await import('node:http');
-  const calls = [];
-  let state = 'missing';
-  const mock = http.createServer((req, res) => {
-    let b = '';
-    req.on('data', (c) => { b += c; });
-    req.on('end', () => {
-      calls.push({ method: req.method, url: req.url, key: req.headers.apikey, body: b ? JSON.parse(b) : null });
-      const send = (status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
-      const ok = req.headers.apikey === 'chave-geral' || (req.headers.apikey === 'chave-da-instancia' && req.url.includes('upservice'));
-      if (!ok) return send(401, { error: 'Unauthorized' });
-      if (req.url === '/instance/create') { state = 'close'; return send(201, { instance: { instanceName: 'upservice' }, hash: 'chave-da-instancia' }); }
-      if (state === 'missing') return send(404, { error: 'not found' });
-      if (req.url.startsWith('/instance/connectionState/')) return send(200, { instance: { state } });
-      if (req.url.startsWith('/instance/connect/')) return send(200, req.url.includes('number=') ? { pairingCode: 'ABCD-1234' } : { base64: 'data:image/png;base64,iVBOR', code: 'x' });
-      if (req.url.startsWith('/instance/logout/')) { state = 'close'; return send(200, { status: 'SUCCESS' }); }
-      if (req.url.startsWith('/message/sendText/')) return send(201, { key: { id: '1' } });
-      send(404, {});
-    });
-  }).listen(0);
-  const URL_EVO = `http://localhost:${mock.address().port}`;
+test('Configurações → WhatsApp: só o principal, token e chave nunca voltam, modelos, avisos, teste e webhook da Meta', { skip }, async () => {
+  const meta = await fakeMeta({ aprovados: [], env: false });
   try {
     await q("UPDATE users SET is_owner = 1 WHERE email = 'admin@test.dev'");
     const a3 = await login('admin-wa@test.dev');
     await q("UPDATE users SET role = 'ADMINISTRADOR' WHERE email = 'admin-wa@test.dev'");
     assert.equal((await call(a3, 'GET', '/api/admin/whatsapp')).status, 403, 'admin comum não vê');
-    assert.equal((await call(s.gestor, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, key: 'x' })).status, 403);
-    assert.deepEqual((await call(s.admin, 'GET', '/api/admin/whatsapp')).body, { configured: false });
+    assert.equal((await call(s.gestor, 'PUT', '/api/admin/whatsapp', { phoneId: '1', token: 'x' })).status, 403);
+    assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.configured, false);
 
-    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: 'ftp://x', key: 'k' })).status, 400);
-    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, instance: 'up service', key: 'k' })).status, 400);
-    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, key: '' })).status, 400, 'primeira vez exige a chave');
-    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, instance: 'upservice', key: 'chave-geral' })).status, 200);
-    const st = (await call(s.admin, 'GET', '/api/admin/whatsapp')).body;
-    assert.equal(st.state, 'SEM_INSTANCIA');
-    assert.equal(st.hasKey, true);
-    assert.ok(!JSON.stringify(st).includes('chave-geral'), 'a chave nunca volta para a tela');
+    const cfg = { phoneId: '111222333', wabaId: '444555666', token: 'token-teste', appSecret: 'a'.repeat(32) };
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { ...cfg, phoneId: 'abc' })).status, 400);
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { ...cfg, appSecret: 'curta' })).status, 400);
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { ...cfg, token: '' })).status, 400, 'primeira vez exige o token');
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', cfg)).status, 200);
+    let st = (await call(s.admin, 'GET', '/api/admin/whatsapp')).body;
+    assert.equal(st.state, 'CONECTADO');
+    assert.equal(st.number, '11926746277');
+    assert.ok(st.hasToken && st.hasSecret);
+    assert.match(st.verifyToken, /^[0-9a-f]{48}$/);
+    assert.ok(!JSON.stringify(st).includes('token-teste') && !JSON.stringify(st).includes(cfg.appSecret), 'token e chave nunca voltam para a tela');
+    assert.ok(meta.calls.every((c) => c.auth === 'Bearer token-teste'));
+    assert.ok(st.modelos.length && st.modelos.every((m) => m.status === null));
 
-    assert.equal((await call(s.admin, 'POST', '/api/admin/whatsapp/create', {})).status, 200);
-    assert.equal(calls.find((c) => c.url === '/instance/create').body.instanceName, 'upservice');
-    assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.state, 'DESCONECTADO');
-    assert.equal(calls.at(-1).key, 'chave-da-instancia', 'depois de criar, o app usa só a chave da instância');
+    // Sem o modelo do código aprovado: nada de login por WhatsApp, e o teste avisa.
+    assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, false);
+    assert.equal((await call(s.admin, 'POST', '/api/admin/whatsapp/test', { phone: '11999990000' })).status, 409);
 
-    const qr = (await call(s.admin, 'POST', '/api/admin/whatsapp/connect', { method: 'qr' })).body;
-    assert.equal(qr.qr, 'data:image/png;base64,iVBOR');
-    const code = (await call(s.admin, 'POST', '/api/admin/whatsapp/connect', { method: 'code', phone: '(11) 92674-6277' })).body;
-    assert.equal(code.pairingCode, 'ABCD-1234');
-    assert.ok(calls.at(-1).url.endsWith('?number=5511926746277'));
+    // Enviar para aprovação: todos uma vez; os que já estão na Meta não vão de novo.
+    assert.equal((await call(s.admin, 'POST', '/api/admin/whatsapp/modelos', {})).body.criados, st.modelos.length);
+    assert.ok(meta.created.every((m) => m.language === 'pt_BR'));
+    assert.equal(meta.created.find((m) => m.name === 'codigo_acesso').category, 'AUTHENTICATION');
+    assert.match(JSON.stringify(meta.created.find((m) => m.name === 'lembrete_vespera')), /QUICK_REPLY/);
+    meta.aprovados = st.modelos.map((m) => m.nome);
+    assert.equal((await call(s.admin, 'POST', '/api/admin/whatsapp/modelos', {})).body.criados, 0);
+    st = (await call(s.admin, 'GET', '/api/admin/whatsapp')).body;
+    assert.ok(st.modelos.every((m) => m.status === 'APPROVED'));
+    const conf = (await call(null, 'GET', '/api/config')).body;
+    assert.equal(conf.phoneLogin, true);
+    assert.equal(conf.supportWhatsapp, '5511926746277', 'ajuda = número conectado');
 
-    state = 'open';
-    assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.state, 'CONECTADO');
     assert.equal((await call(s.admin, 'POST', '/api/admin/whatsapp/test', { phone: '11999990000' })).status, 200);
-    assert.deepEqual(calls.at(-1).body, { number: '5511999990000', text: 'Teste do app UP Service: o WhatsApp está conectado. ✅' });
-    assert.equal((await call(s.admin, 'POST', '/api/admin/whatsapp/logout', {})).status, 200);
-    assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.state, 'DESCONECTADO');
+    assert.equal(meta.sent.at(-1).to, '5511999990000');
+    assert.equal(meta.sent.at(-1).template.name, 'codigo_acesso');
+    assert.equal(meta.sent.at(-1).template.components[0].parameters[0].text, '123456');
 
-    // Chave salva é mantida quando o campo vem vazio; variáveis do servidor têm prioridade e travam a edição.
-    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, instance: 'upservice', key: '' })).status, 200);
-    assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.hasKey, true);
-    Object.assign(process.env, { EVOLUTION_API_URL: URL_EVO, EVOLUTION_API_KEY: 'chave-geral', EVOLUTION_INSTANCE: 'upservice' });
+    // Avisos: desligar um não mexe nos outros, e o desligado não sai.
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp/avisos', { pix: false })).status, 200);
+    st = (await call(s.admin, 'GET', '/api/admin/whatsapp')).body;
+    assert.equal(st.avisos.find((a) => a.key === 'pix').on, false);
+    assert.ok(st.avisos.filter((a) => a.key !== 'pix').every((a) => a.on));
+    const { sendTemplate } = await import('../server/whatsapp.js');
+    assert.equal(await sendTemplate('11999990000', 'pix_trocado'), false);
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp/avisos', { pix: true })).status, 200);
+    assert.equal(await sendTemplate('11999990000', 'pix_trocado'), true);
+
+    // Webhook: o painel da Meta confere o token de verificação; mensagem sem a assinatura certa é recusada.
+    const verify = (tok) => fetch(`${base}/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=${tok}&hub.challenge=desafio123`);
+    assert.equal((await verify('errado')).status, 403);
+    const ok = await verify(st.verifyToken);
+    assert.equal(ok.status, 200);
+    assert.equal(await ok.text(), 'desafio123');
+    assert.equal((await webhook('11999990000', texto('oi'), 'b'.repeat(32))).status, 401, 'assinatura de outra chave');
+    assert.equal((await fetch(`${base}/api/whatsapp/webhook`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 401, 'sem assinatura');
+    assert.equal((await webhook('11999990000', texto('oi'))).status, 200);
+
+    // Token e chave em branco mantêm os salvos; variáveis do servidor têm prioridade e travam a edição.
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { ...cfg, token: '', appSecret: '' })).status, 200);
+    st = (await call(s.admin, 'GET', '/api/admin/whatsapp')).body;
+    assert.equal(st.state, 'CONECTADO', 'o token salvo continua valendo');
+    Object.assign(process.env, meta.env);
     assert.equal((await call(s.admin, 'GET', '/api/admin/whatsapp')).body.source, 'env');
-    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', { url: URL_EVO, key: 'x' })).status, 409);
+    assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp', cfg)).status, 409);
     const [log] = await q("SELECT COUNT(*) AS n FROM audit_events WHERE action LIKE 'WHATSAPP_%' OR action = 'SETTING_WHATSAPP'");
-    assert.ok(Number(log.n) >= 6);
-    const [row] = await q("SELECT after_json FROM audit_events WHERE action = 'SETTING_WHATSAPP' LIMIT 1").catch(() => [{}]);
-    assert.ok(!JSON.stringify(row ?? {}).includes('chave-geral'), 'a auditoria não guarda a chave');
+    assert.ok(Number(log.n) >= 5);
+    const rows = await q("SELECT after_json FROM audit_events WHERE action = 'SETTING_WHATSAPP'");
+    assert.ok(!JSON.stringify(rows).includes('token-teste') && !JSON.stringify(rows).includes(cfg.appSecret), 'a auditoria não guarda token nem chave');
   } finally {
-    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
-    mock.close();
-    await q("DELETE FROM app_settings WHERE name = 'evolution'");
+    meta.close();
+    await q("DELETE FROM app_settings WHERE name IN ('whatsapp', 'whatsapp_avisos')");
   }
 });
 
@@ -1066,23 +1128,18 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
   // WhatsApp: escondido sem configuração; só número confirmado entra; um número por conta; código 1x; 5 erros invalidam.
   assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, false);
   assert.equal((await call(null, 'POST', '/api/auth/phone/start', { phone: '11999990000' })).status, 503);
-  const sent = [];
-  const mock = http.createServer((req, res) => {
-    let b = '';
-    req.on('data', (c) => { b += c; });
-    req.on('end', () => {
-      // Estado da conexão: conectado (não conta como mensagem enviada).
-      if (req.url.startsWith('/instance/connectionState')) return res.end(JSON.stringify({ instance: { state: 'open' } }));
-      sent.push({ url: req.url, key: req.headers.apikey, body: JSON.parse(b) }); res.end('{}');
-    });
-  }).listen(0);
-  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}/`, EVOLUTION_API_KEY: 'chave-teste', EVOLUTION_INSTANCE: 'upservice' });
+  // Número no ar, mas o modelo do código ainda não aprovado pela Meta: continua escondido.
+  const meta = await fakeMeta({ aprovados: [] });
+  const sent = meta.sent;
   const waA = await login('wa-a@test.dev');
   const waB = await login('wa-b@test.dev');
   const w2 = (await userByEmail('wa-a@test.dev')).id;
   const waitSent = async (n) => { for (let i = 0; i < 40 && sent.length < n; i++) await new Promise((r) => setTimeout(r, 50)); };
-  const lastCode = () => /(\d{6})/.exec(sent.at(-1).body.text)[1];
+  const lastCode = () => sent.at(-1).template.components[0].parameters[0].text;
   try {
+    assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, false, 'sem o modelo aprovado');
+    meta.aprovados = ['codigo_acesso'];
+    (await import('../server/whatsapp.js')).forgetNumber();
     assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, true);
 
     // O telefone do cadastro (não confirmado) não dá acesso: nada é enviado.
@@ -1095,7 +1152,8 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
     assert.equal((await call(null, 'POST', '/api/me/whatsapp/start', { phone: '11977776666' })).status, 401);
     assert.equal((await call(waA, 'POST', '/api/me/whatsapp/start', { phone: '+55 11 97777-6666' })).status, 200);
     await waitSent(1);
-    assert.deepEqual([sent.at(-1).url, sent.at(-1).key, sent.at(-1).body.number], ['/message/sendText/upservice', 'chave-teste', '5511977776666']);
+    assert.deepEqual([sent.at(-1).to, sent.at(-1).template.name], ['5511977776666', 'codigo_acesso']);
+    assert.match(lastCode(), /^\d{6}$/);
     assert.equal((await call(waA, 'POST', '/api/me/whatsapp/verify', { code: lastCode() === '000000' ? '111111' : '000000' })).status, 400);
     assert.equal((await call(waA, 'POST', '/api/me/whatsapp/verify', { code: lastCode() })).status, 200);
     assert.equal((await call(waA, 'GET', '/api/me')).body.user.whatsapp, '11977776666');
@@ -1127,8 +1185,7 @@ test('login por senha, recuperação, QR Code e código por WhatsApp', { skip },
     for (let i = 0; i < 5; i++) await call(dev3, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp3 === '000000' ? '111111' : '000000' });
     assert.equal((await call(dev3, 'POST', '/api/auth/phone/verify', { phone: '11977776666', code: otp3 })).status, 401, '5 erros no próprio aparelho invalidam');
   } finally {
-    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
-    mock.close();
+    meta.close();
     await q('DELETE FROM rate_limits');
   }
 });
@@ -1141,13 +1198,8 @@ test('reserva chamada recebe WhatsApp (se tiver número confirmado), só depois 
     for (const n of [9, 10]) { const s = d.reduce((t, v, i) => t + v * (n + 1 - i), 0); d.push(((s * 10) % 11) % 10); }
     return d.join('');
   };
-  const sent = [];
-  const mock = http.createServer((req, res) => {
-    let b = '';
-    req.on('data', (c) => { b += c; });
-    req.on('end', () => { sent.push({ url: req.url, body: JSON.parse(b || '{}') }); res.end('{}'); });
-  }).listen(0);
-  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  const meta = await fakeMeta();
+  const sent = meta.sent;
   try {
     const [ana, beto] = [await login('ana-res@test.dev'), await login('beto-res@test.dev')];
     await completeWorker(ana, cpf('184720593'));
@@ -1166,10 +1218,11 @@ test('reserva chamada recebe WhatsApp (se tiver número confirmado), só depois 
     assert.equal((await call(ana, 'POST', `/api/me/applications/${a.id}/cancel`, {})).status, 200);
     assert.equal((await q('SELECT status FROM applications WHERE id = ?', [b.id]))[0].status, 'APROVADA');
     assert.equal(sent.length, 1);
-    assert.equal(sent[0].url, '/message/sendText/upservice');
-    assert.equal(sent[0].body.number, '5511966665555');
-    assert.match(sent[0].body.text, /saiu da reserva/);
-    assert.match(sent[0].body.text, /Repositor reserva WhatsApp/);
+    const [aviso] = meta.para('11966665555');
+    assert.equal(aviso.nome, 'saiu_da_reserva');
+    assert.deepEqual(aviso.vars.slice(0, 3), ['Fulano', 'Repositor reserva WhatsApp', 'Loja A']);
+    // Botão "Não vou poder ir": volta ao atendimento na desistência desta diária.
+    assert.deepEqual(JSON.parse(aviso.comps.find((c) => c.sub_type === 'quick_reply').parameters[0].payload), { s: 'diaria_confirma', c: { appId: b.id } });
     // Também dentro do app: aviso não lido e a diária contada no botão "Diárias".
     const av = (await call(beto, 'GET', '/api/me/avisos')).body;
     assert.equal(av.unread, 1);
@@ -1192,8 +1245,7 @@ test('reserva chamada recebe WhatsApp (se tiver número confirmado), só depois 
     assert.equal((await q('SELECT status FROM applications WHERE id = ?', [c2.id]))[0].status, 'APROVADA');
     assert.equal(sent.length, 1, 'sem número confirmado, nada é enviado');
   } finally {
-    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
-    mock.close();
+    meta.close();
   }
 });
 
@@ -1303,15 +1355,9 @@ test('estrelas: profissional só vê com o interruptor ligado; principal liga; g
   assert.equal((await call(s.w1, 'GET', '/api/me/estrelas')).status, 403);
 });
 
-test('carteira: chave Pix obrigatória para pagar, código Pix, pagamento com comprovante (no app e pelo WhatsApp)', { skip }, async () => {
-  const http = await import('node:http');
-  const sent = [];
-  const mock = http.createServer((req, res) => {
-    let b = '';
-    req.on('data', (c) => { b += c; });
-    req.on('end', () => { sent.push({ url: req.url, body: JSON.parse(b || '{}') }); res.end('{}'); });
-  }).listen(0);
-  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+test('carteira: chave Pix obrigatória para pagar, código Pix, pagamento com comprovante (no app e aviso pelo WhatsApp)', { skip }, async () => {
+  const meta = await fakeMeta();
+  const sent = meta.sent;
   try {
     const me = (await call(s.winner, 'GET', '/api/me')).body.user;
     const before = (await call(s.winner, 'GET', '/api/me/carteira')).body;
@@ -1355,27 +1401,24 @@ test('carteira: chave Pix obrigatória para pagar, código Pix, pagamento com co
     const av = (await call(s.winner, 'GET', '/api/me/avisos')).body;
     assert.match(av.items[0].title, /Pagamento recebido/);
 
-    // O mesmo comprovante vai pelo WhatsApp (em segundo plano).
+    // Aviso pelo WhatsApp (em segundo plano), com o valor; o comprovante fica na Carteira.
     for (let i = 0; i < 50 && !sent.length; i++) await new Promise((r) => setTimeout(r, 20));
     assert.equal(sent.length, 1);
-    assert.equal(sent[0].url, '/message/sendMedia/upservice');
-    assert.equal(sent[0].body.number, '5511944443333');
-    assert.equal(sent[0].body.mediatype, 'image');
-    assert.equal(sent[0].body.media, Buffer.from(JPEG, 'base64').toString('base64'));
-    assert.match(sent[0].body.caption, /R\$\s?100,00/);
+    const [pago] = meta.para('11944443333');
+    assert.equal(pago.nome, 'pagamento_feito');
+    assert.match(pago.vars[0], /R\$\s?100,00/);
 
     // Troca de chave (conta invadida?): aviso no app e no WhatsApp confirmado; o gestor vê que a chave mudou.
     assert.equal((await call(s.gestor, 'GET', `/api/manage/workers/${me.id}/pagamento`)).body.pixChangedAt, null, 'primeiro cadastro não é troca');
     await q('UPDATE users SET whatsapp_verified_at = ? WHERE id = ?', [new Date(), me.id]);
     assert.equal((await call(s.winner, 'PUT', '/api/me/pix', { type: 'EMAIL', key: 'novo@exemplo.com' })).status, 200);
     for (let i = 0; i < 50 && sent.length < 2; i++) await new Promise((r) => setTimeout(r, 20));
-    assert.equal(sent[1].url, '/message/sendText/upservice');
-    assert.match(sent[1].body.text, /chave Pix da sua conta foi trocada/);
+    assert.equal(sent[1].template.name, 'pix_trocado');
+    assert.equal(sent[1].to, '5511944443333');
     assert.match((await call(s.winner, 'GET', '/api/me/avisos')).body.items[0].title, /chave Pix foi trocada/);
     assert.ok((await call(s.gestor, 'GET', `/api/manage/workers/${me.id}/pagamento`)).body.pixChangedAt, 'gestor vê a troca');
   } finally {
-    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
-    mock.close();
+    meta.close();
   }
 });
 
@@ -1518,10 +1561,8 @@ test('brinde do dia: só admin cadastra; sorteio às 9h do dia seguinte entre qu
   const bVazio = await novo(null, '2020-01-16');
   assert.equal((await call(s.admin, 'DELETE', `/api/admin/brindes/${hoje.body.id}`)).status, 200, 'cancela antes do sorteio');
 
-  const http = await import('node:http');
-  const sent = [];
-  const mock = http.createServer((req, res) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => { sent.push(JSON.parse(b || '{}')); res.end('{}'); }); }).listen(0);
-  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  const meta = await fakeMeta();
+  const sent = meta.sent;
   try {
     await q("UPDATE users SET whatsapp = '11977770001', whatsapp_verified_at = ? WHERE id = ?", [new Date(), b1]);
     await q("DELETE FROM notifications WHERE kind = 'BRINDE'");
@@ -1537,66 +1578,36 @@ test('brinde do dia: só admin cadastra; sorteio às 9h do dia seguinte entre qu
     assert.equal(avisos.length, 4, 'um aviso por participante de cada sorteio');
     assert.ok(avisos.some((a) => a.user_id === b1 && /Você ganhou o sorteio: Boné/.test(a.title)));
     for (let i = 0; i < 50 && !sent.length; i++) await new Promise((r) => setTimeout(r, 20));
-    assert.ok(sent.length >= 1 && sent.every((m) => m.number === '5511977770001'), 'WhatsApp só para o ganhador com número confirmado');
-    assert.match(sent[0].text, /Você ganhou o sorteio: Boné/);
+    assert.ok(sent.length >= 1 && sent.every((m) => m.to === '5511977770001'), 'WhatsApp só para o ganhador com número confirmado');
+    assert.equal(sent[0].template.name, 'sorteio_ganho');
+    assert.equal(meta.para('11977770001')[0].vars[0], 'Boné');
     // Roda de novo: nada muda, ninguém recebe aviso de novo.
     await sortearBrindes();
     assert.equal((await q("SELECT COUNT(*) AS n FROM notifications WHERE kind = 'BRINDE'"))[0].n, 4);
     assert.equal((await call(s.admin, 'DELETE', `/api/admin/brindes/${bA}`)).status, 409, 'sorteado não cancela');
   } finally {
-    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
-    mock.close();
+    meta.close();
   }
 });
 
-test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candidatar, diárias → desistir, carteira; mesmas regras do app', { skip }, async () => {
-  const http = await import('node:http');
-  const { createHash, randomUUID } = await import('node:crypto');
+test('WhatsApp (bot): webhook assinado, só número confirmado, vagas → candidatar, diárias → desistir, carteira; mesmas regras do app', { skip }, async () => {
   const { escolha, phoneFromJid } = await import('../server/bot.js');
-  // Funções puras: número antigo sem o 9 e voto da enquete pelo nome, pelo número ou pelo hash da opção.
-  assert.equal(phoneFromJid('551187654321@s.whatsapp.net'), '11987654321');
-  assert.equal(phoneFromJid('5511987654321@s.whatsapp.net'), '11987654321');
-  assert.equal(phoneFromJid('120363@g.us'), null);
+  // Funções puras: número antigo sem o 9 (a Meta costuma mandar assim) e a opção pelo número ou pelo rótulo.
+  assert.equal(phoneFromJid('551187654321'), '11987654321');
+  assert.equal(phoneFromJid('5511987654321'), '11987654321');
+  assert.equal(phoneFromJid('120363'), null);
   const labels = ['1. Procurar vagas', '2. Minhas diárias'];
   assert.equal(escolha(labels, { text: '2' }), 1);
   assert.equal(escolha(labels, { text: 'minhas diarias' }), 1);
-  assert.equal(escolha(labels, { votes: ['1. Procurar vagas'] }), 0);
-  assert.equal(escolha(labels, { votes: [{ type: 'Buffer', data: [...createHash('sha256').update(labels[1]).digest()] }] }), 1);
   assert.equal(escolha(labels, { text: '9' }), -1);
 
-  const sent = [];
-  let polls = 0;
-  let webhook = {};
-  const mock = http.createServer((req, res) => {
-    let b = '';
-    req.on('data', (c) => { b += c; });
-    req.on('end', () => {
-      sent.push({ url: req.url, body: JSON.parse(b || '{}') });
-      if (req.url === '/webhook/set/upservice') webhook = JSON.parse(b).webhook;
-      res.end(JSON.stringify(req.url.includes('sendPoll') ? { key: { id: `poll-${++polls}` } } : req.url === '/webhook/find/upservice' ? webhook : {}));
-    });
-  }).listen(0);
-  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  const meta = await fakeMeta();
+  const sent = meta.sent;
   try {
-    // Liga o atendimento: só o administrador principal; a Evolution recebe o webhook com o token.
+    // Liga o atendimento: só o administrador principal.
     assert.equal((await call(s.gestor, 'PUT', '/api/admin/whatsapp/bot', { enabled: true })).status, 403);
     assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: true })).status, 200);
-    const set = sent.find((x) => x.url === '/webhook/set/upservice');
-    assert.ok(set?.body.webhook.enabled && set.body.webhook.events.includes('MESSAGES_UPSERT'));
-    // Token no cabeçalho (fora da URL, que vai para logs); com o cabeçalho guardado, token na URL não vale.
-    const token = set.body.webhook.headers['x-webhook-token'];
-    assert.match(token, /^[0-9a-f]{64}$/);
-    assert.equal(new URL(set.body.webhook.url).search, '', 'token fora da URL');
-    const post = (body, tk = token) => fetch(`${base}/api/whatsapp/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-webhook-token': tk }, body: JSON.stringify(body) });
-    assert.equal((await post({}, 'errado')).status, 401);
-    assert.equal((await call(null, 'POST', `/api/whatsapp/webhook?token=${token}`, {})).status, 401);
-    // Ligado antes do cabeçalho existir (configuração sem viaHeader, webhook com o token na URL): continua atendendo.
-    const [cfgRow] = await q("SELECT value FROM app_settings WHERE name = 'whatsapp_bot'");
-    const { viaHeader: _, ...antiga } = JSON.parse(cfgRow.value);
-    await q("UPDATE app_settings SET value = ? WHERE name = 'whatsapp_bot'", [JSON.stringify(antiga)]);
-    assert.equal((await call(null, 'POST', `/api/whatsapp/webhook?token=${token}`, {})).status, 200, 'config antiga aceita o token na URL');
-    assert.equal((await call(null, 'POST', '/api/whatsapp/webhook?token=errado', {})).status, 401);
-    await q("UPDATE app_settings SET value = ? WHERE name = 'whatsapp_bot'", [cfgRow.value]);
+    assert.equal((await fetch(`${base}/api/whatsapp/webhook`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 401, 'sem assinatura');
 
     // Profissional habilitado, com o WhatsApp confirmado; uma vaga amanhã na loja A.
     const bot = await login('bot1@test.dev');
@@ -1609,26 +1620,29 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
 
     // Espera a resposta chegar (até 5 s) e depois o silêncio: não depende da velocidade do banco.
     const settle = async (n0) => { for (let i = 0; i < 50 && n0 !== undefined && sent.length === n0; i++) await new Promise((r) => setTimeout(r, 100)); let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 300)); } };
-    const msg = (jid, message) => ({ event: 'messages.upsert', instance: 'upservice', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message } });
-    const say = async (text, jid = '5511977770123@s.whatsapp.net') => { const n0 = sent.length; assert.equal((await post(msg(jid, { conversation: text }))).status, 200); await settle(n0); };
-    const vote = async (name) => { const n0 = sent.length; await post({ event: 'messages.update', data: { keyId: `poll-${polls}`, remoteJid: '5511977770123@s.whatsapp.net', fromMe: false, pollUpdates: [{ vote: { selectedOptions: [name] } }] } }); await settle(n0); };
-    const poll = () => sent.filter((x) => x.url === '/message/sendPoll/upservice').at(-1).body;
-    const texts = () => sent.filter((x) => x.url === '/message/sendText/upservice').map((x) => x.body.text);
-    const pick = (re) => { const i = poll().values.findIndex((v) => re.test(v)); assert.ok(i >= 0, `opção ${re} em ${poll().values}`); return String(i + 1); };
+    const PHONE = '11977770123';
+    const send = async (message, phone = PHONE) => { const n0 = sent.length; assert.equal((await webhook(phone, message)).status, 200); await settle(n0); };
+    const say = (t, phone) => send(texto(t), phone);
+    const texts = () => meta.conversa(PHONE);
+    const pergunta = () => sent.filter((x) => x.to === `55${PHONE}` && x.type === 'interactive').at(-1).interactive.body.text;
+    const pick = (re) => { const i = meta.opcoes(PHONE).findIndex((v) => re.test(v)); assert.ok(i >= 0, `opção ${re} em ${meta.opcoes(PHONE)}`); return i + 1; };
 
     await say('oi');
-    assert.equal(poll().number, '5511977770123');
-    assert.equal(poll().selectableCount, 1);
-    assert.ok(poll().values.includes('1. Procurar vagas'));
-    await say(pick(/Procurar vagas/));
-    await vote(poll().values.find((v) => /Amanhã/.test(v))); // voto da enquete pelo nome
-    assert.match(poll().name, /Vagas em/);
-    await say(pick(/Repositor do bot/));
-    assert.match(texts().at(-1), /Repositor do bot[\s\S]*R\$\s?130,00/);
-    await say(pick(/Quero esta vaga/));
-    assert.match(poll().name, /Confirma a candidatura/);
-    await say(pick(/Sim/));
-    assert.match(texts().at(-1), /A diária é sua/);
+    const menu = sent.at(-1);
+    assert.equal(menu.to, '5511977770123');
+    assert.equal(menu.interactive.type, 'list', 'mais de 3 opções: lista');
+    assert.ok(menu.interactive.action.sections[0].rows.every((r) => r.title.length <= 24 && (r.description ?? '').length <= 72), 'limites do WhatsApp');
+    assert.ok(meta.opcoes(PHONE).includes('1. Procurar vagas'));
+    await send(toque(pick(/Procurar vagas/)));
+    await send(toque(pick(/Amanhã/)));
+    assert.match(pergunta(), /Vagas em/);
+    await say(String(pick(/Repositor do bot/)));
+    assert.match(texts().at(-2), /Repositor do bot[\s\S]*R\$\s?130,00/);
+    assert.equal(sent.at(-1).interactive.type, 'button', 'até 3 opções curtas: botões');
+    await send({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: String(pick(/Quero esta vaga/)), title: '1. Quero esta vaga' } } });
+    assert.match(pergunta(), /Confirma a candidatura/);
+    await send(toque(pick(/Sim/)));
+    assert.match(texts().at(-2), /A diária é sua/);
     const [app] = await q('SELECT id, status FROM applications WHERE job_id = ? AND user_id = ?', [job, me]);
     assert.equal(app.status, 'APROVADA', 'mesma candidatura do app');
     assert.ok((await q("SELECT 1 FROM audit_events WHERE action = 'WHATSAPP_CANDIDATURA' AND actor_id = ?", [me])).length);
@@ -1639,29 +1653,31 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
 
     // Minhas diárias → desistir (mais de 2 h antes).
     await say('menu');
-    await say(pick(/Minhas diárias/));
-    await say(pick(/Repositor do bot/));
-    await say(pick(/Desistir desta diária/));
-    await say(pick(/Sim/));
+    await send(toque(pick(/Minhas diárias/)));
+    await send(toque(pick(/Repositor do bot/)));
+    await send(toque(pick(/Desistir desta diária/)));
+    await send(toque(pick(/Sim/)));
     assert.equal((await q('SELECT status FROM applications WHERE id = ?', [app.id]))[0].status, 'CANCELADA');
     await say('menu');
-    await say(pick(/Minhas diárias/));
-    assert.match(texts().at(-1), /não tem diárias marcadas/);
+    await send(toque(pick(/Minhas diárias/)));
+    assert.ok(texts().some((t) => /não tem diárias marcadas/.test(t)));
 
     // Carteira.
     await say('menu');
-    await say(pick(/Carteira/));
-    assert.match(texts().at(-1), /A receber: R\$/);
+    await send(toque(pick(/Carteira/)));
+    assert.ok(texts().some((t) => /A receber: R\$/.test(t)));
 
-    // Número desconhecido: um aviso com o link (e só um a cada 12 h); mensagem da própria empresa é ignorada.
+    // Número desconhecido: um aviso com o link (e só um a cada 12 h); situação de entrega não dispara o bot.
     const antes = sent.length;
-    await say('oi', '5511900001111@s.whatsapp.net');
-    assert.match(texts().at(-1), /confirme este número/);
-    await say('oi de novo', '5511900001111@s.whatsapp.net');
+    await say('oi', '11900001111');
+    assert.match(meta.conversa('11900001111').at(-1), /confirme este número/);
+    await say('oi de novo', '11900001111');
     assert.equal(sent.length, antes + 1);
-    await post({ event: 'messages.upsert', data: { key: { remoteJid: '5511977770123@s.whatsapp.net', fromMe: true, id: 'x' }, message: { conversation: 'oi' } } });
+    const { createHmac } = await import('node:crypto');
+    const raw = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages', value: { statuses: [{ id: 'wamid.1', status: 'failed', recipient_id: '5511977770123', errors: [{ code: 131026, title: 'Message undeliverable' }] }] } }] }] });
+    assert.equal((await fetch(`${base}/api/whatsapp/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': `sha256=${createHmac('sha256', 'a'.repeat(32)).update(raw).digest('hex')}` }, body: raw })).status, 200);
     await settle();
-    assert.equal(sent.length, antes + 1, 'mensagem enviada pela própria empresa não dispara o bot');
+    assert.equal(sent.length, antes + 1, 'situação de entrega não é mensagem');
 
     // Bloqueado: só o Menu restrito; opção guardada de antes do bloqueio (Carteira) volta ao Menu. Inativo não é atendido.
     await q("UPDATE users SET status = 'BLOQUEADO_TEMPORARIAMENTE' WHERE id = ?", [me]);
@@ -1669,7 +1685,7 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
     const n0 = texts().length;
     await say('1');
     assert.ok(!texts().slice(n0).some((t) => /A receber/.test(t)), 'bloqueado não vê a Carteira');
-    assert.ok(poll().values.every((v) => !/vagas|diárias|Carteira/i.test(v)), 'menu do bloqueado sem vagas, diárias e carteira');
+    assert.ok(meta.opcoes(PHONE).every((v) => !/vagas|diárias|Carteira/i.test(v)), 'menu do bloqueado sem vagas, diárias e carteira');
     await q("UPDATE users SET status = 'INATIVO' WHERE id = ?", [me]);
     await say('menu');
     assert.match(texts().at(-1), /não está ativa/);
@@ -1681,45 +1697,36 @@ test('WhatsApp (bot): webhook com token, só número confirmado, vagas → candi
     await say('menu');
     assert.equal(sent.length, n);
   } finally {
-    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
-    mock.close();
+    meta.close();
   }
 });
 
 test('WhatsApp (bot): lembrete da véspera com Vou/Não vou, check-in abrindo, quebra de caixa com revisão escrita, contestação e avisos', { skip }, async () => {
-  const http = await import('node:http');
-  const { randomUUID } = await import('node:crypto');
   const { lembretes } = await import('../server/bot.js');
-  const sent = [];
-  let polls = 0;
-  let webhook = {};
-  const mock = http.createServer((req, res) => {
-    let b = '';
-    req.on('data', (c) => { b += c; });
-    req.on('end', () => {
-      sent.push({ url: req.url, body: JSON.parse(b || '{}') });
-      if (req.url === '/webhook/set/upservice') webhook = JSON.parse(b).webhook;
-      res.end(JSON.stringify(req.url.includes('sendPoll') ? { key: { id: `poll-${++polls}` } } : req.url === '/webhook/find/upservice' ? webhook : {}));
-    });
-  }).listen(0);
-  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
+  const meta = await fakeMeta();
+  const sent = meta.sent;
   try {
     assert.equal((await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: true })).status, 200);
-    const token = webhook.headers['x-webhook-token'];
-    const post = (body) => fetch(`${base}/api/whatsapp/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-webhook-token': token }, body: JSON.stringify(body) });
     const bot = await login('bot2@test.dev');
     await completeWorker(bot, '583.026.147-26');
     const me = (await userByEmail('bot2@test.dev')).id;
-    await q('UPDATE users SET whatsapp = ?, whatsapp_verified_at = ? WHERE id = ?', ['11977770456', new Date(), me]);
-    const jid = '5511977770456@s.whatsapp.net';
+    const PHONE = '11977770456';
+    await q('UPDATE users SET whatsapp = ?, whatsapp_verified_at = ? WHERE id = ?', [PHONE, new Date(), me]);
     // Espera a resposta chegar (até 5 s) e depois o silêncio: não depende da velocidade do banco.
     const settle = async (n0) => { for (let i = 0; i < 50 && n0 !== undefined && sent.length === n0; i++) await new Promise((r) => setTimeout(r, 100)); let n = -1; for (let i = 0; i < 60 && n !== sent.length; i++) { n = sent.length; await new Promise((r) => setTimeout(r, 300)); } };
-    const say = async (text) => { const n0 = sent.length; await post({ event: 'messages.upsert', data: { key: { remoteJid: jid, fromMe: false, id: randomUUID() }, message: { conversation: text } } }); await settle(n0); };
-    const poll = () => sent.filter((x) => x.url === '/message/sendPoll/upservice').at(-1).body;
-    const texts = () => sent.filter((x) => x.url === '/message/sendText/upservice' && x.body.number === '5511977770456').map((x) => x.body.text);
-    const pick = (re) => { const i = poll().values.findIndex((v) => re.test(v)); assert.ok(i >= 0, `opção ${re} em ${poll().values}`); return String(i + 1); };
+    const send = async (message) => { const n0 = sent.length; assert.equal((await webhook(PHONE, message)).status, 200); await settle(n0); };
+    const say = (t) => send(texto(t));
+    const texts = () => meta.conversa(PHONE);
+    const pergunta = () => sent.filter((x) => x.to === `55${PHONE}` && x.type === 'interactive').at(-1).interactive.body.text;
+    const pick = (re) => { const i = meta.opcoes(PHONE).findIndex((v) => re.test(v)); assert.ok(i >= 0, `opção ${re} em ${meta.opcoes(PHONE)}`); return toque(i + 1); };
+    // Toque num botão de resposta de um modelo: volta o texto do botão e o payload que o app pôs no envio.
+    const botao = (aviso, i) => {
+      const comp = aviso.comps.filter((c) => c.sub_type === 'quick_reply')[i];
+      return { type: 'button', button: { text: 'botão', payload: comp.parameters[0].payload } };
+    };
+    const ultimoModelo = () => meta.para(PHONE).at(-1);
 
-    // Véspera: diária amanhã às 10h, pega há mais de 6 h; a varredura (às 14h de hoje) manda o lembrete com Vou / Não vou.
+    // Véspera: diária amanhã às 10h, pega há mais de 6 h; a varredura (às 14h de hoje) manda o modelo com Vou / Não vou.
     const amanha = new Date(Date.now() + 86400e3).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
     const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
     const starts = new Date(`${amanha}T10:00:00-03:00`);
@@ -1730,154 +1737,101 @@ test('WhatsApp (bot): lembrete da véspera com Vou/Não vou, check-in abrindo, q
     const as14h = new Date(`${hoje}T14:00:00-03:00`);
     await lembretes(as14h);
     await settle();
-    assert.match(texts().at(-1), /Lembrete da UP Service: .*Conferente do lembrete/);
-    assert.equal(poll().name, 'Você vai?');
+    const vespera = ultimoModelo();
+    assert.equal(vespera.nome, 'lembrete_vespera');
+    assert.deepEqual(vespera.vars, ['Amanhã', '10:00', 'Conferente do lembrete', 'ATC-001 · Loja A']);
     const n1 = sent.length;
     await lembretes(as14h);
     await settle();
     assert.equal(sent.length, n1, 'lembrete vai uma vez só');
     await lembretes(new Date(`${hoje}T22:00:00-03:00`));
-    await say(pick(/Não vou/));
-    assert.match(poll().name, /desistir de Conferente do lembrete/);
-    await say(pick(/Sim/));
+    await send(botao(vespera, 1)); // "Não vou"
+    assert.match(pergunta(), /desistir de Conferente do lembrete/);
+    await send(pick(/Sim/));
     assert.equal((await q('SELECT status FROM applications WHERE id = ?', [app.id]))[0].status, 'CANCELADA');
+    // Payload adulterado (passo que não é de aviso): vale só como texto, que o bot não entende; nada é refeito.
+    await send({ type: 'button', button: { text: 'x', payload: JSON.stringify({ s: 'vaga_ok', c: { appId: app.id } }) } });
+    assert.match(texts().at(-2), /Não entendi/);
+    assert.equal(texts().at(-1), 'Escolha uma opção:');
 
-    // Check-in abrindo (15 min antes): link direto para a tela da atividade.
+    // Check-in abrindo (15 min antes): botão com o link da tela da atividade.
     const a2 = await approvedSession(bot, 'Operador de Caixa do bot');
     await lembretes(new Date());
     await settle();
-    assert.match(texts().at(-1), new RegExp(`check-in .* já está aberto[\\s\\S]*/atividade/${a2.session}`));
+    const checkin = ultimoModelo();
+    assert.equal(checkin.nome, 'checkin_aberto');
+    assert.equal(checkin.comps.find((c) => c.sub_type === 'url').parameters[0].text, `atividade/${a2.session}`);
 
-    // Quebra de caixa: o aviso já vem com as opções; revisão com o motivo escrito, canal WhatsApp.
+    // Quebra de caixa: o aviso vem com o botão "Ver quebras"; revisão com o motivo escrito, canal WhatsApp.
     const [g] = await q("SELECT id FROM users WHERE email = 'gestor@test.dev'");
     await q("UPDATE work_sessions SET status = 'FINALIZADA' WHERE id = ?", [a2.session]);
     await q("INSERT INTO daily_confirmations (application_id, result, confirmed_by) VALUES (?, 'CONCLUIDA', ?)", [a2.application, g.id]);
     assert.equal((await call(s.gestor, 'POST', `/api/manage/applications/${a2.application}/quebra-caixa`, { amount: 20, reason: 'Faltou dinheiro no fechamento' })).status, 201);
     await settle();
-    assert.match(texts().at(-1), /Quebra de caixa registrada/);
-    assert.match(poll().name, /Quebras de caixa/);
-    await say('1');
-    await say(pick(/Pedir revisão/));
-    assert.match(poll().name, /Escreva/);
+    const quebra = ultimoModelo();
+    assert.equal(quebra.nome, 'quebra_caixa');
+    assert.match(quebra.vars[0], /Quebra de caixa registrada/);
+    assert.ok(quebra.vars.every((v) => !/\n/.test(v)), 'variável sem quebra de linha (regra da Meta)');
+    await send(botao(quebra, 0));
+    assert.match(pergunta(), /Quebras de caixa/);
+    await send(toque(1));
+    await send(pick(/Pedir revisão/));
+    assert.match(pergunta(), /Escreva/);
     await say('Conferi o caixa com o fiscal e estava certo');
-    await say(pick(/Sim, enviar/));
-    assert.match(texts().at(-1), /Pedido de revisão enviado \(protocolo CT-/);
+    await send(pick(/Sim, enviar/));
+    assert.match(texts().at(-2), /Pedido de revisão enviado \(protocolo CT-/);
     const [rev] = await q('SELECT channel, message FROM contestations WHERE user_id = ? AND cash_break_id IS NOT NULL', [me]);
     assert.deepEqual([rev.channel, rev.message], ['WHATSAPP', 'Conferi o caixa com o fiscal e estava certo']);
 
     // Ocorrência confirmada → contestar pelo WhatsApp.
     assert.equal((await call(s.gestor, 'POST', '/api/manage/occurrences', { userId: me, unitId: s.unitA, type: 'REGRA_OPERACIONAL', description: 'Uso do celular no caixa' })).status, 201);
     await say('menu');
-    await say(pick(/Ocorrências/));
-    await say(pick(/Descumprimento de regra operacional/));
-    await say(pick(/Contestar/));
+    await send(pick(/Ocorrências/));
+    await send(pick(/Descumprimento de regra operacional/));
+    await send(pick(/Contestar/));
     await say('curto');
-    await say(pick(/Sim, enviar/));
-    assert.match(texts().at(-1), /⚠️/, 'mensagem curta: a regra do app recusa e o bot explica');
+    await send(pick(/Sim, enviar/));
+    assert.match(texts().at(-2), /⚠️/, 'mensagem curta: a regra do app recusa e o bot explica');
     await say('menu');
-    await say(pick(/Ocorrências/));
-    await say(pick(/Descumprimento de regra operacional/));
-    await say(pick(/Contestar/));
+    await send(pick(/Ocorrências/));
+    await send(pick(/Descumprimento de regra operacional/));
+    await send(pick(/Contestar/));
     await say('O gestor me pediu para atender o telefone da loja');
-    await say(pick(/Sim, enviar/));
-    assert.match(texts().at(-1), /Contestação enviada/);
+    await send(pick(/Sim, enviar/));
+    assert.match(texts().at(-2), /Contestação enviada/);
     assert.equal((await q("SELECT channel FROM contestations WHERE user_id = ? AND occurrence_id IS NOT NULL", [me]))[0].channel, 'WHATSAPP');
 
     // Avisos: os do app aparecem e ficam lidos.
     await say('menu');
-    await say(pick(/Avisos/));
-    assert.match(texts().at(-1), /Quebra de caixa registrada/);
+    await send(pick(/Avisos/));
+    assert.match(texts().at(-2), /Quebra de caixa registrada/);
     assert.equal((await q('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL', [me]))[0].n, 0);
+
+    // Comprovante pelo atendimento: o arquivo sobe para a Meta e vai como imagem.
+    const { saveFile } = await import('../server/storage.js');
+    const saved = await saveFile(`comprovantes/${me}`, Buffer.from(JPEG, 'base64'), 'image/jpeg');
+    await q("INSERT INTO worker_payments (id, user_id, amount, pix_key, receipt_key, receipt_mime, paid_by) VALUES (UUID(), ?, 10, 'x', ?, 'image/jpeg', ?)", [me, saved.key, g.id]);
+    await say('menu');
+    await send(pick(/Carteira/));
+    await send(pick(/Recebidos/));
+    await send(toque(1));
+    assert.ok(meta.calls.some((c) => c.url === '/111222333/media' && c.method === 'POST'));
+    assert.ok(sent.some((m) => m.to === `55${PHONE}` && m.type === 'image' && m.image.id === 'media-1'));
     await call(s.admin, 'PUT', '/api/admin/whatsapp/bot', { enabled: false });
   } finally {
-    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
-    mock.close();
+    meta.close();
   }
 });
 
-test('postador: grupo de cada loja (sugestão pelo nome), resumo agrupado depois de 3 min, uma vez só, sem despejar as antigas', { skip }, async () => {
-  const http = await import('node:http');
-  const { postarVagas, chaveNome } = await import('../server/postador.js');
-  const { forgetNumber } = await import('../server/whatsapp.js');
-  assert.equal(chaveNome('UP- STO ANDRÉ ESTADO'), chaveNome('Atacadão Santo André Estado'));
-  assert.equal(chaveNome('UP-GRU BOM SUCESSO'), 'guarulhosbomsucesso');
-  const sent = [];
-  const GRUPO_A = '120363000000000001@g.us';
-  const mock = http.createServer((req, res) => {
-    let b = '';
-    req.on('data', (c) => { b += c; });
-    req.on('end', () => {
-      sent.push({ url: req.url, body: JSON.parse(b || '{}') });
-      const out = req.url.startsWith('/group/fetchAllGroups') ? [{ id: GRUPO_A, subject: 'UP- LOJA A', size: 3 }, { id: '120363000000000009@g.us', subject: 'Repositores 1', size: 4, announce: true }]
-        : req.url.startsWith('/instance/fetchInstances') ? [{ ownerJid: '5511988887777@s.whatsapp.net' }] : {};
-      res.end(JSON.stringify(out));
-    });
-  }).listen(0);
-  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
-  forgetNumber();
-  const grupoMsgs = () => sent.filter((x) => x.url === '/message/sendText/upservice' && x.body.number === GRUPO_A);
-  try {
-    assert.equal((await call(s.gestor, 'GET', '/api/admin/postador')).status, 403, 'só o administrador principal');
-    const g = (await call(s.admin, 'GET', '/api/admin/postador/grupos')).body;
-    assert.equal(g.groups.length, 2);
-    assert.equal(g.sugestoes[s.unitA], GRUPO_A, 'Loja A → "UP- LOJA A"');
-    assert.equal((await call(s.admin, 'PUT', `/api/admin/postador/unidades/${s.unitA}`, { group: '5511999990000@s.whatsapp.net' })).status, 400, 'só grupo');
-    assert.equal((await call(s.admin, 'PUT', `/api/admin/postador/unidades/${s.unitA}`, { group: GRUPO_A, groupName: 'UP- LOJA A' })).status, 200);
-
-    const novaVaga = async (unitId, title, dias, cookie = s.admin) => {
-      const starts = new Date(Date.now() + dias * 86400e3);
-      return (await call(cookie, 'POST', '/api/manage/jobs', { unitId, title, startsAt: starts, endsAt: new Date(starts.getTime() + 6 * 3600e3), positions: 2, dailyValue: 125, breakCount: 1, breakMinutes: 15, publish: true })).body.id;
-    };
-    // Aberta antes de ligar: não vai sozinha (só no "Postar agora").
-    await novaVaga(s.unitA, 'Vaga antiga do postador', 3);
-    assert.equal((await call(s.admin, 'PUT', '/api/admin/postador', { enabled: true })).status, 200);
-    await novaVaga(s.unitA, 'Repositor do postador', 2);
-    await novaVaga(s.unitA, 'Conferente do postador', 4);
-    await novaVaga(s.unitB, 'Vaga da loja sem grupo', 2);
-
-    const now = new Date();
-    await postarVagas(now);
-    assert.equal(grupoMsgs().length, 0, 'espera 3 min sem vaga nova para juntar o resumo');
-    await postarVagas(new Date(now.getTime() + 4 * 60e3));
-    assert.equal(grupoMsgs().length, 1, 'uma mensagem por grupo');
-    const msg = grupoMsgs()[0].body.text;
-    assert.match(msg, /Vagas abertas · Loja A/);
-    assert.match(msg, /Repositor do postador · R\$\s?125,00 · 2 vagas/);
-    assert.match(msg, /Conferente do postador/);
-    assert.doesNotMatch(msg, /Vaga antiga do postador/);
-    assert.match(msg, /wa\.me\/5511988887777/);
-    await postarVagas(new Date(now.getTime() + 8 * 60e3));
-    assert.equal(grupoMsgs().length, 1, 'não posta de novo');
-    assert.equal((await q("SELECT COUNT(*) AS n FROM vagas_postagens WHERE unit_id = ? AND status = 'PENDENTE'", [s.unitB]))[0].n, 1, 'loja sem grupo fica na fila');
-
-    // "Postar agora": todas as abertas com posição livre, inclusive a antiga.
-    const agora = await call(s.admin, 'POST', `/api/admin/postador/unidades/${s.unitA}/postar`, {});
-    assert.ok(agora.body.postadas >= 3);
-    assert.match(grupoMsgs().at(-1).body.text, /Vaga antiga do postador/);
-    assert.equal((await call(s.admin, 'POST', `/api/admin/postador/unidades/${s.unitB}/postar`, {})).status, 409, 'loja sem grupo');
-    assert.equal((await call(s.admin, 'PUT', '/api/admin/postador', { enabled: false })).status, 200);
-  } finally {
-    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
-    forgetNumber();
-    mock.close();
-  }
-});
-
-test('WhatsApp desconectado (ou banido): o app não oferece login nem confirmação por WhatsApp', { skip }, async () => {
-  const http = await import('node:http');
-  const { forgetNumber } = await import('../server/whatsapp.js');
-  const mock = http.createServer((req, res) => res.end(JSON.stringify(req.url.startsWith('/instance/connectionState') ? { instance: { state: 'close' } } : {}))).listen(0);
-  Object.assign(process.env, { EVOLUTION_API_URL: `http://localhost:${mock.address().port}`, EVOLUTION_API_KEY: 'chave', EVOLUTION_INSTANCE: 'upservice' });
-  forgetNumber();
+test('WhatsApp fora do ar (ou banido): o app não oferece login nem confirmação por WhatsApp', { skip }, async () => {
+  const meta = await fakeMeta({ status: 'DISCONNECTED' });
   try {
     assert.equal((await call(null, 'GET', '/api/config')).body.phoneLogin, false, 'sem aba Telefone e sem confirmação obrigatória');
     const r = await call(null, 'POST', '/api/auth/phone/start', { phone: '11999990000' });
     assert.equal(r.status, 503);
     assert.match(r.body.error, /indisponível no momento/);
   } finally {
-    for (const k of ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE']) delete process.env[k];
-    forgetNumber();
-    mock.close();
+    meta.close();
   }
 });
 

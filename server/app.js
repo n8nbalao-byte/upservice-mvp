@@ -19,7 +19,6 @@ import presence from './routes/presence.js';
 import reports from './routes/reports.js';
 import whatsapp from './routes/whatsapp.js';
 import whatsappBot from './routes/whatsappBot.js';
-import postador from './routes/postador.js';
 import loginFotos from './routes/loginFotos.js';
 import worker from './routes/worker.js';
 
@@ -45,7 +44,8 @@ app.post('/api/me/documents', express.json({ limit: '8mb' }));
 app.post('/api/admin/login-fotos', express.json({ limit: '9mb' })); // duas versões da foto em base64
 app.post('/api/sessions/:id/events', express.json({ limit: '1mb' }));
 app.post('/api/sessions/:id/exceptions', express.json({ limit: '1mb' }));
-app.post('/api/whatsapp/webhook', express.json({ limit: '2mb' })); // mensagens podem trazer miniaturas
+// Webhook da Meta: guarda o corpo cru para conferir a assinatura (X-Hub-Signature-256).
+app.post('/api/whatsapp/webhook', express.json({ limit: '2mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(express.json({ limit: '100kb' }));
 
 // Bloqueado só vê o próprio histórico, contesta e sai; todo o resto é recusado.
@@ -57,7 +57,7 @@ const restrictBlocked = (req, res, next) => {
 
 // Respostas da API nunca ficam em cache (navegador nem CDN da Hostinger): depois de salvar, a tela recarrega dados novos.
 app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-app.use('/api', loadUser, restrictBlocked, auth, login, avisos, worker, jobs, presence, penalties, reports, dashboard, estrelas, brindes, carteira, quebra, admin, whatsapp, whatsappBot, postador, loginFotos, files);
+app.use('/api', loadUser, restrictBlocked, auth, login, avisos, worker, jobs, presence, penalties, reports, dashboard, estrelas, brindes, carteira, quebra, admin, whatsapp, whatsappBot, loginFotos, files);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Não encontrado.' }));
 
 app.use(express.static(dist));

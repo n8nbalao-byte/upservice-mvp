@@ -9,7 +9,7 @@ import { q, tx } from '../db.js';
 import { fail, text } from '../http.js';
 import { PIX_TYPES, brCode, normalizePixKey } from '../pix.js';
 import { decodeBase64, loadFile, removeFile, saveFile, sniff } from '../storage.js';
-import { sendWhatsappMediaSafe, sendWhatsappSafe } from '../whatsapp.js';
+import { sendTemplateSafe } from '../whatsapp.js';
 import { bonusGanhoPorUsuario, earnedBonuses } from './estrelas.js';
 import { breaksOf } from './quebra.js';
 
@@ -18,7 +18,6 @@ const MANAGERS = requireRole('GESTOR', 'ADMINISTRADOR');
 const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
 const cents = (v) => Math.round(Number(v) * 100);
 const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const APP_URL = () => (process.env.APP_URL || 'https://app.upserviceintermed.com').replace(/\/+$/, '');
 
 /** Saldo e composição. Única conta do "A receber" (profissional, gestor e resumo usam esta). Valores em centavos por dentro. */
 export async function wallet(userId, tq = q) {
@@ -126,7 +125,7 @@ r.put('/me/pix', requireRole('PROFISSIONAL'), async (req, res) => {
   });
   // Troca de chave avisa pelo WhatsApp: quem invadir a conta não desvia o pagamento sem o dono saber.
   if (changed && req.user.whatsapp_verified_at && req.user.whatsapp) {
-    setImmediate(() => sendWhatsappSafe(req.user.whatsapp, `UP Service: a chave Pix da sua conta foi trocada agora. Se não foi você, fale com a UP Service imediatamente (${APP_URL()}).`));
+    setImmediate(() => sendTemplateSafe(req.user.whatsapp, 'pix_trocado'));
   }
   res.json({ pixType: type, pixKey: key });
 });
@@ -187,14 +186,10 @@ r.post('/manage/workers/:id/pagamentos', MANAGERS, async (req, res) => {
     throw e;
   }
   limparPendentes(); // a lista de pagamentos do admin já reflete o pagamento
-  // O mesmo comprovante vai pelo WhatsApp (em segundo plano; falha não desfaz o pagamento).
+  // Aviso pelo WhatsApp (em segundo plano; falha não desfaz o pagamento). O comprovante fica na Carteira do app; pelo
+  // atendimento, a pessoa também recebe o arquivo.
   const phone = w.whatsapp || w.phone;
-  if (phone) {
-    setImmediate(() => sendWhatsappMediaSafe(phone, {
-      buf, mime, fileName: `comprovante-upservice.${mime === 'application/pdf' ? 'pdf' : mime.split('/')[1]}`,
-      caption: `UP Service: pagamento de ${brl(amount)} feito na sua chave Pix. Este é o comprovante. Ele também fica na sua Carteira: ${APP_URL()}/carteira`,
-    }));
-  }
+  if (phone) setImmediate(() => sendTemplateSafe(phone, 'pagamento_feito', { vars: [brl(amount)] }));
   res.json({ ok: true, id, ...(await wallet(w.id)) });
 });
 

@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { audit } from './audit.js';
 import { sendMailSafe } from './mail.js';
-import { sendWhatsappSafe } from './whatsapp.js';
+import { avisar } from './whatsapp.js';
 import { BLOCK_DAYS, STRIKES_TO_BLOCK } from './rules.js';
 import { promoteFromWaitlist } from './staffing.js';
 
@@ -11,11 +11,8 @@ export const ctx = (tq, req) => ({ tq, req, outbox: [], whatsapp: [] });
 
 export async function flush(c) {
   for (const [to, subject, text] of c.outbox) await sendMailSafe(to, subject, text);
-  // Com { userId, step }: aviso do atendimento (já com as opções, se o bot estiver ligado). Import tardio: bot.js usa este arquivo.
-  for (const [phone, text, bot] of c.whatsapp) {
-    if (bot) await (await import('./bot.js')).avisar(bot.userId, { text, step: bot.step, ctx: bot.ctx });
-    else await sendWhatsappSafe(phone, text);
-  }
+  // [userId, modelo, variáveis do modelo] (whatsappModelos.js).
+  for (const [userId, modelo, opts] of c.whatsapp) await avisar(userId, modelo, opts);
 }
 
 export const managerEmails = async (tq, unitId) =>
