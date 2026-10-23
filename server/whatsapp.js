@@ -44,7 +44,9 @@ export async function graph(path, { method = 'GET', body, form, cfg, timeout = 1
   }
   const data = await resp.json().catch(() => ({}));
   if (resp.status === 401 || data?.error?.code === 190) fail(502, 'A Meta recusou o token do WhatsApp (vencido ou sem permissão).');
-  if (!resp.ok) fail(502, `A API do WhatsApp respondeu ${resp.status}${data?.error?.message ? `: ${String(data.error.message).slice(0, 200)}` : ''}.`);
+  // error_user_msg é o motivo legível ("conta impedida de criar modelos"); message costuma ser só "Invalid parameter".
+  const motivo = data?.error?.error_user_msg ?? data?.error?.message;
+  if (!resp.ok) fail(502, `A API do WhatsApp respondeu ${resp.status}${motivo ? `: ${String(motivo).slice(0, 300)}` : ''}.`);
   return data;
 }
 
