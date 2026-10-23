@@ -1,7 +1,8 @@
 // Modelos (templates) de mensagem da API oficial do WhatsApp. Mensagem que a UP manda primeiro só sai por modelo
 // aprovado pela Meta; o app cadastra estes em Configurações → WhatsApp → "Enviar modelos para aprovação".
 // Regras da Meta: o texto não começa nem termina com variável; duas variáveis nunca separadas só por espaço ou
-// pontuação; no máximo 1 variável a cada 3 palavras; variável sem quebra de linha (o envio troca por espaço).
+// pontuação; no máximo 1 variável a cada 3 palavras; botões de resposta antes dos de link; variável sem quebra de
+// linha (o envio troca por espaço).
 // `aviso`: chave do liga/desliga em Configurações (o código de acesso não desliga).
 const APP_URL = () => (process.env.APP_URL || 'https://app.upserviceintermed.com').replace(/\/+$/, '');
 const abrir = (text, exemplo) => ({ type: 'URL', text, url: `${APP_URL()}/{{1}}`, example: [`${APP_URL()}/${exemplo}`] });
@@ -26,11 +27,11 @@ export const MODELOS = {
     aviso: 'reserva',
     texto: 'Olá, {{1}}! Boa notícia: abriu uma vaga e você saiu da reserva. ✅\n\nVocê está confirmado(a) em {{2}}, na loja {{3}}, no dia {{4}}.\n\nNo dia, faça o check-in pelo app. Se não puder ir, desista pelo app ou pelo botão abaixo, para chamar o próximo da reserva.',
     exemplo: ['Maria', 'Repositor', 'Atacadão Itaquera', 'sex 24/10 08:00'],
-    botoes: [fixo('Minhas diárias', 'minhas'), resposta('Não vou poder ir')],
+    botoes: [resposta('Não vou poder ir'), fixo('Minhas diárias', 'minhas')],
   },
   lembrete_vespera: {
     aviso: 'vespera',
-    texto: 'Lembrete da UP Service: {{1}} às {{2}} você tem diária de *{{3}}* em {{4}}.\n\nVocê vai?',
+    texto: 'Lembrete da UP Service: {{1}} às {{2}} você tem diária de *{{3}}* na loja {{4}}.\n\nVocê vai? Responda pelos botões abaixo.',
     exemplo: ['Amanhã', '08:00', 'Repositor', 'ATC-001 · Atacadão Itaquera'],
     botoes: [resposta('Vou'), resposta('Não vou')],
   },
@@ -69,7 +70,7 @@ export const MODELOS = {
     aviso: 'quebra',
     texto: 'Aviso da UP Service sobre quebra de caixa: {{1}}.\n\nDetalhes: {{2}}\n\nVeja na sua Carteira, no app.',
     exemplo: ['Quebra de caixa registrada: R$ 15,00', 'Diária de 24/10 (Operador de caixa · Atacadão Itaquera). Motivo: diferença no fechamento.'],
-    botoes: [fixo('Abrir a Carteira', 'carteira'), resposta('Ver quebras')],
+    botoes: [resposta('Ver quebras'), fixo('Abrir a Carteira', 'carteira')],
   },
   pix_trocado: {
     aviso: 'pix',
