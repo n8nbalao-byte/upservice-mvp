@@ -18,7 +18,10 @@ const store = {
 /** Cadastro completo e os 4 documentos (CPF, RG, comprovante e selfie) aprovados: o Cadastro sai da barra e fica no menu do usuário. */
 const cadastroAprovado = (me: Me) => me.complete && ['CPF', 'RG', 'COMPROVANTE', 'SELFIE'].every((t) => me.documents.some((d) => d.type === t && d.status === 'APROVADO'));
 
-function groupsFor(me: Me, inboxCount: number, gamification = false, upcoming = 0, aReceber = 0, pagamentos = 0): Group[] {
+// Caixa de entrada do e-mail da UP Service (webmail da Hostinger): abre em nova aba.
+const WEBMAIL = 'https://mail.hostinger.com/1/mailboxes/INBOX';
+
+function groupsFor(me: Me, inboxCount: number, gamification = false, upcoming = 0, aReceber = 0, pagamentos = 0, emails = 0): Group[] {
   const role = me.user.role;
   if (role === 'PROFISSIONAL') {
     if (isBlocked(me.user.status)) return [{ items: [{ to: '/ocorrencias', text: 'Ocorrências', icon: 'alert' }] }];
@@ -49,6 +52,7 @@ function groupsFor(me: Me, inboxCount: number, gamification = false, upcoming = 
         { to: '/gestao/bonus', text: 'Bônus do mês', icon: 'gift' as const },
         { to: '/admin/unidades', text: 'Unidades', icon: 'store' as const },
         { to: '/admin/usuarios', text: 'Usuários', icon: 'user' as const },
+        { to: WEBMAIL, text: 'E-mail', icon: 'mail' as const, count: emails },
         ...(me.user.isOwner ? [{ to: '/admin/configuracoes', text: 'Configurações', icon: 'sliders' as const }] : []),
       ] : []),
     ] },
@@ -125,18 +129,22 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
     window.addEventListener(CHANGED, load);
     return () => { clearInterval(t); window.removeEventListener(CHANGED, load); };
   }, [workerActive, pathname]);
-  // Administrador: quantos profissionais têm pagamento pendente (a cada 60 s e depois de qualquer ação).
+  // Administrador: quantos profissionais têm pagamento pendente e quantos e-mails não lidos (a cada 60 s e depois de qualquer ação).
   const [pagamentos, setPagamentos] = useState(0);
+  const [emails, setEmails] = useState(0);
   const admin = me.user.role === 'ADMINISTRADOR';
   useEffect(() => {
     if (!admin) return;
-    const load = () => api<{ count: number }>('/admin/pagamentos?resumo=1').then((r) => setPagamentos(r.count), () => {});
+    const load = () => {
+      api<{ count: number }>('/admin/pagamentos?resumo=1').then((r) => setPagamentos(r.count), () => {});
+      api<{ naoLidos: number | null }>('/admin/email').then((r) => setEmails(r.naoLidos ?? 0), () => {});
+    };
     load();
     const t = setInterval(load, 60000);
     window.addEventListener(CHANGED, load);
     return () => { clearInterval(t); window.removeEventListener(CHANGED, load); };
   }, [admin]);
-  const groups = groupsFor(me, inboxCount, gamification, avisos.upcoming, avisos.aReceber, pagamentos);
+  const groups = groupsFor(me, inboxCount, gamification, avisos.upcoming, avisos.aReceber, pagamentos, emails);
   // Desktop: recolhe a barra (preferência lembrada). Celular/tablet: abre a gaveta.
   const menu = () => {
     if (window.matchMedia('(max-width: 1023px)').matches) return setDrawer(true);
@@ -149,14 +157,18 @@ export function Shell({ me, inboxCount, onLogout, children }: { me: Me; inboxCou
       <aside className="sidebar" aria-label="Navegação principal">
         {groups.map((g, i) => (
           <nav key={i} className="nav-group" aria-label={i ? 'Cadastros' : 'Operação'}>
-            {g.items.map((it) => (
-              <NavLink key={it.to} to={it.to} className="nav-link" title={collapsed ? it.text : undefined}>
+            {g.items.map((it) => {
+              const conteudo = <>
                 <Icon name={it.icon} />
                 <span className="nav-label">{it.text}</span>
                 {!!it.count && <span className="nav-count">{it.count}</span>}
                 {!!it.money && <span className="nav-money">{fmtMoney(it.money)}</span>}
-              </NavLink>
-            ))}
+              </>;
+              const title = collapsed ? (it.count ? `${it.text}: ${it.count}` : it.text) : undefined;
+              return it.to.startsWith('https://')
+                ? <a key={it.to} href={it.to} target="_blank" rel="noopener noreferrer" className="nav-link" title={title}>{conteudo}</a>
+                : <NavLink key={it.to} to={it.to} className="nav-link" title={title}>{conteudo}</NavLink>;
+            })}
           </nav>
         ))}
         <div className="sidebar-footer">

@@ -190,6 +190,12 @@ test('papel nunca vem do cliente', { skip }, async () => {
   assert.equal((await call(s.w1, 'POST', '/api/units', { code: 'X-1' })).status, 403);
 });
 
+test('menu E-mail: só o administrador vê os não lidos (sem e-mail configurado, null)', { skip }, async () => {
+  const r = await call(s.admin, 'GET', '/api/admin/email');
+  assert.deepEqual([r.status, r.body.naoLidos], [200, null]);
+  assert.equal((await call(s.gestor, 'GET', '/api/admin/email')).status, 403);
+});
+
 test('CPF duplicado é recusado', { skip }, async () => {
   const w3 = await login('w3@test.dev');
   const r = await call(w3, 'PUT', '/api/me/profile', {
