@@ -25,16 +25,16 @@ export function oQueFalta(p) {
   return itens;
 }
 
-/** Aviso no app + e-mail. Devolve false se não há nada a pedir. */
+/** Aviso no app + e-mail. Devolve false se não há nada a pedir; senão, se o e-mail saiu. */
 export async function lembrar(p) {
   const itens = oQueFalta(p);
   if (!itens.length) return false;
   const titulo = 'Complete seu cadastro para começar a trabalhar';
   const corpo = `Para pegar vagas, falta ${itens.join('; ')}.`;
   await q('INSERT INTO notifications SET ?', [{ id: randomUUID(), user_id: p.id, kind: 'CADASTRO', title: titulo, body: corpo, link: '/cadastro' }]);
-  await sendMailSafe(p.email, `UP Service: ${titulo.toLowerCase()}`,
+  const email = await sendMailSafe(p.email, `UP Service: ${titulo.toLowerCase()}`,
     `Olá, ${String(p.name).trim().split(/\s+/)[0]}.\n\nSeu cadastro no app UP Service ainda não está completo. ${corpo}\n\nÉ rápido: entre no app e toque em "Cadastro e documentos": ${APP_URL()}/cadastro\n\nAssim que tudo for aprovado, você já pode se candidatar às vagas.\n\nEquipe UP Service`);
-  return true;
+  return { email };
 }
 
 /** Histórico de lembretes por profissional: quantos e o último. */

@@ -40,16 +40,26 @@ export async function cadastros(user) {
 const ORDEM = { EM_ANALISE: 0, REPROVADO: 1, FALTA: 2 };
 // "Enviar lembrete" (gestão): para um profissional ou para todos do escopo que têm algo a fazer. Na mão não há limite
 // de quantidade, mas cada pessoa recebe no máximo 1 por dia (evita clique duplo).
+// Para "todos", a tela pede a lista (listar) e manda em lotes (userIds), mostrando o progresso: cada e-mail demora.
 r.post('/manage/cadastros-pendentes/lembrete', MANAGERS, async (req, res) => {
   const { lembrar, pendentesDeLembrete } = await import('../cadastroLembretes.js'); // o módulo usa cadastros() deste arquivo
   let alvo = await pendentesDeLembrete(req.user, { intervalo: 86400e3, maximo: Infinity, idadeMin: 0 });
-  if (req.body.userId) {
+  if (req.body.listar) return res.json({ ids: alvo.map((p) => p.id) });
+  if (req.body.userIds) {
+    const ids = req.body.userIds;
+    if (!Array.isArray(ids) || ids.length > 50 || !ids.every((x) => typeof x === 'string')) fail(400, 'Lote inválido.');
+    alvo = alvo.filter((p) => ids.includes(p.id));
+  } else if (req.body.userId) {
     alvo = alvo.filter((p) => p.id === req.body.userId);
     if (!alvo.length) fail(409, 'Este profissional não tem nada a fazer no cadastro agora ou já recebeu lembrete hoje.');
   }
-  let enviados = 0;
-  for (const p of alvo) if (await lembrar(p)) enviados++;
-  res.json({ enviados });
+  let enviados = 0, emails = 0;
+  for (const p of alvo) {
+    const r = await lembrar(p);
+    if (r) enviados++;
+    if (r?.email) emails++;
+  }
+  res.json({ enviados, emails });
 });
 
 r.get('/manage/cadastros-pendentes', MANAGERS, async (req, res) => {

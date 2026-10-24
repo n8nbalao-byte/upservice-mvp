@@ -305,6 +305,9 @@ td .strong { display: block; }
 .progress .bar span { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
 .progress.full .bar span { background: var(--success); }
 .progress small { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.progress.envio { width: min(320px, 100%); }
+.progress.envio .bar { height: 10px; }
+.progress.envio .bar span { transition: width 0.3s ease; }
 
 /* ---------- Estados ---------- */
 .empty { display: grid; justify-items: center; gap: 8px; padding: 40px 20px; text-align: center; color: var(--muted); }
