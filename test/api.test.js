@@ -1299,6 +1299,12 @@ test('lembrete de cadastro: aviso no app só para quem tem algo a fazer, 1 por s
   assert.equal((await call(s.admin, 'POST', '/api/manage/cadastros-pendentes/lembrete', { userId: await id('lemb-analise@test.dev') })).status, 409, 'nada a fazer');
   assert.equal((await call(s.gestor, 'POST', '/api/manage/cadastros-pendentes/lembrete', { userId: await id('lemb-reprov@test.dev') })).status, 409, 'fora do escopo do gestor');
   assert.equal((await call(novo, 'POST', '/api/manage/cadastros-pendentes/lembrete', {})).status, 403);
+  // Todos, como a tela faz: pede a lista e manda em lotes (barra de progresso).
+  const lista = (await call(s.admin, 'POST', '/api/manage/cadastros-pendentes/lembrete', { listar: true })).body.ids;
+  assert.ok(lista.length > 0 && !lista.includes(await id('lemb-novo@test.dev')), 'lista sem quem já recebeu hoje');
+  const lote = await call(s.admin, 'POST', '/api/manage/cadastros-pendentes/lembrete', { userIds: [lista[0], await id('lemb-novo@test.dev')] });
+  assert.deepEqual([lote.status, lote.body.enviados, lote.body.emails], [200, 1, 1], 'lote só envia a quem está na lista (app e e-mail)');
+  assert.equal((await call(s.admin, 'POST', '/api/manage/cadastros-pendentes/lembrete', { userIds: 'x' })).status, 400);
   assert.equal((await call(s.admin, 'POST', '/api/manage/cadastros-pendentes/lembrete', {})).status, 200, 'todos');
   assert.equal((await avisos('lemb-novo@test.dev')).length, 1);
   assert.ok((await call(novo, 'GET', '/api/me/avisos')).body.items.some((x) => x.kind === 'CADASTRO'), 'aparece nos avisos do app');

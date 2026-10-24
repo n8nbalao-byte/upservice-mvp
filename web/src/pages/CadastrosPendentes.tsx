@@ -27,14 +27,34 @@ export default function CadastrosPendentes() {
   useEffect(() => { api<{ items: Item[] }>('/manage/cadastros-pendentes').then((r) => setItems(r.items), (e) => setError(e.message)); }, []);
   const { busy, run } = useAction();
   const { confirm, toast } = useDialog();
+  const [envio, setEnvio] = useState<{ feitos: number; total: number }>();
   // Lembrete (aviso no app + e-mail) para quem tem algo a fazer; quem só espera a análise não recebe.
+  // Para todos: pede a lista e manda de 5 em 5, para a barra mostrar quanto já foi (cada e-mail demora).
   const lembrar = async (userId?: string) => {
     if (!userId && !(await confirm({ title: 'Enviar lembrete a todos?', message: 'Recebem (no app e por e-mail) só os que têm algo a fazer: enviar ou reenviar documento, preencher os dados ou aceitar os termos. Quem recebeu lembrete hoje fica de fora.', confirmText: 'Enviar lembretes' }))) return;
+    const url = '/manage/cadastros-pendentes/lembrete';
+    type R = { enviados: number; emails: number };
     await run(userId ?? 'todos', async () => {
-      const r = await api<{ enviados: number }>('/manage/cadastros-pendentes/lembrete', { body: userId ? { userId } : {} });
-      toast(r.enviados ? `${r.enviados} lembrete(s) enviado(s).` : 'Ninguém para lembrar agora.');
+      const soma: R = { enviados: 0, emails: 0 };
+      const somar = (r: R) => { soma.enviados += r.enviados; soma.emails += r.emails; };
+      if (userId) somar(await api<R>(url, { body: { userId } }));
+      else {
+        const { ids } = await api<{ ids: string[] }>(url, { body: { listar: true } });
+        try {
+          for (let i = 0; i < ids.length; i += 5) {
+            if (!i) setEnvio({ feitos: 0, total: ids.length });
+            somar(await api<R>(url, { body: { userIds: ids.slice(i, i + 5) } }));
+            setEnvio({ feitos: Math.min(i + 5, ids.length), total: ids.length });
+          }
+        } finally { setEnvio(undefined); }
+      }
+      const { enviados, emails } = soma;
+      if (!enviados) toast('Ninguém para lembrar agora.');
+      else if (emails === enviados) toast(`${enviados} lembrete(s) enviado(s) no app e por e-mail.`);
+      else toast(`${enviados} lembrete(s) no app. E-mail: ${emails} enviado(s), ${enviados - emails} falharam (confira a senha do e-mail no painel da hospedagem).`, 'error');
     });
   };
+  const pct = envio ? Math.round((envio.feitos / envio.total) * 100) : 0;
   const shown = useMemo(() => {
     const t = busca.trim().toLowerCase();
     return (items ?? []).filter((i) => (!aba || i.situacao === aba) && (!t || `${i.name} ${i.email}`.toLowerCase().includes(t)));
@@ -47,7 +67,12 @@ export default function CadastrosPendentes() {
         title="Cadastros pendentes"
         description="Profissionais que ainda não podem pegar vagas porque falta algum documento aprovado (CPF, RG, comprovante de residência e selfie)."
         back={{ to: '/gestao/inicio', label: 'Dashboard' }}
-        actions={<button type="button" className="primary" disabled={busy === 'todos'} onClick={() => lembrar()}>{busy === 'todos' ? 'Enviando…' : 'Enviar lembrete a todos'}</button>}
+        actions={envio ? (
+          <div className="progress envio" role="progressbar" aria-label="Envio dos lembretes" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+            <div className="bar"><span style={{ width: `${pct}%` }} /></div>
+            <small>Enviando lembretes: {envio.feitos} de {envio.total} ({pct}%)</small>
+          </div>
+        ) : <button type="button" className="primary" disabled={busy === 'todos'} onClick={() => lembrar()}>{busy === 'todos' ? 'Preparando…' : 'Enviar lembrete a todos'}</button>}
       />
       {error && <Alert kind="danger">{error}</Alert>}
       <div className="filters">
