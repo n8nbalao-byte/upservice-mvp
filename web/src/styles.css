@@ -648,6 +648,18 @@ img.avatar { object-fit: cover; }
 .profile-photo img, .profile-photo .none { display: flex; align-items: center; justify-content: center; width: 88px; height: 88px; flex: none; object-fit: cover; border-radius: 50%; background: var(--surface-2); color: var(--muted); border: 2px solid var(--line); }
 .profile-photo > span { display: grid; gap: 2px; }
 .profile-photo small { color: var(--muted); font-size: 0.8rem; }
+.profile-photo .photo-btn { padding: 0; border: 0; background: none; border-radius: 50%; cursor: zoom-in; }
+
+/* Documento aberto por cima do app (Gestão do profissional): zoom e X para fechar. */
+dialog.doc-viewer { width: min(1000px, calc(100vw - 16px)); height: calc(100dvh - 16px); max-width: none; max-height: none; padding: 0; border: 0; border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg); }
+dialog.doc-viewer[open] { display: flex; flex-direction: column; }
+dialog.doc-viewer::backdrop { background: rgba(16, 36, 44, 0.75); }
+.doc-viewer-bar { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--line); }
+.doc-viewer-bar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-viewer-close { width: 44px; height: 44px; padding: 0; font-size: 1.6rem; line-height: 1; }
+.doc-viewer-body { flex: 1; min-height: 0; width: 100%; overflow: auto; border: 0; background: #1b1f24; }
+div.doc-viewer-body { display: flex; }
+div.doc-viewer-body img { display: block; flex: none; margin: auto; max-width: 100%; max-height: 100%; cursor: zoom-in; }
 @media (max-width: 1023px) and (max-height: 760px) {
   .diarias-head p { display: none; }
   .diarias-head h1 { font-size: 1.25rem; }

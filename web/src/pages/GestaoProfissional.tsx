@@ -5,8 +5,9 @@ import { Icon } from '../components/icons';
 import { PagamentoPix } from '../components/PagamentoPix';
 import { QuebrasCaixa } from '../components/QuebrasCaixa';
 import { MensagemButton, Presenca } from '../components/Mensagem';
+import { VerDocumento } from '../components/VerDocumento';
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge, reasonOpts, useAction, useDialog } from '../components/ui';
-import { api, fmtDateTime, label, type Me, type Unit } from '../lib/api';
+import { api, fmtDateTime, label, type Doc, type Me, type Unit } from '../lib/api';
 
 const DOC_NAME: Record<string, string> = { SELFIE: 'Selfie', CPF: 'CPF', RG: 'RG', COMPROVANTE: 'Comprovante de residência' };
 const MANUAL_TYPES = ['ABANDONO', 'FRAUDE', 'REGRA_OPERACIONAL'];
@@ -147,6 +148,7 @@ export default function GestaoProfissional() {
   const { busy, run } = useAction();
   const [data, setData] = useState<Me>();
   const [error, setError] = useState('');
+  const [aberto, setAberto] = useState<Doc>();
 
   const [rev, setRev] = useState(0);
   const load = () => api<Me>(`/manage/workers/${id}`).then(setData, (e) => setError(e.message));
@@ -187,7 +189,7 @@ export default function GestaoProfissional() {
         <div className="card">
           <div className="card-header"><h2>Cadastro</h2></div>
           <div className="profile-photo">
-            {selfie ? <a href={`/api/files/doc/${selfie.id}`} target="_blank" rel="noreferrer"><img src={`/api/files/doc/${selfie.id}`} alt={`Selfie de ${data.user.name}`} /></a> : <span className="none"><Icon name="user" size={32} /></span>}
+            {selfie ? <button type="button" className="photo-btn" aria-label="Ver selfie" onClick={() => setAberto(selfie)}><img src={`/api/files/doc/${selfie.id}`} alt={`Selfie de ${data.user.name}`} /></button> :<span className="none"><Icon name="user" size={32} /></span>}
             <span>{selfie ? <><b>Selfie do cadastro</b> <StatusBadge status={selfie.status} /><small>Usada para conferir a identidade (comparação facial no futuro).</small></> : <><b>Sem selfie</b><small>O cadastro só fica completo com a selfie.</small></>}</span>
           </div>
           {p ? (
@@ -211,7 +213,7 @@ export default function GestaoProfissional() {
                 <div key={d.id} className="subpanel row between">
                   <span><b>{DOC_NAME[d.type]}</b> <StatusBadge status={d.status} />{d.rejection_reason && <span className="muted" style={{ display: 'block' }}>{d.rejection_reason}</span>}</span>
                   <span className="row">
-                    <a className="btn sm" href={`/api/files/doc/${d.id}`} target="_blank" rel="noreferrer"><Icon name="file" size={16} />Ver</a>
+                    <button type="button" className="sm" onClick={() => setAberto(d)}><Icon name="file" size={16} />Ver</button>
                     {d.status === 'PENDENTE' && (
                       <>
                         <button className="primary sm" disabled={busy === d.id} onClick={() => review(d.id, 'APROVADO')}>Aprovar</button>
@@ -229,6 +231,7 @@ export default function GestaoProfissional() {
       {id && <PagamentoPix key={rev} workerId={id} />}
       {id && <QuebrasCaixa workerId={id} onChange={() => setRev((n) => n + 1)} />}
       {id && <Disciplina workerId={id} workerName={data.user.name} onChange={load} />}
+      {aberto && <VerDocumento key={aberto.id} id={aberto.id} mime={aberto.mime} title={`${DOC_NAME[aberto.type]} · ${data.user.name}`} onClose={() => setAberto(undefined)} />}
     </div>
   );
 }
