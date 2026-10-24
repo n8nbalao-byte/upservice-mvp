@@ -657,9 +657,11 @@ dialog.doc-viewer::backdrop { background: rgba(16, 36, 44, 0.75); }
 .doc-viewer-bar { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--line); }
 .doc-viewer-bar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-viewer-close { width: 44px; height: 44px; padding: 0; font-size: 1.6rem; line-height: 1; }
-.doc-viewer-body { flex: 1; min-height: 0; width: 100%; overflow: auto; border: 0; background: #1b1f24; }
-div.doc-viewer-body { display: flex; }
-div.doc-viewer-body img { display: block; flex: none; margin: auto; max-width: 100%; max-height: 100%; cursor: zoom-in; }
+.doc-viewer-body { display: flex; flex: 1; min-height: 0; overflow: auto; background: #1b1f24; }
+.doc-viewer-body img { display: block; flex: none; margin: auto; max-width: 100%; max-height: 100%; cursor: zoom-in; }
+.doc-viewer-pdf { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; flex: none; width: 100%; margin: 0 auto; padding: 8px; cursor: zoom-in; }
+.doc-viewer-pdf canvas { display: block; width: 100%; height: auto; background: #fff; }
+.doc-viewer-erro { margin: auto; padding: 16px; color: #fff; text-align: center; }
 @media (max-width: 1023px) and (max-height: 760px) {
   .diarias-head p { display: none; }
   .diarias-head h1 { font-size: 1.25rem; }
