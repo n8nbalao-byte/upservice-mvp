@@ -5,6 +5,7 @@ import { audit } from '../audit.js';
 import { canLogin, publicUser, requireOwner, requireRole, workerAllowed } from '../auth.js';
 import { q, tx } from '../db.js';
 import { geocode, lookupCep } from '../geo.js';
+import { emailsNaoLidos } from '../imap.js';
 import { applyBlock, ctx, endBlock, flush } from '../penalties.js';
 import { BLOCK_DAYS } from '../rules.js';
 import { fail, int, num, requireReason, text } from '../http.js';
@@ -126,6 +127,11 @@ r.post('/units/:id/status', ADMIN, async (req, res) => {
 
 const PAGINA = 100;
 /** Lista de usuários em páginas de 100 (busca e papel no servidor), com o total de cada papel para as abas. */
+// Número no menu "E-mail": não lidos na caixa da UP Service (null = sem e-mail configurado ou caixa sem resposta).
+r.get('/admin/email', ADMIN, async (req, res) => {
+  res.json({ naoLidos: await emailsNaoLidos() });
+});
+
 r.get('/admin/users', ADMIN, async (req, res) => {
   const term = `%${String(req.query.q ?? '').trim()}%`;
   const role = ROLES.includes(req.query.role) ? req.query.role : null;
